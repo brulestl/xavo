@@ -1,0 +1,108 @@
+1Project “Corporate Influence Coach” — High-Level Summary & Task Breakdown
+
+A mobile-first AI coaching app that helps professionals master office politics via a clean, chat-style UI. Two tiers—Essential Coach (free, 3 queries/day) and Power Strategist ($30/mo, unlimited queries, deep context, voice input, personalization). Auth via Supabase (email, Google, LinkedIn), dark/light theming, drawer nav, paywall, mock chat flow.
+1. Backend & Auth (Backend Dev)
+
+    Supabase Integration
+
+        Initialize Supabase client in AuthProvider.tsx
+
+        Implement email/password sign-up & login
+
+        Implement OAuth flows: Google & LinkedIn
+
+        Session persistence & tier (guest / essential / power)
+
+    Attempt Limiter
+
+        AttemptLimiter.ts: track & reset daily query counts
+
+    (Future) Chat Endpoint
+
+        Stub /chat wrapper endpoint routing to hidden “essential” or “power” engines
+
+2. Theming & Styling (UI/UX Dev)
+
+    ThemeProvider
+
+        Light & dark palettes using tokens (platinum, alabaster, saffron, eerieBlack, jet)
+
+        useTheme() hook; theme persistence
+
+    Component Library
+
+        Button.tsx (saffron accent, rounded, disabled state)
+
+        Container, Text, other theme-aware primitives
+
+3. Navigation & Flow (Frontend Dev)
+
+    DrawerNavigator
+
+        Conditional menu items:
+
+            Guests → Login, Sign Up
+
+            Authenticated → Relationships (chat history), Account
+
+    Screens
+
+        SplashScreen.tsx (logo fade-in)
+
+        WelcomeScreen.tsx (centered question + “Get Started”)
+
+        AuthChoiceScreen.tsx (Login vs. Sign Up)
+
+        LoginSignupScreen.tsx (email form + OAuth buttons)
+
+        DashboardScreen.tsx → ChatScreen.tsx
+
+        AccountScreen.tsx (email, tier badge, upgrade/cancel, sign-out)
+
+4. Chat & Paywall (Frontend & Backend Dev)
+
+    ChatComposer
+
+        Text input, mic icon (enabled for Power tier), quick-prompt chips
+
+        Streaming mock responses for MVP
+
+    PaywallBottomSheet
+
+        Trigger after 3 attempts for free tiers
+
+        Showcase Power features (unlimited queries, deep context, voice)
+
+        “Upgrade for $30/mo” → subscribePower()
+
+5. Data & State Management (Full-Stack)
+
+    Contexts / Hooks
+
+        AuthContext (session, tier, login/signup/logout/subscribe)
+
+        ThemeContext (theme, toggle)
+
+        ConvoContext or useConversations() for mock history
+
+    Storage
+
+        AsyncStorage / SecureStore for auth tokens, theme choice, daily counters
+
+6. Assets & Branding (Designer)
+
+    Logo in media/logo/ (SVG/PNG)
+
+    Color palette documented in style guide
+
+    Typography: professional, minimal (e.g., system font + weights)
+
+Suggested Team Assignments
+Team/Role	Responsibilities
+Backend Engineer	Supabase auth, AttemptLimiter, stub chat endpoint
+Frontend Engineer	Navigation, Chat screen, Paywall sheet, Context hooks
+UI/UX Designer	ThemeProvider, component library, final mockups
+Full-Stack Engineer	Integrate front + back, end-to-end auth flows
+QA / Tester	Write test plans: auth flows, query limiter, theme toggles
+
+Each task can be tracked as a Jira/Trello ticket under these categories, with clear acceptance criteria (e.g., “Login via LinkedIn works end-to-end,” “Theme toggles persist between app restarts,” “3 free queries block UI with upgrade sheet”)

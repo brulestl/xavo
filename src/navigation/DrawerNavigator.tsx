@@ -1,13 +1,18 @@
 import React from 'react';
-import { View, Text, StyleSheet, Image, TouchableOpacity } from 'react-native';
+import { View, Text, StyleSheet, Image, TouchableOpacity, Dimensions } from 'react-native';
 import { createDrawerNavigator, DrawerContentScrollView, DrawerItem } from '@react-navigation/drawer';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import { DashboardScreen } from '../screens/DashboardScreen';
 import { AccountScreen } from '../screens/AccountScreen';
 import { ChatScreen } from '../screens/ChatScreen';
+import { SettingsScreen } from '../screens/SettingsScreen';
+import { HistoryScreen } from '../screens/HistoryScreen';
 import { useTheme } from '../providers/ThemeProvider';
 import { useAuth } from '../providers/AuthProvider';
+import { SearchBar } from '../components/SearchBar';
+
+const { width: screenWidth } = Dimensions.get('window');
 
 const Drawer = createDrawerNavigator();
 
@@ -16,173 +21,110 @@ interface CustomDrawerContentProps {
 }
 
 const CustomDrawerContent: React.FC<CustomDrawerContentProps> = ({ navigation }) => {
-  const { theme } = useTheme();
-  const { user, tier, dailyQueryCount, logout } = useAuth();
+  const { theme, isDark } = useTheme();
+  const { user, tier, logout } = useAuth();
 
-  const getQueriesDisplay = () => {
-    if (tier === 'power') return 'Unlimited';
-    return `${dailyQueryCount}/3 used today`;
+  const handleNewSession = () => {
+    // Reset chat state and navigate to ChatScreen
+    navigation.navigate('Chat');
   };
 
-  const handleNavigation = (screenName: string) => {
-    navigation.navigate(screenName);
+  const handleChatHistory = () => {
+    navigation.navigate('History');
+  };
+
+  const handleSettings = () => {
+    navigation.navigate('Settings');
   };
 
   return (
-    <DrawerContentScrollView style={{ backgroundColor: theme.screenBackground }}>
-      {/* Header */}
-      <View style={[styles.drawerHeader, { backgroundColor: theme.surface, borderBottomColor: theme.border }]}>
-        <Image
-          source={require('../../media/logo/logo_platinum_67.png')}
-          style={styles.logo}
-          resizeMode="contain"
-        />
-        
-        {user ? (
-          <View style={styles.userInfo}>
-            <Text style={[styles.userEmail, { color: theme.textPrimary }]}>
-              {user.email}
-            </Text>
-            <View style={[styles.tierBadge, { backgroundColor: theme.accent }]}>
-              <Text style={[styles.tierText, { color: theme.colors.eerieBlack }]}>
-                {tier.toUpperCase()}
-              </Text>
-            </View>
-            <Text style={[styles.queriesText, { color: theme.textSecondary }]}>
-              {getQueriesDisplay()}
-            </Text>
-          </View>
-        ) : (
-          <View style={styles.guestInfo}>
-            <Text style={[styles.guestText, { color: theme.textPrimary }]}>
-              Guest User
-            </Text>
-            <Text style={[styles.queriesText, { color: theme.textSecondary }]}>
-              {getQueriesDisplay()}
-            </Text>
-          </View>
-        )}
-      </View>
+    <View style={[styles.drawerContainer, { backgroundColor: isDark ? theme.colors.eerieBlack : theme.colors.alabaster }]}>
+      {/* Search Bar */}
+      <SearchBar placeholder="Search chats…" />
 
-      {/* Navigation Items */}
-      <View style={styles.navigationSection}>
-        {user ? (
-          <>
-            <DrawerItem
-              label="Relationships"
-              icon={({ color, size }) => (
-                <Ionicons name="chatbubbles-outline" size={size} color={color} />
-              )}
-              onPress={() => handleNavigation('Dashboard')}
-              labelStyle={{ color: theme.textPrimary }}
-              activeBackgroundColor={theme.cardBackground}
-              activeTintColor={theme.accent}
-            />
-            
-            <DrawerItem
-              label="Account"
-              icon={({ color, size }) => (
-                <Ionicons name="person-outline" size={size} color={color} />
-              )}
-              onPress={() => handleNavigation('Account')}
-              labelStyle={{ color: theme.textPrimary }}
-              activeBackgroundColor={theme.cardBackground}
-              activeTintColor={theme.accent}
-            />
-          </>
-        ) : (
-          <>
-            <DrawerItem
-              label="Relationships"
-              icon={({ color, size }) => (
-                <Ionicons name="chatbubbles-outline" size={size} color={color} />
-              )}
-              onPress={() => handleNavigation('Dashboard')}
-              labelStyle={{ color: theme.textPrimary }}
-              activeBackgroundColor={theme.cardBackground}
-              activeTintColor={theme.accent}
-            />
-            
-            <View style={[styles.separator, { backgroundColor: theme.border }]} />
-            
-            <DrawerItem
-              label="Log In"
-              icon={({ color, size }) => (
-                <Ionicons name="log-in-outline" size={size} color={color} />
-              )}
-              onPress={() => handleNavigation('AuthChoice')}
-              labelStyle={{ color: theme.accent }}
-              activeTintColor={theme.accent}
-            />
-            
-            <DrawerItem
-              label="Sign Up"
-              icon={({ color, size }) => (
-                <Ionicons name="person-add-outline" size={size} color={color} />
-              )}
-              onPress={() => navigation.navigate('LoginSignup', { mode: 'signup' })}
-              labelStyle={{ color: theme.accent }}
-              activeTintColor={theme.accent}
-            />
-          </>
-        )}
-      </View>
-
-      {/* Footer */}
-      {user && (
-        <View style={styles.drawerFooter}>
-          <TouchableOpacity
-            style={[styles.logoutButton, { borderColor: theme.border }]}
-            onPress={logout}
-          >
-            <Ionicons name="log-out-outline" size={20} color={theme.textSecondary} />
-            <Text style={[styles.logoutText, { color: theme.textSecondary }]}>
-              Sign Out
-            </Text>
-          </TouchableOpacity>
+      <DrawerContentScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
+        {/* Menu Items */}
+        <View style={styles.menuSection}>
+          <DrawerItem
+            label="New Session"
+            icon={({ color, size }) => (
+              <Ionicons name="add-circle-outline" size={size} color={color} />
+            )}
+            onPress={handleNewSession}
+            labelStyle={{ color: theme.textPrimary, fontSize: 16, fontWeight: '500' }}
+            activeTintColor={theme.accent}
+          />
+          
+          <DrawerItem
+            label="Chat History"
+            icon={({ color, size }) => (
+              <Ionicons name="time-outline" size={size} color={color} />
+            )}
+            onPress={handleChatHistory}
+            labelStyle={{ color: theme.textPrimary, fontSize: 16, fontWeight: '500' }}
+            activeTintColor={theme.accent}
+          />
         </View>
-      )}
-    </DrawerContentScrollView>
+      </DrawerContentScrollView>
+
+      {/* Bottom Section */}
+      <View style={styles.bottomSection}>
+        <TouchableOpacity
+          style={styles.settingsRow}
+          onPress={handleSettings}
+        >
+          <Ionicons name="settings-outline" size={24} color={theme.textSecondary} />
+          <Text style={[styles.usernameText, { color: theme.textPrimary }]}>
+            {user?.email || 'Guest User'}
+          </Text>
+        </TouchableOpacity>
+      </View>
+    </View>
   );
 };
 
 export const DrawerNavigator: React.FC = () => {
-  const { theme } = useTheme();
+  const { theme, isDark } = useTheme();
 
   return (
     <Drawer.Navigator
       drawerContent={(props) => <CustomDrawerContent {...props} />}
       screenOptions={{
-        headerStyle: {
-          backgroundColor: theme.surface,
-          elevation: 0,
-          shadowOpacity: 0,
-          borderBottomWidth: 1,
-          borderBottomColor: theme.border,
-        },
-        headerTintColor: theme.textPrimary,
-        headerTitleStyle: {
-          fontWeight: 'bold',
-        },
+        headerShown: false,
         drawerStyle: {
-          backgroundColor: theme.screenBackground,
+          backgroundColor: isDark ? theme.colors.eerieBlack : theme.colors.alabaster,
+          width: screenWidth * 0.75, // 75% width
         },
+        drawerType: 'slide',
+        overlayColor: 'rgba(0,0,0,0.5)',
       }}
     >
+      <Drawer.Screen 
+        name="Chat" 
+        component={ChatScreen}
+        options={{
+          title: 'Corporate Influence Coach',
+        }}
+      />
+      <Drawer.Screen 
+        name="Settings" 
+        component={SettingsScreen}
+        options={{
+          title: 'Settings',
+        }}
+      />
+      <Drawer.Screen 
+        name="History" 
+        component={HistoryScreen}
+        options={{
+          title: 'Chat History',
+        }}
+      />
       <Drawer.Screen 
         name="Dashboard" 
         component={DashboardScreen}
         options={{
-          title: 'Relationship Coach',
-          headerLeft: () => (
-            <View style={styles.headerLeft}>
-              <Image
-                source={require('../../media/logo/logo_platinum_67.png')}
-                style={styles.headerLogo}
-                resizeMode="contain"
-              />
-            </View>
-          ),
+          title: 'Dashboard',
         }}
       />
       <Drawer.Screen 
@@ -197,6 +139,32 @@ export const DrawerNavigator: React.FC = () => {
 };
 
 const styles = StyleSheet.create({
+  drawerContainer: {
+    flex: 1,
+  },
+  scrollView: {
+    flex: 1,
+  },
+  menuSection: {
+    paddingTop: 16,
+  },
+  bottomSection: {
+    padding: 16,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: 'rgba(255,255,255,0.1)',
+  },
+  settingsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 8,
+  },
+  usernameText: {
+    marginLeft: 12,
+    fontSize: 16,
+    fontWeight: '500',
+    flex: 1,
+  },
+  // Legacy styles (keeping for compatibility)
   drawerHeader: {
     padding: 20,
     borderBottomWidth: 1,

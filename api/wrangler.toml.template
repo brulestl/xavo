@@ -1,0 +1,29 @@
+# Cloudflare Workers configuration template
+# Copy this to wrangler.toml and update the values
+
+name = "corporate-influence-coach-api"
+main = "dist/main.js"
+compatibility_date = "2024-01-15"
+
+[build]
+command = "npm run serverless:build"
+cwd = "./"
+
+[vars]
+NODE_ENV = "production"
+
+# Add your environment variables here
+# SUPABASE_URL = "your_supabase_url"
+# SUPABASE_ANON_KEY = "your_supabase_anon_key"
+# OPENAI_API_KEY = "your_openai_key"
+
+[env.staging]
+name = "corporate-influence-coach-api-staging"
+
+[env.production]
+name = "corporate-influence-coach-api-prod"
+
+# KV storage for rate limiting (optional)
+# [[kv_namespaces]]
+# binding = "RATE_LIMIT_KV"
+# id = "your_kv_namespace_id" 

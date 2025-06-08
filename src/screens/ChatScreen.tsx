@@ -1,173 +1,145 @@
-import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, FlatList, TextInput, TouchableOpacity, Alert } from 'react-native';
-import { Container } from '../components/Container';
-import { Button } from '../components/Button';
+import React, { useState } from 'react';
+import {
+  View,
+  Text,
+  StyleSheet,
+  SafeAreaView,
+  ScrollView,
+  TouchableOpacity,
+  Alert,
+  KeyboardAvoidingView,
+  Platform,
+} from 'react-native';
+import { useNavigation } from '@react-navigation/native';
+import { DrawerNavigationProp } from '@react-navigation/drawer';
 import { useTheme } from '../providers/ThemeProvider';
 import { useAuth } from '../providers/AuthProvider';
+import { ActionButton } from '../components/ActionButton';
+import ChatComposer from '../../components/ChatComposer';
+import { Ionicons } from '@expo/vector-icons';
 
-interface Message {
-  id: string;
-  content: string;
-  isUser: boolean;
-  timestamp: Date;
-}
+type ChatScreenNavigationProp = DrawerNavigationProp<any>;
 
-const mockResponses = [
-  "That sounds like a challenging situation. Let me help you navigate this relationship dynamic...",
-  "I understand your concern. Here's a perspective that might help you approach this conversation...",
-  "Great question! Building stronger relationships often starts with understanding the other person's perspective...",
-  "This is a common workplace challenge. Let's explore some strategies to improve this relationship...",
-  "Communication is key in any relationship. Here's how you can frame this conversation more effectively...",
+const actionButtons = [
+  { title: 'Evaluate Scenario', icon: 'analytics-outline' as const },
+  { title: 'Plan Strategy', icon: 'map-outline' as const },
+  { title: 'Analyze Stakeholders', icon: 'people-outline' as const },
+  { title: 'Summarize Policy', icon: 'document-text-outline' as const },
+  { title: 'Brainstorm Insights', icon: 'bulb-outline' as const },
+  { title: 'Draft Email', icon: 'mail-outline' as const },
 ];
 
 export const ChatScreen: React.FC = () => {
+  const navigation = useNavigation<ChatScreenNavigationProp>();
   const { theme } = useTheme();
-  const { tier, canMakeQuery, incrementQueryCount, dailyQueryCount } = useAuth();
-  const [messages, setMessages] = useState<Message[]>([
-    {
-      id: '1',
-      content: 'Hi! I\'m your AI relationship coach. How can I help you improve your relationships today?',
-      isUser: false,
-      timestamp: new Date(),
-    }
-  ]);
+  const { user, tier, canMakeQuery } = useAuth();
   const [inputText, setInputText] = useState('');
-  const [loading, setLoading] = useState(false);
 
-  const handleSendMessage = async () => {
-    if (!inputText.trim()) return;
-
+  const handleActionPress = (actionTitle: string) => {
     if (!canMakeQuery()) {
       Alert.alert(
-        'Daily Limit Reached',
-        `You've used all ${tier === 'guest' ? 3 : 3} daily queries. Upgrade to Power Strategist for unlimited access!`,
+        'Query Limit Reached',
+        'You have reached your daily query limit. Upgrade to Power Strategist for unlimited queries.',
         [{ text: 'OK' }]
       );
       return;
     }
 
-    const userMessage: Message = {
-      id: Date.now().toString(),
-      content: inputText.trim(),
-      isUser: true,
-      timestamp: new Date(),
-    };
-
-    setMessages(prev => [...prev, userMessage]);
-    setInputText('');
-    setLoading(true);
-
-    // Increment query count
-    await incrementQueryCount();
-
-    // Simulate AI response delay
-    setTimeout(() => {
-      const aiResponse: Message = {
-        id: (Date.now() + 1).toString(),
-        content: mockResponses[Math.floor(Math.random() * mockResponses.length)],
-        isUser: false,
-        timestamp: new Date(),
-      };
-      setMessages(prev => [...prev, aiResponse]);
-      setLoading(false);
-    }, 1500);
+    Alert.alert(
+      actionTitle,
+      `This will start a ${actionTitle.toLowerCase()} session. This feature is coming soon!`,
+      [{ text: 'Got it' }]
+    );
   };
 
-  const getTierLabel = () => {
-    switch (tier) {
-      case 'guest': return 'Guest Mode';
-      case 'essential': return 'Essential Coach';
-      case 'power': return 'Power Strategist';
-      default: return 'Guest Mode';
+  const handleSendMessage = (message: string) => {
+    if (!canMakeQuery()) {
+      Alert.alert(
+        'Query Limit Reached',
+        'You have reached your daily query limit. Upgrade to Power Strategist for unlimited queries.',
+        [{ text: 'OK' }]
+      );
+      return;
     }
+
+    // TODO: Implement actual chat functionality
+    Alert.alert('Message Sent', `You said: "${message}"`);
   };
 
-  const getQueriesRemaining = () => {
-    if (tier === 'power') return 'Unlimited';
-    const maxQueries = 3;
-    return `${maxQueries - dailyQueryCount} remaining today`;
+  const handleImageUpload = () => {
+    Alert.alert('Image Upload', 'Image upload feature coming soon!');
   };
 
-  const renderMessage = ({ item }: { item: Message }) => (
-    <View style={[
-      styles.messageContainer,
-      item.isUser ? styles.userMessage : styles.aiMessage
-    ]}>
-      <View style={[
-        styles.messageBubble,
-        {
-          backgroundColor: item.isUser ? theme.accent : theme.surface,
-          borderColor: theme.border,
-        }
-      ]}>
-        <Text style={[
-          styles.messageText,
-          { color: item.isUser ? theme.colors.eerieBlack : theme.textPrimary }
-        ]}>
-          {item.content}
-        </Text>
-      </View>
-    </View>
-  );
+  const handleMicPress = () => {
+    if (tier !== 'power') {
+      Alert.alert(
+        'Premium Feature',
+        'Voice features are available for Power Strategist tier only.',
+        [{ text: 'OK' }]
+      );
+      return;
+    }
+    Alert.alert('Voice Input', 'Voice input feature coming soon!');
+  };
 
   return (
-    <Container variant="screen" padding="none">
-      <View style={styles.container}>
-        {/* Header */}
-        <View style={[styles.header, { backgroundColor: theme.surface, borderBottomColor: theme.border }]}>
-          <View>
-            <Text style={[styles.tierLabel, { color: theme.accent }]}>
-              {getTierLabel()}
-            </Text>
-            <Text style={[styles.queriesLabel, { color: theme.textSecondary }]}>
-              {getQueriesRemaining()}
-            </Text>
-          </View>
-        </View>
-
-        {/* Messages */}
-        <FlatList
-          data={messages}
-          renderItem={renderMessage}
-          keyExtractor={item => item.id}
-          style={styles.messagesList}
-          contentContainerStyle={styles.messagesContainer}
-        />
-
-        {/* Loading indicator */}
-        {loading && (
-          <View style={styles.loadingContainer}>
-            <Text style={[styles.loadingText, { color: theme.textSecondary }]}>
-              AI is thinking...
-            </Text>
-          </View>
-        )}
-
-        {/* Input */}
-        <View style={[styles.inputContainer, { backgroundColor: theme.surface, borderTopColor: theme.border }]}>
-          <TextInput
-            style={[styles.textInput, { 
-              color: theme.textPrimary,
-              backgroundColor: theme.cardBackground,
-              borderColor: theme.border,
-            }]}
-            placeholder="Ask about any relationship challenge..."
-            placeholderTextColor={theme.textSecondary}
-            value={inputText}
-            onChangeText={setInputText}
-            multiline
-            maxLength={500}
-          />
-          <Button
-            title="Send"
-            onPress={handleSendMessage}
-            disabled={!inputText.trim() || loading}
-            size="small"
-            style={styles.sendButton}
-          />
-        </View>
+    <SafeAreaView style={[styles.container, { backgroundColor: theme.screenBackground }]}>
+      {/* Header */}
+      <View style={[styles.header, { backgroundColor: theme.surface, borderBottomColor: theme.border }]}>
+        <TouchableOpacity
+          style={styles.menuButton}
+          onPress={() => navigation.openDrawer()}
+        >
+          <Ionicons name="menu" size={24} color={theme.textPrimary} />
+        </TouchableOpacity>
+        
+        <Text style={[styles.headerTitle, { color: theme.textPrimary }]}>
+          Corporate Influence Coach
+        </Text>
+        
+        <View style={styles.menuButton} />
       </View>
-    </Container>
+
+      <KeyboardAvoidingView 
+        style={styles.content} 
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      >
+        {/* Action Buttons Grid */}
+        <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent}>
+          <View style={styles.gridContainer}>
+            {actionButtons.map((button, index) => (
+              <View key={index} style={styles.gridItem}>
+                <ActionButton
+                  title={button.title}
+                  icon={button.icon}
+                  onPress={() => handleActionPress(button.title)}
+                  disabled={!canMakeQuery()}
+                />
+              </View>
+            ))}
+          </View>
+        </ScrollView>
+
+        {/* Chat Composer */}
+        <View style={[styles.composerContainer, { backgroundColor: theme.surface, borderTopColor: theme.border }]}>
+          <ChatComposer
+            onSend={handleSendMessage}
+            voiceEnabled={tier === 'power'}
+            disabled={!canMakeQuery()}
+            accentColor={theme.accent}
+            onMicPress={handleMicPress}
+          />
+          
+          {/* Image Upload Button */}
+          <TouchableOpacity
+            style={[styles.imageButton, { borderColor: theme.border }]}
+            onPress={handleImageUpload}
+          >
+            <Ionicons name="camera" size={24} color={theme.textSecondary} />
+          </TouchableOpacity>
+        </View>
+      </KeyboardAvoidingView>
+    </SafeAreaView>
   );
 };
 
@@ -176,67 +148,57 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   header: {
-    padding: 16,
-    borderBottomWidth: 1,
-  },
-  tierLabel: {
-    fontSize: 18,
-    fontWeight: 'bold',
-  },
-  queriesLabel: {
-    fontSize: 14,
-    marginTop: 2,
-  },
-  messagesList: {
-    flex: 1,
-  },
-  messagesContainer: {
-    padding: 16,
-  },
-  messageContainer: {
-    marginBottom: 12,
-  },
-  userMessage: {
-    alignItems: 'flex-end',
-  },
-  aiMessage: {
-    alignItems: 'flex-start',
-  },
-  messageBubble: {
-    maxWidth: '80%',
-    padding: 12,
-    borderRadius: 16,
-    borderWidth: 1,
-  },
-  messageText: {
-    fontSize: 16,
-    lineHeight: 22,
-  },
-  loadingContainer: {
-    padding: 16,
-    alignItems: 'center',
-  },
-  loadingText: {
-    fontSize: 14,
-    fontStyle: 'italic',
-  },
-  inputContainer: {
     flexDirection: 'row',
-    padding: 16,
-    alignItems: 'flex-end',
-    borderTopWidth: 1,
-  },
-  textInput: {
-    flex: 1,
-    borderWidth: 1,
-    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'space-between',
     paddingHorizontal: 16,
     paddingVertical: 12,
-    marginRight: 12,
-    maxHeight: 100,
-    fontSize: 16,
+    borderBottomWidth: StyleSheet.hairlineWidth,
   },
-  sendButton: {
-    paddingHorizontal: 20,
+  menuButton: {
+    width: 40,
+    height: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  headerTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    textAlign: 'center',
+    flex: 1,
+  },
+  content: {
+    flex: 1,
+  },
+  scrollView: {
+    flex: 1,
+  },
+  scrollContent: {
+    padding: 16,
+  },
+  gridContainer: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'space-between',
+  },
+  gridItem: {
+    width: '48%',
+    marginBottom: 16,
+  },
+  composerContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderTopWidth: StyleSheet.hairlineWidth,
+  },
+  imageButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginLeft: 8,
   },
 }); 
