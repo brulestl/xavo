@@ -36,7 +36,8 @@
     "react-native-screens": "~4.4.0",
     "react-native-url-polyfill": "^2.0.0",
     "react-native-web": "~0.19.6",
-    "sonner-native": "^0.8.0"
+    "sonner-native": "^0.8.0",
+    "swr": "^2.3.3"
   },
   "devDependencies": {
     "@babel/core": "^7.20.0",

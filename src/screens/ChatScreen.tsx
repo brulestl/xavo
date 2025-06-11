@@ -9,6 +9,7 @@ import {
   Alert,
   KeyboardAvoidingView,
   Platform,
+  FlatList,
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { DrawerNavigationProp } from '@react-navigation/drawer';
@@ -16,6 +17,10 @@ import { useTheme } from '../providers/ThemeProvider';
 import { useAuth } from '../providers/AuthProvider';
 import { ActionButton } from '../components/ActionButton';
 import ChatComposer from '../../components/ChatComposer';
+import { ChatBubble } from '../components/ChatBubble';
+import { TypingDots } from '../components/TypingDots';
+import { Timestamp } from '../components/Timestamp';
+import { useChat } from '../hooks/useChat';
 import { Ionicons } from '@expo/vector-icons';
 
 type ChatScreenNavigationProp = DrawerNavigationProp<any>;
@@ -33,10 +38,19 @@ export const ChatScreen: React.FC = () => {
   const navigation = useNavigation<ChatScreenNavigationProp>();
   const { theme } = useTheme();
   const { user, tier, canMakeQuery } = useAuth();
-  const [inputText, setInputText] = useState('');
+  const [showActions, setShowActions] = useState(true);
+  
+  const {
+    messages,
+    isTyping,
+    isSending,
+    error,
+    sendMessage,
+    canSendMessage,
+  } = useChat();
 
-  const handleActionPress = (actionTitle: string) => {
-    if (!canMakeQuery()) {
+  const handleActionPress = async (actionTitle: string) => {
+    if (!canSendMessage) {
       Alert.alert(
         'Query Limit Reached',
         'You have reached your daily query limit. Upgrade to Power Strategist for unlimited queries.',
@@ -45,15 +59,17 @@ export const ChatScreen: React.FC = () => {
       return;
     }
 
-    Alert.alert(
-      actionTitle,
-      `This will start a ${actionTitle.toLowerCase()} session. This feature is coming soon!`,
-      [{ text: 'Got it' }]
-    );
+    try {
+      setShowActions(false);
+      await sendMessage(`Help me with: ${actionTitle}`, actionTitle.toLowerCase().replace(' ', '_'));
+    } catch (error) {
+      Alert.alert('Error', 'Failed to send message. Please try again.');
+      console.error('Action error:', error);
+    }
   };
 
-  const handleSendMessage = (message: string) => {
-    if (!canMakeQuery()) {
+  const handleSendMessage = async (message: string) => {
+    if (!canSendMessage) {
       Alert.alert(
         'Query Limit Reached',
         'You have reached your daily query limit. Upgrade to Power Strategist for unlimited queries.',
@@ -62,8 +78,13 @@ export const ChatScreen: React.FC = () => {
       return;
     }
 
-    // TODO: Implement actual chat functionality
-    Alert.alert('Message Sent', `You said: "${message}"`);
+    try {
+      setShowActions(false);
+      await sendMessage(message);
+    } catch (error) {
+      Alert.alert('Error', 'Failed to send message. Please try again.');
+      console.error('Send message error:', error);
+    }
   };
 
   const handleImageUpload = () => {
@@ -81,6 +102,15 @@ export const ChatScreen: React.FC = () => {
     }
     Alert.alert('Voice Input', 'Voice input feature coming soon!');
   };
+
+  const renderMessage = ({ item }: { item: any }) => (
+    <ChatBubble
+      message={item.content}
+      isUser={item.role === 'user'}
+      timestamp={item.timestamp}
+      isOptimistic={item.isOptimistic}
+    />
+  );
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: theme.screenBackground }]}>
@@ -104,28 +134,51 @@ export const ChatScreen: React.FC = () => {
         style={styles.content} 
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       >
-        {/* Action Buttons Grid */}
-        <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent}>
-          <View style={styles.gridContainer}>
-            {actionButtons.map((button, index) => (
-              <View key={index} style={styles.gridItem}>
-                <ActionButton
-                  title={button.title}
-                  icon={button.icon}
-                  onPress={() => handleActionPress(button.title)}
-                  disabled={!canMakeQuery()}
-                />
-              </View>
-            ))}
+        {/* Messages or Action Buttons */}
+        {messages.length === 0 && showActions ? (
+          <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent}>
+            <View style={styles.gridContainer}>
+              {actionButtons.map((button, index) => (
+                <View key={index} style={styles.gridItem}>
+                  <ActionButton
+                    title={button.title}
+                    icon={button.icon}
+                    onPress={() => handleActionPress(button.title)}
+                    disabled={!canSendMessage}
+                  />
+                </View>
+              ))}
+            </View>
+          </ScrollView>
+        ) : (
+          <FlatList
+            data={messages}
+            renderItem={renderMessage}
+            keyExtractor={(item) => item.id}
+            style={styles.messagesList}
+            contentContainerStyle={styles.messagesContent}
+            showsVerticalScrollIndicator={false}
+            ListFooterComponent={
+              isTyping ? <TypingDots visible={true} /> : null
+            }
+          />
+        )}
+
+        {/* Error Display */}
+        {error && (
+          <View style={[styles.errorContainer, { backgroundColor: '#FF6B6B' }]}>
+            <Text style={[styles.errorText, { color: theme.surface }]}>
+              {error.message || 'Something went wrong'}
+            </Text>
           </View>
-        </ScrollView>
+        )}
 
         {/* Chat Composer */}
         <View style={[styles.composerContainer, { backgroundColor: theme.surface, borderTopColor: theme.border }]}>
           <ChatComposer
             onSend={handleSendMessage}
             voiceEnabled={tier === 'power'}
-            disabled={!canMakeQuery()}
+            disabled={!canSendMessage || isSending}
             accentColor={theme.accent}
             onMicPress={handleMicPress}
           />
@@ -134,8 +187,13 @@ export const ChatScreen: React.FC = () => {
           <TouchableOpacity
             style={[styles.imageButton, { borderColor: theme.border }]}
             onPress={handleImageUpload}
+            disabled={!canSendMessage || isSending}
           >
-            <Ionicons name="camera" size={24} color={theme.textSecondary} />
+            <Ionicons 
+              name="camera" 
+              size={24} 
+              color={!canSendMessage || isSending ? theme.textSecondary : theme.textPrimary} 
+            />
           </TouchableOpacity>
         </View>
       </KeyboardAvoidingView>
@@ -184,6 +242,21 @@ const styles = StyleSheet.create({
   gridItem: {
     width: '48%',
     marginBottom: 16,
+  },
+  messagesList: {
+    flex: 1,
+  },
+  messagesContent: {
+    paddingVertical: 8,
+  },
+  errorContainer: {
+    margin: 16,
+    padding: 12,
+    borderRadius: 8,
+  },
+  errorText: {
+    fontSize: 14,
+    textAlign: 'center',
   },
   composerContainer: {
     flexDirection: 'row',

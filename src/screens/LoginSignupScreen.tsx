@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { View, Text, TextInput, StyleSheet, ScrollView, Alert } from 'react-native';
+import { View, Text, TextInput, StyleSheet, ScrollView, Alert, ActivityIndicator } from 'react-native';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { Container } from '../components/Container';
 import { Button } from '../components/Button';
@@ -22,10 +22,24 @@ export const LoginSignupScreen: React.FC = () => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
+  const [oauthLoading, setOauthLoading] = useState<'google' | 'linkedin' | null>(null);
 
   const handleSubmit = async () => {
     if (!email.trim() || !password.trim()) {
       Alert.alert('Error', 'Please fill in all fields');
+      return;
+    }
+
+    // Basic email validation
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email)) {
+      Alert.alert('Error', 'Please enter a valid email address');
+      return;
+    }
+
+    // Password validation
+    if (password.length < 6) {
+      Alert.alert('Error', 'Password must be at least 6 characters long');
       return;
     }
 
@@ -36,42 +50,99 @@ export const LoginSignupScreen: React.FC = () => {
         : await signup(email, password);
 
       if (error) {
-        Alert.alert('Error', error.message);
+        // Handle specific error cases
+        let errorMessage = error.message;
+        if (error.message.includes('Invalid login credentials')) {
+          errorMessage = 'Invalid email or password. Please check your credentials and try again.';
+        } else if (error.message.includes('User already registered')) {
+          errorMessage = 'An account with this email already exists. Please sign in instead.';
+        } else if (error.message.includes('Email not confirmed')) {
+          errorMessage = 'Please check your email and click the confirmation link before signing in.';
+        }
+        
+        Alert.alert('Authentication Error', errorMessage);
       } else {
         if (mode === 'signup') {
-          Alert.alert('Success', 'Please check your email to verify your account');
+          Alert.alert(
+            'Account Created Successfully', 
+            'Please check your email to verify your account before signing in.',
+            [{ text: 'OK', onPress: () => navigation.goBack() }]
+          );
         } else {
           navigation.navigate('Dashboard' as never);
         }
       }
     } catch (error) {
-      Alert.alert('Error', 'Something went wrong. Please try again.');
+      console.error('Auth error:', error);
+      Alert.alert('Error', 'Something went wrong. Please check your internet connection and try again.');
     } finally {
       setLoading(false);
     }
   };
 
   const handleGoogleAuth = async () => {
+    setOauthLoading('google');
     try {
       const { error } = await signInWithOAuth('google');
       if (error) {
-        Alert.alert('Error', error.message);
+        // Handle specific OAuth errors
+        let errorMessage = error.message;
+        if (error.message.includes('popup_closed_by_user')) {
+          errorMessage = 'Sign-in was cancelled. Please try again.';
+        } else if (error.message.includes('access_denied')) {
+          errorMessage = 'Access was denied. Please grant permission to continue.';
+        } else if (error.message.includes('network')) {
+          errorMessage = 'Network error. Please check your internet connection and try again.';
+        }
+        
+        Alert.alert('Google Sign-In Error', errorMessage);
+      } else {
+        // Success - navigation will be handled by auth state change
+        console.log('Google OAuth successful');
       }
     } catch (error) {
-      Alert.alert('Error', 'Google authentication failed');
+      console.error('Google OAuth error:', error);
+      Alert.alert(
+        'Google Sign-In Failed', 
+        'Unable to sign in with Google. Please try again or use email/password.'
+      );
+    } finally {
+      setOauthLoading(null);
     }
   };
 
   const handleLinkedInAuth = async () => {
+    setOauthLoading('linkedin');
     try {
       const { error } = await signInWithOAuth('linkedin');
       if (error) {
-        Alert.alert('Error', error.message);
+        // Handle specific OAuth errors
+        let errorMessage = error.message;
+        if (error.message.includes('popup_closed_by_user')) {
+          errorMessage = 'Sign-in was cancelled. Please try again.';
+        } else if (error.message.includes('access_denied')) {
+          errorMessage = 'Access was denied. Please grant permission to continue.';
+        } else if (error.message.includes('network')) {
+          errorMessage = 'Network error. Please check your internet connection and try again.';
+        }
+        
+        Alert.alert('LinkedIn Sign-In Error', errorMessage);
+      } else {
+        // Success - navigation will be handled by auth state change
+        console.log('LinkedIn OAuth successful');
       }
     } catch (error) {
-      Alert.alert('Error', 'LinkedIn authentication failed');
+      console.error('LinkedIn OAuth error:', error);
+      Alert.alert(
+        'LinkedIn Sign-In Failed', 
+        'Unable to sign in with LinkedIn. Please try again or use email/password.'
+      );
+    } finally {
+      setOauthLoading(null);
     }
   };
+
+  const isFormDisabled = loading || oauthLoading !== null;
 
   return (
     <Container variant="screen">
@@ -94,7 +165,8 @@ export const LoginSignupScreen: React.FC = () => {
                 style={[styles.input, { 
                   borderColor: theme.border, 
                   backgroundColor: theme.surface,
-                  color: theme.textPrimary 
+                  color: theme.textPrimary,
+                  opacity: isFormDisabled ? 0.6 : 1
                 }]}
                 placeholder="Enter your email"
                 placeholderTextColor={theme.textSecondary}
@@ -103,6 +175,7 @@ export const LoginSignupScreen: React.FC = () => {
                 keyboardType="email-address"
                 autoCapitalize="none"
                 autoCorrect={false}
+                editable={!isFormDisabled}
               />
             </View>
 
@@ -112,7 +185,8 @@ export const LoginSignupScreen: React.FC = () => {
                 style={[styles.input, { 
                   borderColor: theme.border, 
                   backgroundColor: theme.surface,
-                  color: theme.textPrimary 
+                  color: theme.textPrimary,
+                  opacity: isFormDisabled ? 0.6 : 1
                 }]}
                 placeholder="Enter your password"
                 placeholderTextColor={theme.textSecondary}
@@ -120,13 +194,14 @@ export const LoginSignupScreen: React.FC = () => {
                 onChangeText={setPassword}
                 secureTextEntry
                 autoCapitalize="none"
+                editable={!isFormDisabled}
               />
             </View>
 
             <Button
               title={loading ? 'Please wait...' : (mode === 'login' ? 'Sign In' : 'Sign Up')}
               onPress={handleSubmit}
-              disabled={loading}
+              disabled={isFormDisabled}
               fullWidth
               style={styles.submitButton}
             />
@@ -138,19 +213,21 @@ export const LoginSignupScreen: React.FC = () => {
             </View>
 
             <Button
-              title="Continue with Google"
+              title={oauthLoading === 'google' ? 'Signing in with Google...' : 'Continue with Google'}
               onPress={handleGoogleAuth}
               variant="outline"
               fullWidth
-              style={styles.oauthButton}
+              disabled={isFormDisabled}
+              style={[styles.oauthButton, { opacity: isFormDisabled ? 0.6 : 1 }]}
             />
 
             <Button
-              title="Continue with LinkedIn"
+              title={oauthLoading === 'linkedin' ? 'Signing in with LinkedIn...' : 'Continue with LinkedIn'}
               onPress={handleLinkedInAuth}
               variant="outline"
               fullWidth
-              style={styles.oauthButton}
+              disabled={isFormDisabled}
+              style={[styles.oauthButton, { opacity: isFormDisabled ? 0.6 : 1 }]}
             />
           </View>
         </View>
