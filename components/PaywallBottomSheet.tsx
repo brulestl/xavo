@@ -63,12 +63,12 @@ export default function PaywallBottomSheet({ visible, onClose }: PaywallBottomSh
           activeOpacity={1} 
           onPress={onClose}
         />
-        <View style={styles.bottomSheet}>
+        <View style={styles.container}>
           <View style={styles.handle} />
           
           <View style={styles.header}>
             <TouchableOpacity style={styles.closeButton} onPress={onClose}>
-              <Ionicons name="close" size={24} color="#666" />
+              <Text style={styles.closeButtonText}>Close</Text>
             </TouchableOpacity>
           </View>
 
@@ -78,23 +78,20 @@ export default function PaywallBottomSheet({ visible, onClose }: PaywallBottomSh
               Take your relationship coaching to the next level
             </Text>
 
-            <View style={styles.valuePropsContainer}>
+            <View style={styles.featuresContainer}>
               {valueProps.map((prop, index) => (
-                <View key={index} style={styles.valueProp}>
-                  <View style={styles.iconContainer}>
+                <View key={index} style={styles.featureItem}>
+                  <View style={styles.featureIcon}>
                     <Ionicons name={prop.icon} size={24} color="#023047" />
                   </View>
-                  <View style={styles.propContent}>
-                    <Text style={styles.propTitle}>{prop.title}</Text>
-                    <Text style={styles.propDescription}>{prop.description}</Text>
-                  </View>
+                  <Text style={styles.featureText}>{prop.title}</Text>
                 </View>
               ))}
             </View>
 
-            <View style={styles.pricing}>
-              <Text style={styles.price}>$30/month</Text>
-              <Text style={styles.priceNote}>Cancel anytime</Text>
+            <View style={styles.priceContainer}>
+              <Text style={styles.priceText}>$30/month</Text>
+              <Text style={styles.priceSubtext}>Cancel anytime</Text>
             </View>
 
             <TouchableOpacity style={styles.upgradeButton} onPress={handleUpgrade}>
@@ -124,21 +121,22 @@ const styles = StyleSheet.create({
     right: 0,
     bottom: 0,
   },
-  bottomSheet: {
+  container: {
     backgroundColor: '#fff',
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
-    maxHeight: SCREEN_HEIGHT * 0.85,
-    paddingBottom: 34, // Safe area padding for iPhone
+    paddingHorizontal: 20,
+    paddingTop: 16,
+    paddingBottom: 32,
+    minHeight: 300,
   },
   handle: {
-    width: 36,
+    width: 40,
     height: 4,
-    backgroundColor: '#ddd',
+    backgroundColor: '#E0E0E0',
     borderRadius: 2,
     alignSelf: 'center',
-    marginTop: 12,
-    marginBottom: 8,
+    marginBottom: 16,
   },
   header: {
     flexDirection: 'row',
@@ -147,81 +145,86 @@ const styles = StyleSheet.create({
     paddingBottom: 10,
   },
   closeButton: {
-    padding: 4,
+    paddingVertical: 12,
+    paddingHorizontal: 24,
+  },
+  closeButtonText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#666',
+    textAlign: 'center',
   },
   content: {
     paddingHorizontal: 20,
     paddingBottom: 20,
   },
   title: {
-    fontSize: 28,
-    fontWeight: 'bold',
-    color: '#333',
+    fontSize: 24,
+    fontWeight: '700',
     textAlign: 'center',
     marginBottom: 8,
+    color: '#1A1A1A',
   },
   subtitle: {
     fontSize: 16,
-    color: '#666',
+    fontWeight: '500',
     textAlign: 'center',
-    marginBottom: 32,
-  },
-  valuePropsContainer: {
-    marginBottom: 32,
-  },
-  valueProp: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    marginBottom: 20,
-  },
-  iconContainer: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: '#02304722',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: 16,
-  },
-  propContent: {
-    flex: 1,
-  },
-  propTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#333',
-    marginBottom: 4,
-  },
-  propDescription: {
-    fontSize: 14,
     color: '#666',
-    lineHeight: 20,
+    marginBottom: 24,
+    lineHeight: 22,
   },
-  pricing: {
-    alignItems: 'center',
+  featuresContainer: {
     marginBottom: 24,
   },
-  price: {
+  featureItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  featureIcon: {
+    marginRight: 12,
+  },
+  featureText: {
+    fontSize: 16,
+    fontWeight: '500',
+    color: '#333',
+    flex: 1,
+  },
+  priceContainer: {
+    backgroundColor: '#F8F9FA',
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 20,
+    alignItems: 'center',
+  },
+  priceText: {
     fontSize: 32,
-    fontWeight: 'bold',
-    color: '#023047',
+    fontWeight: '800',
+    color: '#1A1A1A',
     marginBottom: 4,
   },
-  priceNote: {
+  priceSubtext: {
     fontSize: 14,
+    fontWeight: '500',
     color: '#666',
   },
   upgradeButton: {
-    backgroundColor: '#023047',
+    backgroundColor: '#F5CB5C',
     borderRadius: 12,
-    padding: 18,
-    alignItems: 'center',
-    marginBottom: 16,
+    paddingVertical: 14,
+    paddingHorizontal: 24,
+    marginBottom: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
   },
   upgradeButtonText: {
-    color: '#fff',
-    fontSize: 18,
-    fontWeight: '600',
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#FFFFFF',
+    textAlign: 'center',
   },
   disclaimer: {
     fontSize: 12,
