@@ -1,108 +1,101 @@
 import React from 'react';
-import { View, Text, StyleSheet } from 'react-native';
+import { View, Text, StyleSheet, Animated, ViewStyle } from 'react-native';
 import { useTheme } from '../providers/ThemeProvider';
 
 interface ChatBubbleProps {
   message: string;
   isUser: boolean;
   timestamp?: string;
-  isOptimistic?: boolean;
+  animatedValue?: Animated.Value;
 }
 
-export const ChatBubble: React.FC<ChatBubbleProps> = ({
-  message,
-  isUser,
+export const ChatBubble: React.FC<ChatBubbleProps> = ({ 
+  message, 
+  isUser, 
   timestamp,
-  isOptimistic = false,
+  animatedValue = new Animated.Value(1)
 }) => {
-  const { theme } = useTheme();
+  const { theme, isDark } = useTheme();
+
+  const dynamicBubbleStyle: ViewStyle = {
+    backgroundColor: isUser 
+      ? theme.semanticColors.primary 
+      : (isDark ? theme.colors.jet : '#F5F5F5'),
+    alignSelf: isUser ? 'flex-end' : 'flex-start',
+    shadowColor: theme.semanticColors.shadow,
+  };
+
+  const bubbleStyle = [
+    styles.bubble,
+    dynamicBubbleStyle,
+    isUser ? styles.userBubble : styles.assistantBubble
+  ];
+
+  const textStyle = [
+    styles.messageText,
+    {
+      color: isUser 
+        ? '#FFFFFF' 
+        : theme.semanticColors.textPrimary
+    }
+  ];
 
   return (
-    <View style={[
-      styles.container,
-      isUser ? styles.userContainer : styles.assistantContainer
-    ]}>
-      <View style={[
-        styles.bubble,
-        isUser ? [styles.userBubble, { backgroundColor: theme.accent }] : [styles.assistantBubble, { backgroundColor: theme.surface }],
-        isOptimistic && styles.optimisticBubble
-      ]}>
-        <Text style={[
-          styles.messageText,
-          isUser ? [styles.userText, { color: theme.surface }] : [styles.assistantText, { color: theme.textPrimary }],
-          isOptimistic && { opacity: 0.7 }
-        ]}>
-          {message}
-        </Text>
+    <Animated.View 
+      style={[
+        styles.container,
+        {
+          opacity: animatedValue,
+          transform: [{
+            translateY: animatedValue.interpolate({
+              inputRange: [0, 1],
+              outputRange: [10, 0],
+            })
+          }]
+        }
+      ]}
+    >
+      <View style={bubbleStyle}>
+        <Text style={textStyle}>{message}</Text>
+        {timestamp && (
+          <Text style={[styles.timestamp, { 
+            color: isUser ? 'rgba(255,255,255,0.7)' : theme.semanticColors.textSecondary 
+          }]}>
+            {timestamp}
+          </Text>
+        )}
       </View>
-      {timestamp && (
-        <Text style={[
-          styles.timestamp,
-          { color: theme.textSecondary },
-          isUser ? styles.userTimestamp : styles.assistantTimestamp
-        ]}>
-          {timestamp}
-        </Text>
-      )}
-    </View>
+    </Animated.View>
   );
 };
 
 const styles = StyleSheet.create({
   container: {
     marginVertical: 4,
-    paddingHorizontal: 16,
-  },
-  userContainer: {
-    alignItems: 'flex-end',
-  },
-  assistantContainer: {
-    alignItems: 'flex-start',
+    maxWidth: '85%',
   },
   bubble: {
-    maxWidth: '80%',
     paddingHorizontal: 16,
     paddingVertical: 12,
-    borderRadius: 20,
-    shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 1,
-    },
-    shadowOpacity: 0.1,
-    shadowRadius: 2,
+    borderRadius: 12, // 12px radius as specified
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.08, // Faint shadow
+    shadowRadius: 3,
     elevation: 2,
   },
   userBubble: {
-    borderBottomRightRadius: 4,
+    marginLeft: 40,
   },
   assistantBubble: {
-    borderBottomLeftRadius: 4,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: 'rgba(0,0,0,0.1)',
-  },
-  optimisticBubble: {
-    borderStyle: 'dashed',
+    marginRight: 40,
   },
   messageText: {
     fontSize: 16,
     lineHeight: 22,
   },
-  userText: {
-    fontWeight: '500',
-  },
-  assistantText: {
-    fontWeight: '400',
-  },
   timestamp: {
     fontSize: 12,
     marginTop: 4,
-    marginHorizontal: 8,
-  },
-  userTimestamp: {
-    textAlign: 'right',
-  },
-  assistantTimestamp: {
-    textAlign: 'left',
+    opacity: 0.7,
   },
 });

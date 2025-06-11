@@ -1,13 +1,16 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { View, StyleSheet, FlatList, Text, KeyboardAvoidingView, Platform, TouchableOpacity } from 'react-native';
+import { View, StyleSheet, FlatList, Text, KeyboardAvoidingView, Platform, TouchableOpacity, Animated } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { toast } from 'sonner-native';
 import ChatComposer from '../components/ChatComposer';
 import PaywallBottomSheet from '../components/PaywallBottomSheet';
+import { ChatBubble } from '../src/components/ChatBubble';
+import { PillPrompt } from '../src/components/PillPrompt';
 import { useAuth } from '../contexts/AuthContext';
 import { useConversations, Message } from '../hooks/useConversations';
+import { useTheme } from '../src/providers/ThemeProvider';
 
 const SUGGESTED_PROMPTS = [
   'Handle credit grabber',
@@ -22,6 +25,7 @@ export default function ChatScreen() {
   const route = useRoute();
   const insets = useSafeAreaInsets();
   const flatListRef = useRef<FlatList>(null);
+  const { theme } = useTheme();
 
   const { tier, dailyCounter, canAsk, decrementCounter } = useAuth();
   const { conversations, getConversation, createConversation, addMessageToConversation } = useConversations();
@@ -146,28 +150,46 @@ export default function ChatScreen() {
     toast.info('Voice input coming soon');
   }, [tier]);
 
-  const renderMessage = ({ item }: { item: Message }) => (
-    <View style={[styles.message, item.role === 'user' ? styles.userMessage : styles.assistantMessage]}>
-      <Text style={[styles.messageText, item.role === 'user' && styles.userMessageText]}>{item.content}</Text>
-    </View>
-  );
+  const renderMessage = ({ item, index }: { item: Message; index: number }) => {
+    const animatedValue = new Animated.Value(0);
+    
+    // Animate message appearance
+    useEffect(() => {
+      Animated.timing(animatedValue, {
+        toValue: 1,
+        duration: 300,
+        useNativeDriver: true,
+      }).start();
+    }, []);
+
+    return (
+      <ChatBubble
+        message={item.content}
+        isUser={item.role === 'user'}
+        timestamp={new Date(item.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+        animatedValue={animatedValue}
+      />
+    );
+  };
 
   const voiceEnabled = tier === 'power';
 
   return (
     <KeyboardAvoidingView 
-      style={styles.container} 
+      style={[styles.container, { backgroundColor: theme.semanticColors.background }]} 
       keyboardVerticalOffset={insets.top + 70} 
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
-      <View style={styles.header}>
+      <View style={[styles.header, { borderBottomColor: theme.semanticColors.border }]}>
         <TouchableOpacity 
           style={styles.backButton}
           onPress={() => navigation.goBack()}
         >
-          <Ionicons name="arrow-back" size={24} color="#333" />
+          <Ionicons name="arrow-back" size={24} color={theme.semanticColors.textPrimary} />
         </TouchableOpacity>
-        <Text style={styles.engineLabel}>{getEngineLabel()}</Text>
+        <Text style={[styles.engineLabel, { color: theme.semanticColors.textPrimary }]}>
+          {getEngineLabel()}
+        </Text>
         <View style={styles.headerRight} />
       </View>
 
@@ -182,15 +204,16 @@ export default function ChatScreen() {
 
       {messages.length === 0 && (
         <View style={styles.promptChipsContainer}>
-          <Text style={styles.promptChipsTitle}>Try asking about:</Text>
-          {SUGGESTED_PROMPTS.map((prompt) => (
-            <TouchableOpacity 
-              key={prompt} 
-              onPress={() => handleSuggestedPress(prompt)} 
-              style={styles.chip}
-            >
-              <Text style={styles.chipText}>{prompt}</Text>
-            </TouchableOpacity>
+          <Text style={[styles.promptChipsTitle, { color: theme.semanticColors.textSecondary }]}>
+            Try asking about:
+          </Text>
+          {SUGGESTED_PROMPTS.map((prompt, index) => (
+            <PillPrompt
+              key={prompt}
+              text={prompt}
+              onPress={() => handleSuggestedPress(prompt)}
+              delay={index * 100} // Staggered animation
+            />
           ))}
         </View>
       )}
@@ -199,7 +222,7 @@ export default function ChatScreen() {
         onSend={sendMessage}
         voiceEnabled={voiceEnabled}
         disabled={isSending}
-        accentColor="#023047"
+        accentColor={theme.semanticColors.primary}
         onMicPress={handleMic}
       />
 
@@ -213,16 +236,14 @@ export default function ChatScreen() {
 
 const styles = StyleSheet.create({
   container: { 
-    flex: 1, 
-    backgroundColor: '#fff' 
+    flex: 1,
   },
   header: { 
     flexDirection: 'row', 
     alignItems: 'center', 
     justifyContent: 'space-between',
     padding: 16, 
-    borderBottomWidth: StyleSheet.hairlineWidth, 
-    borderColor: '#ddd' 
+    borderBottomWidth: StyleSheet.hairlineWidth,
   },
   backButton: {
     width: 24,
@@ -230,7 +251,6 @@ const styles = StyleSheet.create({
   engineLabel: { 
     fontWeight: '600', 
     fontSize: 16,
-    color: '#023047'
   },
   headerRight: {
     width: 24,
@@ -239,28 +259,6 @@ const styles = StyleSheet.create({
     padding: 16, 
     paddingBottom: 0,
   },
-  message: { 
-    maxWidth: '85%', 
-    padding: 12, 
-    borderRadius: 16, 
-    marginVertical: 4,
-  },
-  userMessage: { 
-    alignSelf: 'flex-end', 
-    backgroundColor: '#023047',
-  },
-  assistantMessage: { 
-    alignSelf: 'flex-start', 
-    backgroundColor: '#f0f0f0',
-  },
-  messageText: { 
-    fontSize: 16,
-    lineHeight: 22,
-    color: '#333',
-  },
-  userMessageText: {
-    color: '#fff',
-  },
   promptChipsContainer: { 
     padding: 16,
     paddingTop: 8,
@@ -268,20 +266,6 @@ const styles = StyleSheet.create({
   promptChipsTitle: {
     fontSize: 16,
     fontWeight: '500',
-    color: '#666',
     marginBottom: 12,
-  },
-  chip: { 
-    backgroundColor: '#f0f0f0', 
-    borderRadius: 20, 
-    paddingVertical: 10, 
-    paddingHorizontal: 16, 
-    marginBottom: 8,
-    alignSelf: 'flex-start',
-  },
-  chipText: { 
-    fontSize: 14, 
-    color: '#023047',
-    fontWeight: '500',
   },
 });
