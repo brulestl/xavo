@@ -1,15 +1,7 @@
 # Agent Decision Log
 
-## Frontend Agent Decisions
+This file tracks key decisions made by AI agents during development.
 
-**2025-01-11**
-- Frontend-Agent: Replaced mock chat alerts with live API calls using SWR mutation for real-time chat functionality
-- Frontend-Agent: Built ChatBubble component with optimistic UI support and proper theme integration
-- Frontend-Agent: Created Timestamp component with relative time formatting using date-fns
-- Frontend-Agent: Implemented TypingDots component with smooth animation for better UX
-- Frontend-Agent: Enhanced OAuth flows with comprehensive error handling and loading states for Google/LinkedIn
-- Frontend-Agent: Created PersonalizationScreen for collecting user context and preferences
-- Frontend-Agent: Built 4-page PersonalityQuizScreen with trait assessment and scoring system
-- Frontend-Agent: Enhanced PaywallBottomSheet with 3-day trial logic and improved pricing display
-- Frontend-Agent: Integrated useChat hook with SWR for optimistic UI and error handling
-- Frontend-Agent: Updated ChatScreen to use new components and live API integration instead of mock alerts
+## 2025-01-27
+
+**DevOps-Agent**: Implemented comprehensive CI/CD pipeline with GitHub Actions, EAS Update channels, Railway deployment, Percy/Chromatic visual testing, and nightly changelog automation to ensure main branch is always deployable with one-click QR code previews.
