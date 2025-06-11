@@ -11,7 +11,16 @@
     "web": "npx expo start --web",
     "test": "jest",
     "test:watch": "jest --watch",
-    "test:coverage": "jest --coverage"
+    "test:coverage": "jest --coverage",
+    "cypress:open": "cypress open",
+    "cypress:run": "cypress run",
+    "cypress:run:headless": "cypress run --headless",
+    "test:e2e": "cypress run --spec 'cypress/e2e/**/*.cy.js'",
+    "test:e2e:user-journey": "cypress run --spec 'cypress/e2e/user-journey.cy.js'",
+    "test:e2e:deep-links": "cypress run --spec 'cypress/e2e/deep-links.cy.js'",
+    "test:e2e:tier-limits": "cypress run --spec 'cypress/e2e/tier-limits.cy.js'",
+    "test:a11y": "cypress run --spec 'cypress/e2e/accessibility.cy.js'",
+    "test:all": "npm run test && npm run test:e2e"
   },
   "dependencies": {
     "@expo/vector-icons": "^14.0.2",
@@ -44,6 +53,8 @@
     "@testing-library/react-native": "^13.2.0",
     "@types/jest": "^29.5.14",
     "@types/react": "~18.3.12",
+    "cypress": "^14.4.1",
+    "cypress-axe": "^1.6.0",
     "jest": "^29.7.0",
     "jest-environment-jsdom": "^30.0.0-beta.3",
     "tailwindcss": "^4.1.8",
