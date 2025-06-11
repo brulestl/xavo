@@ -1,0 +1,111 @@
+name: Nightly Summarizer
+
+on:
+  schedule:
+    # Run at 2 AM UTC every day
+    - cron: '0 2 * * *'
+  workflow_dispatch: # Allow manual trigger
+
+jobs:
+  generate-daily-digest:
+    name: Generate Daily Digest
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+
+      - name: Get yesterday's activity
+        id: activity
+        run: |
+          # Get date range for yesterday
+          YESTERDAY=$(date -d "yesterday" +%Y-%m-%d)
+          TODAY=$(date +%Y-%m-%d)
+          
+          echo "Analyzing activity for $YESTERDAY"
+          
+          # Get commits from yesterday
+          COMMITS=$(git log --since="$YESTERDAY 00:00:00" --until="$TODAY 00:00:00" --pretty=format:"- %s (%an)" --no-merges | head -10)
+          
+          # Get PR activity (merged PRs)
+          PRS=$(gh pr list --state merged --search "merged:$YESTERDAY" --limit 5 --json title,author,number | jq -r '.[] | "- PR #\(.number): \(.title) (@\(.author.login))"')
+          
+          # Get issue activity (closed issues)
+          ISSUES=$(gh issue list --state closed --search "closed:$YESTERDAY" --limit 5 --json title,number | jq -r '.[] | "- Issue #\(.number): \(.title)"')
+          
+          # Create digest content
+          cat > daily_digest.md << EOF
+          ## Daily Digest - $YESTERDAY
+          
+          ### 📝 Commits
+          $COMMITS
+          
+          ### 🔀 Pull Requests
+          $PRS
+          
+          ### 🐛 Issues Closed
+          $ISSUES
+          
+          ### 📊 Stats
+          - Total commits: $(echo "$COMMITS" | wc -l)
+          - PRs merged: $(echo "$PRS" | wc -l)
+          - Issues closed: $(echo "$ISSUES" | wc -l)
+          
+          ---
+          
+          EOF
+          
+          echo "digest_date=$YESTERDAY" >> $GITHUB_OUTPUT
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Update CHANGELOG_AUTO.md
+        run: |
+          # Create CHANGELOG_AUTO.md if it doesn't exist
+          if [ ! -f CHANGELOG_AUTO.md ]; then
+            echo "# Automated Changelog" > CHANGELOG_AUTO.md
+            echo "" >> CHANGELOG_AUTO.md
+            echo "This file is automatically updated with daily activity summaries." >> CHANGELOG_AUTO.md
+            echo "" >> CHANGELOG_AUTO.md
+          fi
+          
+          # Prepend the new digest to the changelog
+          cat daily_digest.md CHANGELOG_AUTO.md > temp_changelog.md
+          mv temp_changelog.md CHANGELOG_AUTO.md
+          
+          # Clean up
+          rm daily_digest.md
+
+      - name: Commit and push changes
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          
+          if git diff --quiet CHANGELOG_AUTO.md; then
+            echo "No changes to commit"
+          else
+            git add CHANGELOG_AUTO.md
+            git commit -m "chore: add daily digest for ${{ steps.activity.outputs.digest_date }}"
+            git push
+          fi
+
+      - name: Send Slack notification
+        if: env.SLACK_WEBHOOK_URL != ''
+        run: |
+          # Read the latest digest (first 10 lines after header)
+          DIGEST_CONTENT=$(head -20 CHANGELOG_AUTO.md | tail -15)
+          
+          # Send to Slack
+          curl -X POST -H 'Content-type: application/json' \
+            --data "{\"text\":\"📊 Daily Development Digest - ${{ steps.activity.outputs.digest_date }}\n\`\`\`\n$DIGEST_CONTENT\n\`\`\`\"}" \
+            ${{ secrets.SLACK_WEBHOOK_URL }}
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
