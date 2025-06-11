@@ -1,6 +1,6 @@
 import React from 'react';
 import { View, Text, StyleSheet, Image, TouchableOpacity, Dimensions } from 'react-native';
-import { createDrawerNavigator, DrawerContentScrollView, DrawerItem } from '@react-navigation/drawer';
+import { createDrawerNavigator, DrawerContentScrollView, DrawerContentComponentProps } from '@react-navigation/drawer';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import { DashboardScreen } from '../screens/DashboardScreen';
@@ -9,74 +9,84 @@ import { ChatScreen } from '../screens/ChatScreen';
 import { SettingsScreen } from '../screens/SettingsScreen';
 import { HistoryScreen } from '../screens/HistoryScreen';
 import { useTheme } from '../providers/ThemeProvider';
-import { useAuth } from '../providers/AuthProvider';
+import { useAuth } from '../../contexts/AuthContext';
 import { SearchBar } from '../components/SearchBar';
 
 const { width: screenWidth } = Dimensions.get('window');
 
 const Drawer = createDrawerNavigator();
 
-interface CustomDrawerContentProps {
-  navigation: any;
-}
-
-const CustomDrawerContent: React.FC<CustomDrawerContentProps> = ({ navigation }) => {
+const CustomDrawerContent: React.FC<DrawerContentComponentProps> = (props) => {
   const { theme, isDark } = useTheme();
-  const { user, tier, logout } = useAuth();
+  const { email, logout } = useAuth();
 
   const handleNewSession = () => {
-    // Reset chat state and navigate to ChatScreen
-    navigation.navigate('Chat');
+    props.navigation.navigate('Chat');
+    props.navigation.closeDrawer();
   };
 
   const handleChatHistory = () => {
-    navigation.navigate('History');
+    props.navigation.navigate('History');
+    props.navigation.closeDrawer();
   };
 
   const handleSettings = () => {
-    navigation.navigate('Settings');
+    props.navigation.navigate('Settings');
+    props.navigation.closeDrawer();
   };
 
   return (
-    <View style={[styles.drawerContainer, { backgroundColor: isDark ? theme.colors.eerieBlack : theme.colors.alabaster }]}>
-      {/* Search Bar */}
-      <SearchBar placeholder="Search chats…" />
+    <View style={[styles.drawerContainer, { backgroundColor: theme.semanticColors.background }]}>
+      <DrawerContentScrollView {...props} contentContainerStyle={styles.scrollContent}>
+        {/* Search Bar */}
+        <View style={styles.searchContainer}>
+          <SearchBar placeholder="Search chats..." />
+        </View>
 
-      <DrawerContentScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
         {/* Menu Items */}
         <View style={styles.menuSection}>
-          <DrawerItem
-            label="New Session"
-            icon={({ color, size }) => (
-              <Ionicons name="add-circle-outline" size={size} color={color} />
-            )}
-            onPress={handleNewSession}
-            labelStyle={{ color: theme.textPrimary, fontSize: 16, fontWeight: '500' }}
-            activeTintColor={theme.accent}
-          />
-          
-          <DrawerItem
-            label="Chat History"
-            icon={({ color, size }) => (
-              <Ionicons name="time-outline" size={size} color={color} />
-            )}
-            onPress={handleChatHistory}
-            labelStyle={{ color: theme.textPrimary, fontSize: 16, fontWeight: '500' }}
-            activeTintColor={theme.accent}
-          />
+          <TouchableOpacity style={styles.menuItem} onPress={handleNewSession}>
+            <Ionicons 
+              name="add-circle-outline" 
+              size={24} 
+              color={theme.semanticColors.textPrimary} 
+            />
+            <Text style={[styles.menuText, { color: theme.semanticColors.textPrimary }]}>
+              New Session
+            </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity style={styles.menuItem} onPress={handleChatHistory}>
+            <Ionicons 
+              name="time-outline" 
+              size={24} 
+              color={theme.semanticColors.textPrimary} 
+            />
+            <Text style={[styles.menuText, { color: theme.semanticColors.textPrimary }]}>
+              Chat History
+            </Text>
+          </TouchableOpacity>
         </View>
       </DrawerContentScrollView>
 
       {/* Bottom Section */}
-      <View style={styles.bottomSection}>
-        <TouchableOpacity
-          style={styles.settingsRow}
-          onPress={handleSettings}
-        >
-          <Ionicons name="settings-outline" size={24} color={theme.textSecondary} />
-          <Text style={[styles.usernameText, { color: theme.textPrimary }]}>
-            {user?.email || 'Guest User'}
-          </Text>
+      <View style={[styles.bottomSection, { borderTopColor: theme.semanticColors.border }]}>
+        <TouchableOpacity style={styles.settingsRow} onPress={handleSettings}>
+          <View style={styles.userInfo}>
+            <Ionicons 
+              name="settings-outline" 
+              size={24} 
+              color={theme.semanticColors.textSecondary} 
+            />
+            <Text style={[styles.username, { color: theme.semanticColors.textSecondary }]}>
+              {email || 'Guest User'}
+            </Text>
+          </View>
+          <Ionicons 
+            name="chevron-forward" 
+            size={20} 
+            color={theme.semanticColors.textSecondary} 
+          />
         </TouchableOpacity>
       </View>
     </View>
@@ -84,7 +94,7 @@ const CustomDrawerContent: React.FC<CustomDrawerContentProps> = ({ navigation })
 };
 
 export const DrawerNavigator: React.FC = () => {
-  const { theme, isDark } = useTheme();
+  const { theme } = useTheme();
 
   return (
     <Drawer.Navigator
@@ -92,34 +102,19 @@ export const DrawerNavigator: React.FC = () => {
       screenOptions={{
         headerShown: false,
         drawerStyle: {
-          backgroundColor: isDark ? theme.colors.eerieBlack : theme.colors.alabaster,
-          width: screenWidth * 0.75, // 75% width
+          width: '75%', // 75% screen width as specified
+          backgroundColor: theme.semanticColors.background,
         },
         drawerType: 'slide',
         overlayColor: 'rgba(0,0,0,0.5)',
+        sceneContainerStyle: {
+          backgroundColor: theme.semanticColors.background,
+        },
       }}
     >
-      <Drawer.Screen 
-        name="Chat" 
-        component={ChatScreen}
-        options={{
-          title: 'Corporate Influence Coach',
-        }}
-      />
-      <Drawer.Screen 
-        name="Settings" 
-        component={SettingsScreen}
-        options={{
-          title: 'Settings',
-        }}
-      />
-      <Drawer.Screen 
-        name="History" 
-        component={HistoryScreen}
-        options={{
-          title: 'Chat History',
-        }}
-      />
+      <Drawer.Screen name="Chat" component={ChatScreen} />
+      <Drawer.Screen name="History" component={HistoryScreen} />
+      <Drawer.Screen name="Settings" component={SettingsScreen} />
       <Drawer.Screen 
         name="Dashboard" 
         component={DashboardScreen}
@@ -142,26 +137,51 @@ const styles = StyleSheet.create({
   drawerContainer: {
     flex: 1,
   },
-  scrollView: {
-    flex: 1,
+  scrollContent: {
+    flexGrow: 1,
+    paddingTop: 20,
+  },
+  searchContainer: {
+    paddingHorizontal: 16,
+    marginBottom: 24,
   },
   menuSection: {
-    paddingTop: 16,
+    paddingHorizontal: 8,
+  },
+  menuItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 14, // Tightened spacing
+    borderRadius: 8,
+    marginBottom: 4,
+  },
+  menuText: {
+    fontSize: 16,
+    fontWeight: '500', // Improved font weight
+    marginLeft: 12,
   },
   bottomSection: {
-    padding: 16,
     borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: 'rgba(255,255,255,0.1)',
+    paddingTop: 16,
+    paddingBottom: 20,
+    paddingHorizontal: 16,
   },
   settingsRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 8,
+    justifyContent: 'space-between',
+    paddingVertical: 12,
   },
-  usernameText: {
-    marginLeft: 12,
-    fontSize: 16,
+  userInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+  },
+  username: {
+    fontSize: 14,
     fontWeight: '500',
+    marginLeft: 12,
     flex: 1,
   },
   // Legacy styles (keeping for compatibility)
@@ -174,9 +194,6 @@ const styles = StyleSheet.create({
     width: 60,
     height: 60,
     marginBottom: 16,
-  },
-  userInfo: {
-    marginTop: 8,
   },
   userEmail: {
     fontSize: 16,
