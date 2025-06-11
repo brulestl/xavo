@@ -1,0 +1,126 @@
+{
+  "users": {
+    "guest": {
+      "tier": "guest",
+      "dailyQueries": 3,
+      "queriesUsed": 0
+    },
+    "essential": {
+      "email": "essential@example.com",
+      "password": "TestPassword123!",
+      "tier": "essential",
+      "dailyQueries": 3,
+      "queriesUsed": 0
+    },
+    "power": {
+      "email": "power@example.com",
+      "password": "TestPassword123!",
+      "tier": "power",
+      "dailyQueries": -1,
+      "queriesUsed": 0
+    }
+  },
+  "chatMessages": {
+    "questions": [
+      "How do I handle a difficult colleague?",
+      "What's the best way to ask for a promotion?",
+      "How can I improve my presentation skills?",
+      "How do I deal with workplace conflict?",
+      "What should I do about a micromanaging boss?"
+    ],
+    "responses": [
+      "Great question! Here's my advice on handling difficult colleagues...",
+      "When asking for a promotion, timing and preparation are key...",
+      "Improving presentation skills requires practice and confidence...",
+      "Workplace conflict resolution starts with understanding perspectives...",
+      "Dealing with micromanagement requires clear communication..."
+    ]
+  },
+  "deepLinks": {
+    "valid": [
+      "xavo://chat",
+      "xavo://chat?id=123",
+      "xavo://profile",
+      "xavo://settings",
+      "xavo://upgrade"
+    ],
+    "invalid": [
+      "xavo://invalid-route",
+      "xavo://chat?id=invalid",
+      "invalid://chat"
+    ]
+  },
+  "errors": {
+    "network": {
+      "message": "Network error. Please check your connection.",
+      "code": "NETWORK_ERROR"
+    },
+    "server": {
+      "message": "Server error. Please try again later.",
+      "code": "SERVER_ERROR"
+    },
+    "auth": {
+      "message": "Please log in to continue",
+      "code": "AUTH_REQUIRED"
+    },
+    "tierLimit": {
+      "message": "Daily query limit exceeded",
+      "code": "TIER_LIMIT_EXCEEDED"
+    },
+    "rateLimit": {
+      "message": "Too many requests. Please wait.",
+      "code": "RATE_LIMIT_EXCEEDED"
+    }
+  },
+  "tiers": {
+    "guest": {
+      "name": "Guest",
+      "dailyLimit": 3,
+      "features": ["Basic AI responses"],
+      "price": "Free"
+    },
+    "essential": {
+      "name": "Essential",
+      "dailyLimit": 3,
+      "features": ["Basic AI responses", "Priority support"],
+      "price": "Free"
+    },
+    "power": {
+      "name": "Power Strategist",
+      "dailyLimit": -1,
+      "features": ["Unlimited queries", "Advanced AI", "Historical context", "Priority support"],
+      "price": "$30/month"
+    }
+  },
+  "onboarding": {
+    "steps": [
+      {
+        "title": "Welcome to Corporate Influence Coach",
+        "description": "Your AI-powered workplace relationship advisor"
+      },
+      {
+        "title": "Choose Your Path",
+        "description": "Select how you'd like to get started"
+      },
+      {
+        "title": "Ready to Begin",
+        "description": "Start your journey to workplace success"
+      }
+    ]
+  },
+  "paywall": {
+    "triggers": {
+      "dailyLimitExceeded": "You've reached your daily query limit",
+      "tierUpgrade": "Upgrade to unlock unlimited access"
+    },
+    "benefits": {
+      "power": [
+        "Unlimited daily queries",
+        "Advanced AI coaching",
+        "Historical conversation context",
+        "Priority customer support",
+        "Voice input (coming soon)"
+      ]
+    }
+  }
+}
