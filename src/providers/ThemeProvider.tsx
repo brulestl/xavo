@@ -1,12 +1,14 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-export interface ThemeColors {
-  platinum: string;
-  alabaster: string;
-  saffron: string;
-  eerieBlack: string;
-  jet: string;
+export interface XavoColors {
+  // Xavo Brand Colors
+  xavoBlue: string;
+  growthGreen: string;
+  pureWhite: string;
+  deepNavy: string;
+  nearlyBlack: string;
+  mutedAccent: string;
 }
 
 export interface ThemeSemanticColors {
@@ -20,21 +22,12 @@ export interface ThemeSemanticColors {
   surface: string;
   border: string;
   shadow: string;
+  cta: string;
 }
 
 export interface Theme {
-  colors: ThemeColors;
+  colors: XavoColors;
   semanticColors: ThemeSemanticColors;
-  
-  // Backward compatibility properties
-  cardBackground: string;
-  screenBackground: string;
-  textPrimary: string;
-  textSecondary: string;
-  accent: string;
-  surface: string;
-  border: string;
-  shadow: string;
   
   // Utility functions for component styling
   getBackgroundColor: () => string;
@@ -42,6 +35,7 @@ export interface Theme {
   getPrimaryTextColor: () => string;
   getSecondaryTextColor: () => string;
   getAccentColor: () => string;
+  getCTAColor: () => string;
   getPrimaryButtonStyle: () => {
     backgroundColor: string;
     opacity: number;
@@ -52,47 +46,40 @@ export interface Theme {
   };
 }
 
-const colors: ThemeColors = {
-  platinum: '#CFDBD5',
-  alabaster: '#E8EDDF',
-  saffron: '#F5CB5C',
-  eerieBlack: '#242423',
-  jet: '#333533',
+const xavoColors: XavoColors = {
+  xavoBlue: '#4285F4',
+  growthGreen: '#1DB954',
+  pureWhite: '#FFFFFF',
+  deepNavy: '#011C27',
+  nearlyBlack: '#1A1A1A',
+  mutedAccent: '#4285F466', // Muted blue for night mode
 };
 
 const createTheme = (isDark: boolean): Theme => {
   const semanticColors: ThemeSemanticColors = {
-    primary: colors.saffron,
-    primaryDisabled: colors.saffron + '66', // 40% opacity
-    background: isDark ? colors.eerieBlack : colors.alabaster,
-    cardBackground: colors.platinum,
-    textPrimary: isDark ? colors.alabaster : colors.eerieBlack,
-    textSecondary: isDark ? colors.platinum : colors.jet,
-    accent: colors.saffron,
-    surface: isDark ? colors.jet : '#FFFFFF',
-    border: isDark ? colors.jet : colors.platinum,
-    shadow: isDark ? colors.eerieBlack : colors.jet,
+    primary: xavoColors.xavoBlue,
+    primaryDisabled: xavoColors.xavoBlue + '66', // 40% opacity
+    background: isDark ? xavoColors.deepNavy : xavoColors.pureWhite,
+    cardBackground: isDark ? xavoColors.deepNavy : xavoColors.pureWhite,
+    textPrimary: isDark ? xavoColors.pureWhite : xavoColors.nearlyBlack,
+    textSecondary: isDark ? xavoColors.pureWhite + 'CC' : xavoColors.nearlyBlack + 'AA',
+    accent: isDark ? xavoColors.mutedAccent : xavoColors.xavoBlue,
+    surface: isDark ? xavoColors.deepNavy : xavoColors.pureWhite,
+    border: isDark ? xavoColors.pureWhite + '20' : xavoColors.nearlyBlack + '10',
+    shadow: isDark ? xavoColors.nearlyBlack : xavoColors.nearlyBlack + '20',
+    cta: xavoColors.growthGreen,
   };
 
   return {
-    colors,
+    colors: xavoColors,
     semanticColors,
-    
-    // Backward compatibility properties (mapped to semantic colors)
-    cardBackground: semanticColors.cardBackground,
-    screenBackground: semanticColors.background,
-    textPrimary: semanticColors.textPrimary,
-    textSecondary: semanticColors.textSecondary,
-    accent: semanticColors.accent,
-    surface: semanticColors.surface,
-    border: semanticColors.border,
-    shadow: semanticColors.shadow,
     
     getBackgroundColor: () => semanticColors.background,
     getCardBackgroundColor: () => semanticColors.cardBackground,
     getPrimaryTextColor: () => semanticColors.textPrimary,
     getSecondaryTextColor: () => semanticColors.textSecondary,
     getAccentColor: () => semanticColors.accent,
+    getCTAColor: () => semanticColors.cta,
     getPrimaryButtonStyle: () => ({
       backgroundColor: semanticColors.primary,
       opacity: 1,
@@ -114,6 +101,7 @@ interface ThemeContextType {
   getTextPrimaryClass: () => string;
   getTextSecondaryClass: () => string;
   getPrimaryButtonClass: () => string;
+  getCTAButtonClass: () => string;
 }
 
 const ThemeContext = createContext<ThemeContextType | undefined>(undefined);
@@ -130,7 +118,7 @@ interface ThemeProviderProps {
   children: ReactNode;
 }
 
-const THEME_STORAGE_KEY = '@app_theme_mode';
+const THEME_STORAGE_KEY = '@xavo_theme_mode';
 
 export const ThemeProvider: React.FC<ThemeProviderProps> = ({ children }) => {
   const [isDark, setIsDark] = useState(false);
@@ -163,11 +151,12 @@ export const ThemeProvider: React.FC<ThemeProviderProps> = ({ children }) => {
   const theme = createTheme(isDark);
 
   // Tailwind class helpers for NativeWind
-  const getBackgroundClass = () => isDark ? 'bg-eerie-black' : 'bg-alabaster';
-  const getCardBackgroundClass = () => 'bg-platinum';
-  const getTextPrimaryClass = () => isDark ? 'text-alabaster' : 'text-eerie-black';
-  const getTextSecondaryClass = () => isDark ? 'text-platinum' : 'text-jet';
-  const getPrimaryButtonClass = () => 'bg-saffron rounded-button text-button font-bold';
+  const getBackgroundClass = () => isDark ? 'bg-deep-navy' : 'bg-pure-white';
+  const getCardBackgroundClass = () => isDark ? 'bg-deep-navy' : 'bg-pure-white';
+  const getTextPrimaryClass = () => isDark ? 'text-pure-white' : 'text-nearly-black';
+  const getTextSecondaryClass = () => isDark ? 'text-pure-white/80' : 'text-nearly-black/70';
+  const getPrimaryButtonClass = () => 'bg-xavo-blue rounded-xl';
+  const getCTAButtonClass = () => 'bg-growth-green rounded-xl';
 
   return (
     <ThemeContext.Provider 
@@ -180,6 +169,7 @@ export const ThemeProvider: React.FC<ThemeProviderProps> = ({ children }) => {
         getTextPrimaryClass,
         getTextSecondaryClass,
         getPrimaryButtonClass,
+        getCTAButtonClass,
       }}
     >
       {children}

@@ -81,30 +81,41 @@ export const LoginSignupScreen: React.FC = () => {
   };
 
   const handleGoogleAuth = async () => {
+    console.log('Starting Google OAuth flow...');
     setOauthLoading('google');
     try {
       const { error } = await signInWithOAuth('google');
       if (error) {
+        console.error('Google OAuth error details:', {
+          message: error.message,
+          status: error.status,
+          name: error.name
+        });
+        
         // Handle specific OAuth errors
         let errorMessage = error.message;
-        if (error.message.includes('popup_closed_by_user')) {
+        if (error.message.includes('popup_closed_by_user') || error.message.includes('cancelled')) {
           errorMessage = 'Sign-in was cancelled. Please try again.';
         } else if (error.message.includes('access_denied')) {
           errorMessage = 'Access was denied. Please grant permission to continue.';
-        } else if (error.message.includes('network')) {
+        } else if (error.message.includes('network') || error.message.includes('fetch')) {
           errorMessage = 'Network error. Please check your internet connection and try again.';
+        } else if (error.message.includes('Invalid login credentials')) {
+          errorMessage = 'Google authentication failed. Please check your Google account settings.';
         }
         
-        Alert.alert('Google Sign-In Error', errorMessage);
+        Alert.alert('Google Sign-In Error', `${errorMessage}\n\nDebug info: ${error.message}`);
       } else {
-        // Success - navigation will be handled by auth state change
+        // Success - navigate to Home screen
         console.log('Google OAuth successful');
+        navigation.navigate('Home' as never);
       }
     } catch (error) {
       console.error('Google OAuth error:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
       Alert.alert(
         'Google Sign-In Failed', 
-        'Unable to sign in with Google. Please try again or use email/password.'
+        `Unable to sign in with Google. Please try again or use email/password.\n\nError: ${errorMessage}`
       );
     } finally {
       setOauthLoading(null);
@@ -112,30 +123,41 @@ export const LoginSignupScreen: React.FC = () => {
   };
 
   const handleLinkedInAuth = async () => {
+    console.log('Starting LinkedIn OAuth flow...');
     setOauthLoading('linkedin');
     try {
       const { error } = await signInWithOAuth('linkedin');
       if (error) {
+        console.error('LinkedIn OAuth error details:', {
+          message: error.message,
+          status: error.status,
+          name: error.name
+        });
+        
         // Handle specific OAuth errors
         let errorMessage = error.message;
-        if (error.message.includes('popup_closed_by_user')) {
+        if (error.message.includes('popup_closed_by_user') || error.message.includes('cancelled')) {
           errorMessage = 'Sign-in was cancelled. Please try again.';
         } else if (error.message.includes('access_denied')) {
           errorMessage = 'Access was denied. Please grant permission to continue.';
-        } else if (error.message.includes('network')) {
+        } else if (error.message.includes('network') || error.message.includes('fetch')) {
           errorMessage = 'Network error. Please check your internet connection and try again.';
+        } else if (error.message.includes('Invalid login credentials')) {
+          errorMessage = 'LinkedIn authentication failed. Please check your LinkedIn account settings.';
         }
         
-        Alert.alert('LinkedIn Sign-In Error', errorMessage);
+        Alert.alert('LinkedIn Sign-In Error', `${errorMessage}\n\nDebug info: ${error.message}`);
       } else {
-        // Success - navigation will be handled by auth state change
+        // Success - navigate to Home screen
         console.log('LinkedIn OAuth successful');
+        navigation.navigate('Home' as never);
       }
     } catch (error) {
       console.error('LinkedIn OAuth error:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
       Alert.alert(
         'LinkedIn Sign-In Failed', 
-        'Unable to sign in with LinkedIn. Please try again or use email/password.'
+        `Unable to sign in with LinkedIn. Please try again or use email/password.\n\nError: ${errorMessage}`
       );
     } finally {
       setOauthLoading(null);

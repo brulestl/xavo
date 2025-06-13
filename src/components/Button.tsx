@@ -1,10 +1,10 @@
 import React from 'react';
-import { TouchableOpacity, Text, StyleSheet, ViewStyle, TextStyle, TouchableOpacityProps } from 'react-native';
+import { TouchableOpacity, Text, StyleSheet, ViewStyle, TextStyle, TouchableOpacityProps, Animated } from 'react-native';
 import { useTheme } from '../providers/ThemeProvider';
 
 interface ButtonProps extends TouchableOpacityProps {
   title: string;
-  variant?: 'primary' | 'secondary' | 'outline';
+  variant?: 'primary' | 'secondary' | 'outline' | 'cta';
   size?: 'small' | 'medium' | 'large';
   fullWidth?: boolean;
 }
@@ -22,33 +22,41 @@ export const Button: React.FC<ButtonProps> = ({
 
   const getButtonStyle = (): ViewStyle => {
     const baseStyle: ViewStyle = {
-      borderRadius: 9999, // rounded-full equivalent
+      borderRadius: 12, // Xavo's 12px radius
       alignItems: 'center',
       justifyContent: 'center',
       flexDirection: 'row',
+      shadowColor: theme.semanticColors.shadow,
+      shadowOffset: { width: 0, height: 2 },
+      shadowOpacity: 0.1,
+      shadowRadius: 4,
+      elevation: 2,
     };
 
     // Size variations
     const sizeStyles = {
-      small: { paddingVertical: 8, paddingHorizontal: 16 },
-      medium: { paddingVertical: 12, paddingHorizontal: 24 },
-      large: { paddingVertical: 16, paddingHorizontal: 32 },
+      small: { paddingVertical: 10, paddingHorizontal: 20, minHeight: 40 },
+      medium: { paddingVertical: 14, paddingHorizontal: 28, minHeight: 48 },
+      large: { paddingVertical: 18, paddingHorizontal: 36, minHeight: 56 },
     };
 
     // Variant styles
     const variantStyles = {
       primary: {
-        backgroundColor: disabled ? `${theme.accent}66` : theme.accent,
+        backgroundColor: disabled ? theme.semanticColors.primaryDisabled : theme.semanticColors.primary,
       },
       secondary: {
-        backgroundColor: theme.surface,
+        backgroundColor: theme.semanticColors.surface,
         borderWidth: 1,
-        borderColor: theme.border,
+        borderColor: theme.semanticColors.border,
       },
       outline: {
         backgroundColor: 'transparent',
         borderWidth: 1,
-        borderColor: theme.accent,
+        borderColor: theme.semanticColors.primary,
+      },
+      cta: {
+        backgroundColor: disabled ? theme.semanticColors.cta + '66' : theme.semanticColors.cta,
       },
     };
 
@@ -63,23 +71,34 @@ export const Button: React.FC<ButtonProps> = ({
   const getTextStyle = (): TextStyle => {
     const baseStyle: TextStyle = {
       fontWeight: '600',
-      fontSize: 16,
+      textAlign: 'center',
+    };
+
+    // Size-based font sizes
+    const sizeTextStyles = {
+      small: { fontSize: 14 },
+      medium: { fontSize: 16 },
+      large: { fontSize: 18 },
     };
 
     const variantTextStyles = {
       primary: {
-        color: theme.colors.eerieBlack,
+        color: theme.colors.pureWhite,
       },
       secondary: {
-        color: theme.textPrimary,
+        color: theme.semanticColors.textPrimary,
       },
       outline: {
-        color: theme.accent,
+        color: theme.semanticColors.primary,
+      },
+      cta: {
+        color: theme.colors.pureWhite,
       },
     };
 
     return {
       ...baseStyle,
+      ...sizeTextStyles[size],
       ...variantTextStyles[variant],
       ...(disabled && { opacity: 0.6 }),
     };
@@ -89,6 +108,7 @@ export const Button: React.FC<ButtonProps> = ({
     <TouchableOpacity
       style={[getButtonStyle(), style]}
       disabled={disabled}
+      activeOpacity={0.8}
       {...props}
     >
       <Text style={getTextStyle()}>{title}</Text>

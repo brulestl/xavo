@@ -1,67 +1,223 @@
-import React from 'react';
-import { View, Text, StyleSheet } from 'react-native';
+import React, { useEffect, useRef, useState } from 'react';
+import { View, Text, StyleSheet, Animated, Alert } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
-import { Container } from '../components/Container';
 import { Button } from '../components/Button';
 import { useTheme } from '../providers/ThemeProvider';
-
-const FIRST_QUESTIONS = `Ready to transform your relationships?
-
-Whether you're navigating workplace dynamics, strengthening personal connections, or developing leadership skills, our AI coach is here to guide you through every conversation that matters.
-
-Get personalized advice, practice difficult conversations, and build the confidence to handle any relationship challenge with grace and authenticity.`;
+import { useAuth } from '../providers/AuthProvider';
 
 export const WelcomeScreen: React.FC = () => {
   const navigation = useNavigation();
   const { theme } = useTheme();
+  const { signInWithOAuth } = useAuth();
+  const slideAnim = useRef(new Animated.Value(100)).current;
+  const fadeAnim = useRef(new Animated.Value(0)).current;
+  const [oauthLoading, setOauthLoading] = useState<'google' | 'linkedin' | null>(null);
 
-  const handleGetStarted = () => {
+  useEffect(() => {
+    // Animate buttons rising from bottom with fade in
+    Animated.parallel([
+      Animated.timing(slideAnim, {
+        toValue: 0,
+        duration: 800,
+        useNativeDriver: true,
+      }),
+      Animated.timing(fadeAnim, {
+        toValue: 1,
+        duration: 800,
+        useNativeDriver: true,
+      }),
+    ]).start();
+  }, [slideAnim, fadeAnim]);
+
+  const handleLogin = () => {
     navigation.navigate('AuthChoice' as never);
   };
 
-  return (
-    <Container variant="screen">
-      <View style={styles.container}>
-        <View style={styles.content}>
-          <Text style={[styles.questionsText, { color: theme.textPrimary }]}>
-            {FIRST_QUESTIONS}
-          </Text>
-        </View>
+  const handleSignUp = () => {
+    navigation.navigate('AuthChoice' as never);
+  };
+
+  const handleGoogleAuth = async () => {
+    console.log('Starting Google OAuth from Welcome screen...');
+    setOauthLoading('google');
+    
+    try {
+      const { error } = await signInWithOAuth('google');
+      if (error) {
+        console.error('Google OAuth error details:', {
+          message: error.message,
+          status: error.status,
+          name: error.name
+        });
         
-        <View style={styles.buttonContainer}>
-          <Button
-            title="Get Started"
-            onPress={handleGetStarted}
-            size="large"
-            fullWidth
-          />
-        </View>
+        // Handle specific OAuth errors
+        let errorMessage = error.message;
+        if (error.message.includes('popup_closed_by_user') || error.message.includes('cancelled')) {
+          errorMessage = 'Sign-in was cancelled. Please try again.';
+        } else if (error.message.includes('access_denied')) {
+          errorMessage = 'Access was denied. Please grant permission to continue.';
+        } else if (error.message.includes('network') || error.message.includes('fetch')) {
+          errorMessage = 'Network error. Please check your internet connection and try again.';
+        } else if (error.message.includes('Invalid login credentials')) {
+          errorMessage = 'Google authentication failed. Please check your Google account settings.';
+        }
+        
+        Alert.alert('Google Sign-In Error', `${errorMessage}\n\nDebug info: ${error.message}`);
+      } else {
+        // Success - navigate to Home screen
+        console.log('Google OAuth successful from Welcome screen');
+        navigation.navigate('Home' as never);
+      }
+    } catch (error) {
+      console.error('Google OAuth error:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      Alert.alert(
+        'Google Sign-In Failed', 
+        `Unable to sign in with Google. Please try again or use the login form.\n\nError: ${errorMessage}`
+      );
+    } finally {
+      setOauthLoading(null);
+    }
+  };
+
+  const handleLinkedInAuth = async () => {
+    console.log('Starting LinkedIn OAuth from Welcome screen...');
+    setOauthLoading('linkedin');
+    
+    try {
+      const { error } = await signInWithOAuth('linkedin');
+      if (error) {
+        console.error('LinkedIn OAuth error details:', {
+          message: error.message,
+          status: error.status,
+          name: error.name
+        });
+        
+        // Handle specific OAuth errors
+        let errorMessage = error.message;
+        if (error.message.includes('popup_closed_by_user') || error.message.includes('cancelled')) {
+          errorMessage = 'Sign-in was cancelled. Please try again.';
+        } else if (error.message.includes('access_denied')) {
+          errorMessage = 'Access was denied. Please grant permission to continue.';
+        } else if (error.message.includes('network') || error.message.includes('fetch')) {
+          errorMessage = 'Network error. Please check your internet connection and try again.';
+        } else if (error.message.includes('Invalid login credentials')) {
+          errorMessage = 'LinkedIn authentication failed. Please check your LinkedIn account settings.';
+        }
+        
+        Alert.alert('LinkedIn Sign-In Error', `${errorMessage}\n\nDebug info: ${error.message}`);
+      } else {
+        // Success - navigate to Home screen
+        console.log('LinkedIn OAuth successful from Welcome screen');
+        navigation.navigate('Home' as never);
+      }
+    } catch (error) {
+      console.error('LinkedIn OAuth error:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      Alert.alert(
+        'LinkedIn Sign-In Failed', 
+        `Unable to sign in with LinkedIn. Please try again or use the login form.\n\nError: ${errorMessage}`
+      );
+    } finally {
+      setOauthLoading(null);
+    }
+  };
+
+  const isButtonDisabled = oauthLoading !== null;
+
+  return (
+    <View style={[styles.container, { backgroundColor: theme.semanticColors.background }]}>
+      {/* Logo Area */}
+      <View style={styles.logoContainer}>
+        <Text style={[styles.logoText, { color: theme.semanticColors.textPrimary }]}>
+          Xavo
+        </Text>
+        <View style={[styles.logoUnderline, { backgroundColor: theme.semanticColors.primary }]} />
       </View>
-    </Container>
+
+      {/* Buttons Container */}
+      <Animated.View
+        style={[
+          styles.buttonsContainer,
+          {
+            transform: [{ translateY: slideAnim }],
+            opacity: fadeAnim,
+          },
+        ]}
+      >
+        <Button
+          title="Log in"
+          onPress={handleLogin}
+          variant="primary"
+          size="large"
+          fullWidth
+          disabled={isButtonDisabled}
+          style={[styles.button, { opacity: isButtonDisabled ? 0.6 : 1 }]}
+        />
+        
+        <Button
+          title="Sign up"
+          onPress={handleSignUp}
+          variant="cta"
+          size="large"
+          fullWidth
+          disabled={isButtonDisabled}
+          style={[styles.button, { opacity: isButtonDisabled ? 0.6 : 1 }]}
+        />
+        
+        <Button
+          title={oauthLoading === 'google' ? 'Signing in with Google...' : 'Continue with Google'}
+          onPress={handleGoogleAuth}
+          variant="outline"
+          size="large"
+          fullWidth
+          disabled={isButtonDisabled}
+          style={[styles.button, { opacity: isButtonDisabled ? 0.6 : 1 }]}
+        />
+        
+        <Button
+          title={oauthLoading === 'linkedin' ? 'Signing in with LinkedIn...' : 'Continue with LinkedIn'}
+          onPress={handleLinkedInAuth}
+          variant="outline"
+          size="large"
+          fullWidth
+          disabled={isButtonDisabled}
+          style={[styles.button, { opacity: isButtonDisabled ? 0.6 : 1 }]}
+        />
+      </Animated.View>
+    </View>
   );
 };
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    justifyContent: 'center',
+    justifyContent: 'space-between',
     alignItems: 'center',
+    paddingHorizontal: 32,
+    paddingVertical: 60,
   },
-  content: {
+  logoContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    paddingHorizontal: 32,
   },
-  questionsText: {
-    fontSize: 18,
-    lineHeight: 26,
-    textAlign: 'center',
-    fontWeight: '400',
+  logoText: {
+    fontSize: 48,
+    fontWeight: '300',
+    letterSpacing: 2,
+    marginBottom: 8,
   },
-  buttonContainer: {
+  logoUnderline: {
+    width: 60,
+    height: 2,
+    borderRadius: 1,
+  },
+  buttonsContainer: {
     width: '100%',
-    paddingHorizontal: 32,
-    paddingBottom: 32,
+    paddingBottom: 20,
+  },
+  button: {
+    marginBottom: 16,
   },
 }); 

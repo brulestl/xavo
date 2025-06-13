@@ -4,50 +4,75 @@ module.exports = {
   theme: {
     extend: {
       colors: {
-        // Theme tokens
+        // Xavo Brand Colors
+        'xavo-blue': '#4285F4',
+        'growth-green': '#1DB954',
+        'pure-white': '#FFFFFF',
+        'deep-navy': '#011C27',
+        'nearly-black': '#1A1A1A',
+        'muted-accent': '#4285F466',
+        
+        // Legacy colors (for backward compatibility)
         platinum: '#CFDBD5',
         alabaster: '#E8EDDF', 
         saffron: '#F5CB5C',
         'eerie-black': '#242423',
         jet: '#333533',
         
-        // Semantic mappings
+        // Semantic mappings for Xavo
         primary: {
-          DEFAULT: '#F5CB5C', // saffron
-          disabled: '#F5CB5C66', // 40% opacity
+          DEFAULT: '#4285F4', // xavo-blue
+          disabled: '#4285F466', // 40% opacity
+        },
+        cta: {
+          DEFAULT: '#1DB954', // growth-green
+          disabled: '#1DB95466', // 40% opacity
         },
         background: {
-          light: '#E8EDDF', // alabaster for light mode
-          dark: '#242423', // eerieBlack for dark mode
+          light: '#FFFFFF', // pure-white for light mode
+          dark: '#011C27', // deep-navy for dark mode
         },
         card: {
-          light: '#CFDBD5', // platinum for light mode
-          dark: '#CFDBD5', // platinum for dark mode
+          light: '#FFFFFF', // pure-white for light mode
+          dark: '#011C27', // deep-navy for dark mode
         },
         text: {
           primary: {
-            light: '#242423', // eerieBlack for light mode
-            dark: '#E8EDDF', // alabaster for dark mode
+            light: '#1A1A1A', // nearly-black for light mode
+            dark: '#FFFFFF', // pure-white for dark mode
           },
           secondary: {
-            light: '#333533', // jet for light mode  
-            dark: '#CFDBD5', // platinum for dark mode
+            light: '#1A1A1AAA', // nearly-black with opacity for light mode  
+            dark: '#FFFFFFCC', // pure-white with opacity for dark mode
           }
         },
         surface: {
           light: '#FFFFFF',
-          dark: '#333533', // jet
+          dark: '#011C27', // deep-navy
         },
         border: {
-          light: '#CFDBD5', // platinum
-          dark: '#333533', // jet
+          light: '#1A1A1A10', // nearly-black with low opacity
+          dark: '#FFFFFF20', // pure-white with low opacity
         }
       },
       borderRadius: {
-        'button': '999px', // rounded-full for primary buttons
+        'xavo': '12px', // Xavo's 12px radius
+        'button': '999px', // rounded-full for pill buttons
       },
       fontSize: {
-        'button': ['16px', { fontWeight: 'bold' }], // 16px bold for buttons
+        'button': ['16px', { fontWeight: '600' }], // 16px semibold for buttons
+      },
+      fontWeight: {
+        'slim': '300', // For Xavo logo
+      },
+      animation: {
+        'fade-slide': 'fadeSlide 250ms ease-in-out',
+      },
+      keyframes: {
+        fadeSlide: {
+          '0%': { opacity: '0', transform: 'translateY(10px)' },
+          '100%': { opacity: '1', transform: 'translateY(0)' },
+        }
       }
     },
   },

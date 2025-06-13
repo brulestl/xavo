@@ -1,0 +1,73 @@
+{
+  "common": {
+    "back": "Back",
+    "close": "Close",
+    "save": "Save",
+    "cancel": "Cancel",
+    "loading": "Loading...",
+    "comingSoon": "Coming Soon"
+  },
+  "drawer": {
+    "yourPastConversations": "Your past conversations",
+    "noConversationsYet": "No conversations yet",
+    "newSession": "New Session",
+    "searchChats": "Search chats..."
+  },
+  "profile": {
+    "settings": "Settings",
+    "account": "Account",
+    "personalization": "Personalization",
+    "displayName": "Display Name",
+    "email": "Email",
+    "plan": "Plan",
+    "editProfileAnswers": "Edit profile answers",
+    "subscriptions": "Subscriptions",
+    "signOut": "Sign Out",
+    "signOutConfirmTitle": "Sign Out",
+    "signOutConfirmMessage": "Are you sure you want to sign out?",
+    "saving": "Saving...",
+    "displayNameCannotBeEmpty": "Display name cannot be empty",
+    "failedToUpdateDisplayName": "Failed to update display name"
+  },
+  "tiers": {
+    "guest": "Guest",
+    "essential": "Essential",
+    "power": "Power"
+  },
+  "subscriptions": {
+    "chooseYourPlan": "Choose Your Plan",
+    "unlockPotential": "Unlock your full potential with our AI coaching plans",
+    "freePlan": "Free Plan",
+    "essential": "Essential",
+    "powerStrategist": "Power Strategist",
+    "mostPopular": "Most Popular",
+    "currentPlan": "Current Plan",
+    "upgradeToEssential": "Start Free Trial",
+    "upgradeToPower": "Upgrade to Power",
+    "downgrade": "Downgrade",
+    "downgradeTo": "Downgrade to",
+    "comingSoonTitle": "Coming Soon",
+    "planUpgradeMessage": "{action} to {plan} plan will be available soon!",
+    "secureEncryption": "All plans include secure data encryption and can be cancelled anytime.",
+    "features": {
+      "questionsPerDay": "{count} questions per day",
+      "unlimitedQuestions": "Unlimited questions",
+      "basicAICoaching": "Basic AI coaching",
+      "fullAICoaching": "Full AI coaching access",
+      "advancedAICoaching": "Advanced AI coaching",
+      "limitedHistory": "Limited conversation history",
+      "completeHistory": "Complete conversation history",
+      "fullHistory": "Full conversation history",
+      "personalityAssessment": "Personality assessment",
+      "advancedInsights": "Advanced personality insights",
+      "emailSupport": "Email support",
+      "prioritySupport": "Priority support",
+      "priorityEmailSupport": "Priority email support",
+      "exclusiveContent": "Exclusive coaching content"
+    }
+  },
+  "onboardingEdit": {
+    "editProfile": "Edit Profile",
+    "comingSoonMessage": "Profile editing functionality will be available soon."
+  }
+} 
