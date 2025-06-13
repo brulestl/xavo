@@ -3,17 +3,18 @@ import { View, Text, StyleSheet, TextInput, TouchableOpacity, Alert, KeyboardAvo
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useAuth } from '../contexts/AuthContext';
+import { useAuth } from '../src/providers/AuthProvider';
 
 export default function LoginSignupScreen() {
   const navigation = useNavigation();
   const insets = useSafeAreaInsets();
-  const { login, signup } = useAuth();
+  const { login, signup, signInWithOAuth } = useAuth();
   
   const [isLogin, setIsLogin] = useState(true);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
+  const [oauthLoading, setOauthLoading] = useState<'google' | 'linkedin' | null>(null);
 
   const handleSubmit = async () => {
     if (!email.trim() || !password.trim()) {
@@ -28,7 +29,7 @@ export default function LoginSignupScreen() {
       } else {
         await signup(email, password);
       }
-      navigation.navigate('Main' as never);
+      navigation.navigate('Home' as never);
     } catch (error) {
       Alert.alert('Error', 'Authentication failed. Please try again.');
     } finally {
@@ -36,15 +37,93 @@ export default function LoginSignupScreen() {
     }
   };
 
-  const handleGoogleAuth = () => {
-    // Mock Google authentication
-    Alert.alert('Coming Soon', 'Google authentication will be available soon!');
+  const handleGoogleAuth = async () => {
+    console.log('Starting Google OAuth from LoginSignup screen...');
+    setOauthLoading('google');
+    
+    try {
+      const { error } = await signInWithOAuth('google');
+      if (error) {
+        console.error('Google OAuth error details:', {
+          message: error.message,
+          status: error.status,
+          name: error.name
+        });
+        
+        // Handle specific OAuth errors
+        let errorMessage = error.message;
+        if (error.message.includes('popup_closed_by_user') || error.message.includes('cancelled')) {
+          errorMessage = 'Sign-in was cancelled. Please try again.';
+        } else if (error.message.includes('access_denied')) {
+          errorMessage = 'Access was denied. Please grant permission to continue.';
+        } else if (error.message.includes('network') || error.message.includes('fetch')) {
+          errorMessage = 'Network error. Please check your internet connection and try again.';
+        } else if (error.message.includes('Invalid login credentials')) {
+          errorMessage = 'Google authentication failed. Please check your Google account settings.';
+        }
+        
+        Alert.alert('Google Sign-In Error', `${errorMessage}\n\nDebug info: ${error.message}`);
+      } else {
+        // Success - navigate to Home screen
+        console.log('Google OAuth successful from LoginSignup screen');
+        navigation.navigate('Home' as never);
+      }
+    } catch (error) {
+      console.error('Google OAuth error:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      Alert.alert(
+        'Google Sign-In Failed', 
+        `Unable to sign in with Google. Please try again or use email/password.\n\nError: ${errorMessage}`
+      );
+    } finally {
+      setOauthLoading(null);
+    }
   };
 
-  const handleLinkedInAuth = () => {
-    // Mock LinkedIn authentication  
-    Alert.alert('Coming Soon', 'LinkedIn authentication will be available soon!');
+  const handleLinkedInAuth = async () => {
+    console.log('Starting LinkedIn OAuth from LoginSignup screen...');
+    setOauthLoading('linkedin');
+    
+    try {
+      const { error } = await signInWithOAuth('linkedin');
+      if (error) {
+        console.error('LinkedIn OAuth error details:', {
+          message: error.message,
+          status: error.status,
+          name: error.name
+        });
+        
+        // Handle specific OAuth errors
+        let errorMessage = error.message;
+        if (error.message.includes('popup_closed_by_user') || error.message.includes('cancelled')) {
+          errorMessage = 'Sign-in was cancelled. Please try again.';
+        } else if (error.message.includes('access_denied')) {
+          errorMessage = 'Access was denied. Please grant permission to continue.';
+        } else if (error.message.includes('network') || error.message.includes('fetch')) {
+          errorMessage = 'Network error. Please check your internet connection and try again.';
+        } else if (error.message.includes('Invalid login credentials')) {
+          errorMessage = 'LinkedIn authentication failed. Please check your LinkedIn account settings.';
+        }
+        
+        Alert.alert('LinkedIn Sign-In Error', `${errorMessage}\n\nDebug info: ${error.message}`);
+      } else {
+        // Success - navigate to Home screen
+        console.log('LinkedIn OAuth successful from LoginSignup screen');
+        navigation.navigate('Home' as never);
+      }
+    } catch (error) {
+      console.error('LinkedIn OAuth error:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      Alert.alert(
+        'LinkedIn Sign-In Failed', 
+        `Unable to sign in with LinkedIn. Please try again or use email/password.\n\nError: ${errorMessage}`
+      );
+    } finally {
+      setOauthLoading(null);
+    }
   };
+
+  const isFormDisabled = loading || oauthLoading !== null;
 
   return (
     <KeyboardAvoidingView 
@@ -93,9 +172,9 @@ export default function LoginSignupScreen() {
           </View>
 
           <TouchableOpacity 
-            style={[styles.primaryButton, loading && styles.buttonDisabled]}
+            style={[styles.primaryButton, isFormDisabled && styles.buttonDisabled]}
             onPress={handleSubmit}
-            disabled={loading}
+            disabled={isFormDisabled}
           >
             <Text style={styles.primaryButtonText}>
               {loading ? 'Please wait...' : (isLogin ? 'Sign In' : 'Sign Up')}
@@ -108,14 +187,26 @@ export default function LoginSignupScreen() {
             <View style={styles.dividerLine} />
           </View>
 
-          <TouchableOpacity style={styles.socialButton} onPress={handleGoogleAuth}>
+          <TouchableOpacity 
+            style={[styles.socialButton, { opacity: isFormDisabled ? 0.6 : 1 }]} 
+            onPress={handleGoogleAuth}
+            disabled={isFormDisabled}
+          >
             <Ionicons name="logo-google" size={20} color="#333" />
-            <Text style={styles.socialButtonText}>Continue with Google</Text>
+            <Text style={styles.socialButtonText}>
+              {oauthLoading === 'google' ? 'Signing in with Google...' : 'Continue with Google'}
+            </Text>
           </TouchableOpacity>
 
-          <TouchableOpacity style={styles.socialButton} onPress={handleLinkedInAuth}>
+          <TouchableOpacity 
+            style={[styles.socialButton, { opacity: isFormDisabled ? 0.6 : 1 }]} 
+            onPress={handleLinkedInAuth}
+            disabled={isFormDisabled}
+          >
             <Ionicons name="logo-linkedin" size={20} color="#333" />
-            <Text style={styles.socialButtonText}>Continue with LinkedIn</Text>
+            <Text style={styles.socialButtonText}>
+              {oauthLoading === 'linkedin' ? 'Signing in with LinkedIn...' : 'Continue with LinkedIn'}
+            </Text>
           </TouchableOpacity>
         </View>
 

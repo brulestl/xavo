@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { OpenAIEmbeddingsService } from './openai-embeddings.service';
 import { IEmbeddingsService, EmbeddingProvider } from './embeddings.interface';
+import { EmbeddingsWorkerService } from './embeddings-worker.service';
 
 // Factory for creating embeddings service based on configuration
 export const EMBEDDINGS_SERVICE = 'EMBEDDINGS_SERVICE';
@@ -33,7 +34,8 @@ const embeddingsServiceFactory = {
   providers: [
     embeddingsServiceFactory,
     OpenAIEmbeddingsService,
+    EmbeddingsWorkerService,
   ],
-  exports: [EMBEDDINGS_SERVICE],
+  exports: [EMBEDDINGS_SERVICE, EmbeddingsWorkerService],
 })
 export class EmbeddingsModule {} 

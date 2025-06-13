@@ -1,25 +1,44 @@
-import React from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  SafeAreaView,
-  ScrollView,
-  TouchableOpacity,
-  Alert,
-} from 'react-native';
-import { useNavigation } from '@react-navigation/native';
+import React, { useState } from 'react';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, TextInput } from 'react-native';
 import { useTheme } from '../providers/ThemeProvider';
-import { useAuth } from '../providers/AuthProvider';
-import { ListItem } from '../components/ListItem';
-import { Ionicons } from '@expo/vector-icons';
+import { Button } from '../components/Button';
+import { Drawer } from '../components/Drawer';
 
-export const SettingsScreen: React.FC = () => {
-  const navigation = useNavigation();
+interface SettingsScreenProps {
+  isVisible: boolean;
+  onClose: () => void;
+}
+
+export const SettingsScreen: React.FC<SettingsScreenProps> = ({ isVisible, onClose }) => {
   const { theme, isDark, toggleTheme } = useTheme();
-  const { user, tier, logout } = useAuth();
+  const [displayName, setDisplayName] = useState('John Doe'); // TODO: Get from user context
+  const [email] = useState('john.doe@example.com'); // TODO: Get from auth context
+  const [hasChanges, setHasChanges] = useState(false);
 
-  const handleLogout = () => {
+  const handleDisplayNameChange = (text: string) => {
+    setDisplayName(text);
+    setHasChanges(true);
+  };
+
+  const handleSave = () => {
+    // TODO: Save changes to backend
+    console.log('Saving changes:', { displayName });
+    setHasChanges(false);
+    Alert.alert('Success', 'Settings saved successfully');
+  };
+
+  const handleDiscard = () => {
+    // TODO: Reset to original values
+    setDisplayName('John Doe');
+    setHasChanges(false);
+  };
+
+  const handleUpgrade = () => {
+    // TODO: Navigate to subscription screen
+    console.log('Navigate to subscription');
+  };
+
+  const handleSignOut = () => {
     Alert.alert(
       'Sign Out',
       'Are you sure you want to sign out?',
@@ -29,145 +48,265 @@ export const SettingsScreen: React.FC = () => {
           text: 'Sign Out', 
           style: 'destructive',
           onPress: () => {
-            logout();
-            navigation.navigate('Welcome' as never);
+            // TODO: Implement sign out
+            console.log('Sign out');
+            onClose();
           }
         },
       ]
     );
   };
 
-  const handleManageSubscription = () => {
-    Alert.alert(
-      'Manage Subscription',
-      `Current tier: ${tier}\n\nSubscription management coming soon!`,
-      [{ text: 'OK' }]
-    );
-  };
-
-  const handlePersonalization = () => {
-    Alert.alert(
-      'Personalization',
-      'Personalization settings coming soon!',
-      [{ text: 'OK' }]
-    );
-  };
-
-  const getTierDisplayName = () => {
-    switch (tier) {
-      case 'guest': return 'Guest Mode';
-      case 'essential': return 'Essential Coach';
-      case 'power': return 'Power Strategist';
-      default: return 'Guest Mode';
-    }
-  };
-
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor: theme.screenBackground }]}>
-      {/* Header */}
-      <View style={[styles.header, { backgroundColor: theme.surface, borderBottomColor: theme.border }]}>
-        <TouchableOpacity
-          style={styles.backButton}
-          onPress={() => navigation.goBack()}
-        >
-          <Ionicons name="arrow-back" size={24} color={theme.textPrimary} />
-        </TouchableOpacity>
-        
-        <Text style={[styles.headerTitle, { color: theme.textPrimary }]}>
-          Settings
-        </Text>
-        
-        <View style={styles.backButton} />
-      </View>
-
-      <ScrollView style={styles.content}>
-        {/* User Info Section */}
+    <Drawer isVisible={isVisible} onClose={onClose} title="Settings">
+      <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
+        {/* Profile Section */}
         <View style={styles.section}>
-          <ListItem
-            title={user?.email || 'Guest User'}
-            subtitle="Email"
-            leftIcon="person-outline"
-            rightIcon={undefined}
-          />
+          <Text style={[styles.sectionTitle, { color: theme.semanticColors.textPrimary }]}>
+            Profile
+          </Text>
           
-          <ListItem
-            title="Phone Number"
-            subtitle="Not set"
-            leftIcon="call-outline"
-            onPress={() => Alert.alert('Phone', 'Phone number management coming soon!')}
-          />
-          
-          <ListItem
-            title={getTierDisplayName()}
-            subtitle="Current subscription"
-            leftIcon="star-outline"
-            onPress={handleManageSubscription}
-          />
+          <View style={styles.inputContainer}>
+            <Text style={[styles.inputLabel, { color: theme.semanticColors.textSecondary }]}>
+              Display Name
+            </Text>
+            <TextInput
+              style={[
+                styles.textInput,
+                {
+                  backgroundColor: theme.semanticColors.surface,
+                  borderColor: theme.semanticColors.border,
+                  color: theme.semanticColors.textPrimary,
+                },
+              ]}
+              value={displayName}
+              onChangeText={handleDisplayNameChange}
+              placeholder="Enter your display name"
+              placeholderTextColor={theme.semanticColors.textSecondary}
+            />
+          </View>
+
+          <View style={styles.inputContainer}>
+            <Text style={[styles.inputLabel, { color: theme.semanticColors.textSecondary }]}>
+              Email
+            </Text>
+            <TextInput
+              style={[
+                styles.textInput,
+                styles.disabledInput,
+                {
+                  backgroundColor: theme.semanticColors.border + '20',
+                  borderColor: theme.semanticColors.border,
+                  color: theme.semanticColors.textSecondary,
+                },
+              ]}
+              value={email}
+              editable={false}
+              placeholder="Email address"
+              placeholderTextColor={theme.semanticColors.textSecondary}
+            />
+          </View>
         </View>
 
-        {/* Settings Section */}
+        {/* Subscription Section */}
         <View style={styles.section}>
-          <ListItem
-            title="Manage Subscription"
-            leftIcon="card-outline"
-            onPress={handleManageSubscription}
-          />
+          <Text style={[styles.sectionTitle, { color: theme.semanticColors.textPrimary }]}>
+            Subscription
+          </Text>
           
-          <ListItem
-            title="Personalization"
-            leftIcon="options-outline"
-            onPress={handlePersonalization}
-          />
-          
-          <ListItem
-            title={`Theme: ${isDark ? 'Dark' : 'Light'}`}
-            leftIcon="moon-outline"
-            onPress={toggleTheme}
-          />
+          <View style={styles.tierContainer}>
+            <View style={styles.tierInfo}>
+              <Text style={[styles.tierTitle, { color: theme.semanticColors.textPrimary }]}>
+                Free Plan
+              </Text>
+              <Text style={[styles.tierDescription, { color: theme.semanticColors.textSecondary }]}>
+                3 conversations per day
+              </Text>
+            </View>
+            <Button
+              title="Upgrade"
+              variant="cta"
+              size="small"
+              onPress={handleUpgrade}
+            />
+          </View>
         </View>
 
-        {/* Account Section */}
+        {/* Preferences Section */}
         <View style={styles.section}>
-          <ListItem
+          <Text style={[styles.sectionTitle, { color: theme.semanticColors.textPrimary }]}>
+            Preferences
+          </Text>
+          
+          <TouchableOpacity style={styles.preferenceItem} onPress={toggleTheme}>
+            <Text style={[styles.preferenceLabel, { color: theme.semanticColors.textPrimary }]}>
+              Dark Mode
+            </Text>
+            <View style={[
+              styles.toggle,
+              {
+                backgroundColor: isDark ? theme.semanticColors.primary : theme.semanticColors.border,
+              },
+            ]}>
+              <View style={[
+                styles.toggleThumb,
+                {
+                  backgroundColor: theme.semanticColors.surface,
+                  transform: [{ translateX: isDark ? 20 : 2 }],
+                },
+              ]} />
+            </View>
+          </TouchableOpacity>
+        </View>
+
+        {/* Personalization Section */}
+        <View style={styles.section}>
+          <Text style={[styles.sectionTitle, { color: theme.semanticColors.textPrimary }]}>
+            Personalization
+          </Text>
+          
+          <TouchableOpacity style={styles.menuItem}>
+            <Text style={[styles.menuItemText, { color: theme.semanticColors.textPrimary }]}>
+              Edit Profile & Preferences
+            </Text>
+            <Text style={[styles.menuItemArrow, { color: theme.semanticColors.textSecondary }]}>
+              →
+            </Text>
+          </TouchableOpacity>
+          
+          <TouchableOpacity style={styles.menuItem}>
+            <Text style={[styles.menuItemText, { color: theme.semanticColors.textPrimary }]}>
+              Communication Style
+            </Text>
+            <Text style={[styles.menuItemArrow, { color: theme.semanticColors.textSecondary }]}>
+              →
+            </Text>
+          </TouchableOpacity>
+        </View>
+
+        {/* Actions Section */}
+        <View style={styles.section}>
+          {hasChanges && (
+            <View style={styles.actionsContainer}>
+              <Button
+                title="Discard"
+                variant="outline"
+                onPress={handleDiscard}
+                style={styles.actionButton}
+              />
+              <Button
+                title="Save"
+                variant="cta"
+                onPress={handleSave}
+                style={[styles.actionButton, { flex: 1, marginLeft: 12 }]}
+              />
+            </View>
+          )}
+          
+          <Button
             title="Sign Out"
-            leftIcon="log-out-outline"
-            rightIcon={undefined}
-            onPress={handleLogout}
+            variant="outline"
+            onPress={handleSignOut}
+            style={[styles.signOutButton, { borderColor: '#FF4444' }]}
           />
         </View>
       </ScrollView>
-    </SafeAreaView>
+    </Drawer>
   );
 };
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-  },
-  backButton: {
-    width: 40,
-    height: 40,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  headerTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    textAlign: 'center',
-    flex: 1,
-  },
   content: {
     flex: 1,
   },
   section: {
-    marginTop: 24,
+    marginBottom: 32,
+  },
+  sectionTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    marginBottom: 16,
+  },
+  inputContainer: {
+    marginBottom: 16,
+  },
+  inputLabel: {
+    fontSize: 14,
+    fontWeight: '500',
+    marginBottom: 8,
+  },
+  textInput: {
+    borderWidth: 1,
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    fontSize: 16,
+  },
+  disabledInput: {
+    opacity: 0.6,
+  },
+  tierContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 8,
+  },
+  tierInfo: {
+    flex: 1,
+  },
+  tierTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    marginBottom: 4,
+  },
+  tierDescription: {
+    fontSize: 14,
+  },
+  preferenceItem: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 12,
+  },
+  preferenceLabel: {
+    fontSize: 16,
+    fontWeight: '500',
+  },
+  toggle: {
+    width: 44,
+    height: 24,
+    borderRadius: 12,
+    justifyContent: 'center',
+    paddingHorizontal: 2,
+  },
+  toggleThumb: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+  },
+  menuItem: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(0,0,0,0.05)',
+  },
+  menuItemText: {
+    fontSize: 16,
+    fontWeight: '500',
+  },
+  menuItemArrow: {
+    fontSize: 18,
+  },
+  actionsContainer: {
+    flexDirection: 'row',
+    marginBottom: 20,
+  },
+  actionButton: {
+    minWidth: 100,
+  },
+  signOutButton: {
+    marginTop: 20,
   },
 }); 

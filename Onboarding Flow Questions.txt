@@ -1,0 +1,56 @@
+Below is a ready-to-implement onboarding script broken into two sequential blocks: Personalization (5 items, mostly pick-lists) and Personality Snapshot (24 items, 5-point Likert scale).
+IDs are included so you can map answers to Firestore/SQL columns or enums in code.
+1️⃣ Personalization
+ID	Prompt	Input Type	Choices / Notes
+P1	“Which best describes your current position?”	single-select	intern · entry-level · junior · mid-management · senior / director · C-suite / founder
+P2	“How big is the company you work at?”	single-select	0-5 · 5-20 · 20-100 · 100-500 · 500 + employees
+P3	“What’s your primary function?”	single-select dropdown	marketing · sales · product · engineering / IT · finance · HR / people · operations · legal / compliance · other
+P4	“Which challenges do you most want to solve? (pick up to 3)”	multi-select	navigate office politics · resolve conflict with boss/peer · gain visibility & influence · secure promotion/raise · lead new team · manage cross-department projects · negotiate resources/budgets · build exec-level network · handle difficult stakeholders
+P5	“How do you prefer your coaching?”	single-select	concise & data-driven · step-by-step action plans · empathetic encouragement · “tough-love” direct feedback
+
+    Trigger: After P5 → onboardingStatus = "personalizationComplete" → load Personality Snapshot block.
+
+2️⃣ Personality Snapshot (24 items)
+
+Scale: 1 = Strongly Disagree … 5 = Strongly Agree
+Purpose: Quick profile across six traits (Assertiveness, Strategic Thinking, Adaptability, Empathy, Conscientiousness, Integrity). Store raw scores; you can normalize later for tailored prompt-engineering.
+#	Prompt (Likert 1-5)	Trait
+Q1	I’m comfortable pushing back on higher-ups when I believe I’m right.	Assertiveness
+Q2	I enjoy taking the lead in group discussions.	Assertiveness
+Q3	I can negotiate for what I want without feeling uneasy.	Assertiveness
+Q4	Speaking in front of senior leadership energizes me.	Assertiveness
+Q5	I quickly see patterns others miss in complex situations.	Strategic
+Q6	I often think several moves ahead before acting.	Strategic
+Q7	I can map out multiple paths to the same goal.	Strategic
+Q8	I like analyzing power dynamics inside my organization.	Strategic
+Q9	Sudden changes at work rarely throw me off course.	Adaptability
+Q10	I can stay calm when priorities shift unexpectedly.	Adaptability
+Q11	I adjust my communication style to match different audiences.	Adaptability
+Q12	I view setbacks as opportunities to learn.	Adaptability
+Q13	I sense when colleagues are uncomfortable even if they don’t say so.	Empathy
+Q14	People often come to me for advice on interpersonal issues.	Empathy
+Q15	I pay close attention to non-verbal cues in meetings.	Empathy
+Q16	I modify my arguments based on what matters to the listener.	Empathy
+Q17	I double-check details to ensure my work is error-free.	Conscientious
+Q18	I keep promises, even under tight deadlines.	Conscientious
+Q19	I plan my day to make steady progress on long-term goals.	Conscientious
+Q20	Others describe me as reliable and well-prepared.	Conscientious
+Q21	I refuse to win by bending ethical rules.	Integrity
+Q22	I’m transparent about my intentions with teammates.	Integrity
+Q23	I own up to my mistakes immediately.	Integrity
+Q24	I’d rather lose an argument than mislead someone.	Integrity
+Implementation Tips
+
+    Persistence: Write onboardingStatus to the user record (none → personalization → full).
+
+    Skip logic: If returning user has onboardingStatus === "full", go straight to Dashboard.
+
+    UX pacing: Use one screen per question for Personalization (quick taps). Group personality items 6-per-screen with a progress bar (e.g., “Page 2/4”).
+
+    Data use:
+
+        Personalization answers feed conditional system prompts (e.g., “Speak like a senior-level marketer at a 500+ company”).
+
+        Personality scores adjust tone/strategy recommendations (e.g., high Assertiveness → focus on political finesse; low Assertiveness → build confident advocacy scripts).
+
+That’s a complete, developer-friendly onboarding questionnaire you can drop into Supabase/React Native components right away.
