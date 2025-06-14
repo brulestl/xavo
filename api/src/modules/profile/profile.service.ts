@@ -1,7 +1,9 @@
 import { Injectable } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
+import { validateUUID } from '../../utils/uuid-validator.util';
 import { 
-  UserProfileDto,
+  UserProfileDto, 
   UserPersonalizationDto,
   UpdateProfileDto,
   UpdatePersonalizationDto,
@@ -12,23 +14,29 @@ import {
 export class ProfileService {
   private supabase: SupabaseClient;
 
-  constructor() {
-    // TODO: Move to config service
-    this.supabase = createClient(
-      process.env.SUPABASE_URL || '',
-      process.env.SUPABASE_ANON_KEY || ''
-    );
+  constructor(private configService: ConfigService) {
+    const supabaseUrl = this.configService.get<string>('SUPABASE_URL') || 
+      'https://wdhmlynmbrhunizbdhdt.supabase.co';
+    const supabaseKey = this.configService.get<string>('SUPABASE_ANON_KEY') || 
+      'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6IndkaG1seW5tYnJodW5pemJkaGR0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDkzMDQ2NjgsImV4cCI6MjA2NDg4MDY2OH0.ORKN6Ryiz4Yo_BFhE_CS2yHMGPJDncKtYWKTwwI98N4';
+
+    console.log('ProfileService: Initializing Supabase client with URL:', supabaseUrl);
+    this.supabase = createClient(supabaseUrl, supabaseKey);
   }
 
   async getProfile(userId: string): Promise<CompleteProfileDto> {
+    // Validate UUID format
+    validateUUID(userId, 'user_id');
+
     // Get user profile
     const { data: profileData, error: profileError } = await this.supabase
       .from('user_profiles')
       .select('*')
       .eq('user_id', userId)
-      .single();
+      .maybeSingle();
 
-    if (profileError && profileError.code !== 'PGRST116') { // Not found is OK
+    if (profileError) {
+      console.error('Profile fetch error:', { code: profileError.code, message: profileError.message, details: profileError.details });
       throw new Error(`Failed to fetch profile: ${profileError.message}`);
     }
 
@@ -37,9 +45,10 @@ export class ProfileService {
       .from('user_personalization')
       .select('*')
       .eq('user_id', userId)
-      .single();
+      .maybeSingle();
 
-    if (personalizationError && personalizationError.code !== 'PGRST116') {
+    if (personalizationError) {
+      console.error('Personalization fetch error:', { code: personalizationError.code, message: personalizationError.message, details: personalizationError.details });
       throw new Error(`Failed to fetch personalization: ${personalizationError.message}`);
     }
 
@@ -60,6 +69,9 @@ export class ProfileService {
   }
 
   async updateProfile(userId: string, updateDto: UpdateProfileDto): Promise<UserProfileDto> {
+    // Validate UUID format
+    validateUUID(userId, 'user_id');
+
     const { data, error } = await this.supabase
       .from('user_profiles')
       .upsert({
@@ -71,6 +83,7 @@ export class ProfileService {
       .single();
 
     if (error) {
+      console.error('Profile update error:', { code: error.code, message: error.message, details: error.details });
       throw new Error(`Failed to update profile: ${error.message}`);
     }
 
@@ -81,6 +94,9 @@ export class ProfileService {
     userId: string, 
     updateDto: UpdatePersonalizationDto
   ): Promise<UserPersonalizationDto> {
+    // Validate UUID format
+    validateUUID(userId, 'user_id');
+
     // Use the database function for upsert
     const { data, error } = await this.supabase
       .rpc('fn_insert_or_update_personalization', {
@@ -94,6 +110,7 @@ export class ProfileService {
       });
 
     if (error) {
+      console.error('Personalization update error:', { code: error.code, message: error.message, details: error.details });
       throw new Error(`Failed to update personalization: ${error.message}`);
     }
 
@@ -105,6 +122,7 @@ export class ProfileService {
       .single();
 
     if (fetchError) {
+      console.error('Personalization fetch error:', { code: fetchError.code, message: fetchError.message, details: fetchError.details });
       throw new Error(`Failed to fetch updated personalization: ${fetchError.message}`);
     }
 
@@ -112,6 +130,9 @@ export class ProfileService {
   }
 
   async getPersonalityScores(userId: string): Promise<Record<string, number>> {
+    // Validate UUID format
+    validateUUID(userId, 'user_id');
+
     // TODO: Call fn_calculate_personality_scores function
     const { data, error } = await this.supabase
       .rpc('fn_calculate_personality_scores', {
@@ -119,30 +140,124 @@ export class ProfileService {
       });
 
     if (error) {
+      console.error('Personality scores calculation error:', { code: error.code, message: error.message, details: error.details });
       throw new Error(`Failed to calculate personality scores: ${error.message}`);
     }
 
     // Also get stored scores from user_personalization
-    const { data: storedScores } = await this.supabase
+    const { data: storedScores, error: fetchError } = await this.supabase
       .from('user_personalization')
       .select('personality_scores')
       .eq('user_id', userId)
-      .single();
+      .maybeSingle();
+
+    if (fetchError) {
+      console.error('Stored personality scores fetch error:', { code: fetchError.code, message: fetchError.message, details: fetchError.details });
+    }
 
     return storedScores?.personality_scores || data || {};
   }
 
   async getUserPersonalization(userId: string): Promise<UserPersonalizationDto | null> {
+    // Validate UUID format
+    validateUUID(userId, 'user_id');
+
     const { data, error } = await this.supabase
       .from('user_personalization')
       .select('*')
       .eq('user_id', userId)
-      .single();
+      .maybeSingle();
 
-    if (error && error.code !== 'PGRST116') {
+    if (error) {
+      console.error('User personalization fetch error:', { code: error.code, message: error.message, details: error.details });
       throw new Error(`Failed to fetch personalization: ${error.message}`);
     }
 
     return data;
+  }
+
+  async savePersonalityScores(userId: string, saveDto: any): Promise<{ success: boolean; message: string }> {
+    try {
+      // Validate UUID format
+      validateUUID(userId, 'user_id');
+      
+      // 🧪 TEST INSERT - Minimal write test to isolate the issue
+      console.log('🧪 Starting test insert for user:', userId);
+      const { data: testInsert, error: testError } = await this.supabase
+        .from('user_personalization')
+        .insert([{ user_id: userId, onboarding_status: 'testing' }]);
+      console.log('🧪 TEST INSERT:', { testInsert, testError });
+      
+      if (testError) {
+        console.error('🚨 Test insert failed:', testError);
+        return {
+          success: false,
+          message: `Test insert failed: ${testError.message}`
+        };
+      }
+      
+      console.log('✅ Test insert succeeded, proceeding with main logic...');
+      
+      // Save individual quiz answers to onboarding_answers table
+      console.log('💾 Saving individual quiz answers...');
+      const answerPromises = Object.entries(saveDto.answers).map(([questionId, value]) => {
+        return this.supabase
+          .from('onboarding_answers')
+          .upsert({
+            user_id: userId,
+            question_id: questionId,
+            answer_value: value.toString(),
+            answer_text: value.toString(),
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString()
+          });
+      });
+
+      await Promise.all(answerPromises);
+      console.log('✅ Quiz answers saved successfully');
+
+      // Prepare personalization data from onboarding
+      const personalizationData = saveDto.personalizationData;
+      
+      // 🔧 FIXED: Prepare data to match ACTUAL database schema
+      const updateData: any = {
+        user_id: userId,
+        onboarding_status: 'completed',
+        personality_scores: saveDto.scores, // Store all scores as JSONB
+        updated_at: new Date().toISOString() // Use correct column name
+      };
+
+      // Add onboarding data if available (only fields that exist in schema)
+      if (personalizationData) {
+        updateData.current_position = personalizationData.role;
+        updateData.company_size = personalizationData.companySize;
+        updateData.primary_function = personalizationData.function;
+        updateData.top_challenges = personalizationData.challenges;
+        updateData.preferred_coaching_style = personalizationData.personalityAnswers?.communication_style || null;
+      }
+
+      console.log('💾 Saving user personalization data:', updateData);
+
+      // Update user_personalization directly with correct schema
+      const { error: updateError } = await this.supabase
+        .from('user_personalization')
+        .upsert(updateData);
+
+      if (updateError) {
+        console.error('🚨 User personalization update failed:', updateError);
+        throw new Error(`Failed to update personality scores: ${updateError.message}`);
+      }
+
+      console.log('✅ User personalization saved successfully');
+
+      return {
+        success: true,
+        message: 'Personality scores and onboarding data saved successfully'
+      };
+    } catch (error) {
+      console.error('💥 Error saving personality scores:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      throw new Error(`Failed to save personality scores: ${errorMessage}`);
+    }
   }
 } 
