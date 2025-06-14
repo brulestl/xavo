@@ -2,6 +2,16 @@ import { NestFactory } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { AppModule } from './app.module';
+import * as dotenv from 'dotenv';
+import * as path from 'path';
+
+// Load environment variables from parent directory
+const envPath = path.join(process.cwd(), '../.env');
+console.log('Current working directory:', process.cwd());
+console.log('Loading .env from:', envPath);
+const result = dotenv.config({ path: envPath });
+console.log('Dotenv result:', result);
+console.log('OPENAI_API_KEY loaded:', !!process.env.OPENAI_API_KEY);
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule, {
@@ -10,13 +20,10 @@ async function bootstrap() {
 
   // Enable CORS for React Native app
   app.enableCors({
-    origin: [
-      'http://localhost:8081', // Expo dev
-      'http://localhost:19006', // Expo web
-      'https://wdhmlynmbrhunizbdhdt.supabase.co', // Supabase
-      // Add production domains when deployed
-    ],
+    origin: true, // Allow all origins for development (Android emulator/device)
     credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization'],
   });
 
   // Global validation pipe
@@ -46,8 +53,8 @@ async function bootstrap() {
     SwaggerModule.setup('api/docs', app, document);
   }
 
-  // Global prefix
-  app.setGlobalPrefix('api/v1');
+  // Global prefix - removed since controllers already have api/v1 paths
+  // app.setGlobalPrefix('api/v1');
 
   const port = process.env.PORT || 3000;
   await app.listen(port);
