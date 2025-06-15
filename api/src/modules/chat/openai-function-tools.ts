@@ -1,4 +1,5 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
+import { validateUUID } from '../../utils/uuid-validator.util';
 
 export interface OpenAITool {
   type: 'function';
@@ -187,6 +188,8 @@ export class OpenAIFunctionTools {
     userId: string,
     sessionId?: string
   ): Promise<ToolCallResult> {
+    // Validate UUID format
+    validateUUID(userId, 'user_id');
     try {
       switch (functionName) {
         case 'add_long_term_memory':
@@ -263,11 +266,15 @@ export class OpenAIFunctionTools {
     const { goal_text, goal_category, priority, target_date } = args;
 
     // First, get current goals from user_personalization
-    const { data: currentPersonalization } = await this.supabase
+    const { data: currentPersonalization, error: fetchError } = await this.supabase
       .from('user_personalization')
       .select('goals')
       .eq('user_id', userId)
-      .single();
+      .maybeSingle();
+
+    if (fetchError) {
+      console.error('Goals fetch error:', { code: fetchError.code, message: fetchError.message, details: fetchError.details });
+    }
 
     const currentGoals = currentPersonalization?.goals || [];
     
@@ -294,6 +301,7 @@ export class OpenAIFunctionTools {
       });
 
     if (error) {
+      console.error('Goal update error:', { code: error.code, message: error.message, details: error.details });
       return {
         success: false,
         error: `Failed to update goal: ${error.message}`
@@ -387,6 +395,7 @@ export class OpenAIFunctionTools {
       .upsert(updateData);
 
     if (error) {
+      console.error('Communication preferences update error:', { code: error.code, message: error.message, details: error.details });
       return {
         success: false,
         error: `Failed to update communication preferences: ${error.message}`

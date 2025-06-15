@@ -14,6 +14,8 @@ import { WelcomeScreen } from './src/screens/WelcomeScreen';
 import { AuthChoiceScreen } from './src/screens/AuthChoiceScreen';
 import { LoginSignupScreen } from './src/screens/LoginSignupScreen';
 import { OnboardingScreen } from './src/screens/OnboardingScreen';
+import { PersonalityQuizScreen } from './src/screens/PersonalityQuizScreen';
+import { SubscriptionSelectionScreen } from './src/screens/SubscriptionSelectionScreen';
 import { HomeScreen } from './src/screens/HomeScreen';
 
 // Navigation
@@ -42,27 +44,20 @@ const AppNavigator: React.FC = () => {
           initialRouteName="Onboarding"
         >
           <Stack.Screen name="Onboarding" component={OnboardingScreen} />
-          <Stack.Screen name="Home" component={HomeScreen} />
-          <Stack.Screen name="Dashboard" component={HomeScreen} />
+          <Stack.Screen name="PersonalityQuiz" component={PersonalityQuizScreen} />
+          <Stack.Screen name="SubscriptionSelection" component={SubscriptionSelectionScreen} />
+          {/* Include DrawerNavigator for navigation after onboarding completion */}
+          <Stack.Screen 
+            name="Main" 
+            component={DrawerNavigator}
+            options={{ headerShown: false }}
+          />
         </Stack.Navigator>
       );
     }
     
-    // User is authenticated and has completed onboarding
-    return (
-      <Stack.Navigator
-        screenOptions={{
-          headerShown: false,
-          animation: 'fade_from_bottom',
-          animationDuration: 250,
-        }}
-        initialRouteName="Home"
-      >
-        <Stack.Screen name="Home" component={HomeScreen} />
-        <Stack.Screen name="Dashboard" component={HomeScreen} />
-        <Stack.Screen name="Onboarding" component={OnboardingScreen} />
-      </Stack.Navigator>
-    );
+    // User is authenticated and has completed onboarding - go directly to main app
+    return <DrawerNavigator />;
   }
 
   // If user is not authenticated, show auth screens
@@ -79,9 +74,14 @@ const AppNavigator: React.FC = () => {
       <Stack.Screen name="AuthChoice" component={AuthChoiceScreen} />
       <Stack.Screen name="LoginSignup" component={LoginSignupScreen} />
       <Stack.Screen name="Onboarding" component={OnboardingScreen} />
-      {/* Include Home/Dashboard for navigation purposes */}
-      <Stack.Screen name="Home" component={HomeScreen} />
-      <Stack.Screen name="Dashboard" component={HomeScreen} />
+      <Stack.Screen name="PersonalityQuiz" component={PersonalityQuizScreen} />
+      <Stack.Screen name="SubscriptionSelection" component={SubscriptionSelectionScreen} />
+      {/* Include DrawerNavigator for navigation after auth */}
+      <Stack.Screen 
+        name="Main" 
+        component={DrawerNavigator}
+        options={{ headerShown: false }}
+      />
     </Stack.Navigator>
   );
 };

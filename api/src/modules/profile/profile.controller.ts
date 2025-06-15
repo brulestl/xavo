@@ -1,9 +1,10 @@
-import { Controller, Get, Put, Body, Req } from '@nestjs/common';
+import { Controller, Get, Put, Post, Body, Req } from '@nestjs/common';
 import { ProfileService } from './profile.service';
 import { 
   CompleteProfileDto,
   UpdateProfileDto,
-  UpdatePersonalizationDto
+  UpdatePersonalizationDto,
+  SavePersonalityScoresDto
 } from './dto/profile.dto';
 
 @Controller('api/v1/profile')
@@ -29,6 +30,26 @@ export class ProfileController {
   async getPersonalityScores(@Req() req: any): Promise<Record<string, number>> {
     const userId = req.user?.id;
     return this.profileService.getPersonalityScores(userId);
+  }
+
+  @Post('personality-scores')
+  async savePersonalityScores(
+    @Body() saveDto: SavePersonalityScoresDto,
+    @Req() req: any
+  ) {
+    try {
+      // Use userId from request body if available, otherwise try from auth
+      const userId = saveDto.userId || req.user?.id;
+      
+      if (!userId) {
+        throw new Error('User ID is required');
+      }
+      
+      return this.profileService.savePersonalityScores(userId, saveDto);
+    } catch (error) {
+      console.error('Error in savePersonalityScores controller:', error);
+      throw error;
+    }
   }
 
   @Put('profile')

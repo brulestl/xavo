@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Alert } from 'react-native';
+import { apiFetch } from '../src/lib/api';
 
 export interface OnboardingQuestion {
   id: string;
@@ -45,8 +46,6 @@ interface UseOnboardingReturn {
   resetOnboarding: () => void;
 }
 
-const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:3000';
-
 export const useOnboarding = (): UseOnboardingReturn => {
   const [questions, setQuestions] = useState<OnboardingQuestion[]>([]);
   const [currentQuestions, setCurrentQuestions] = useState<OnboardingQuestion[]>([]);
@@ -69,23 +68,11 @@ export const useOnboarding = (): UseOnboardingReturn => {
     setError(null);
 
     try {
-      const response = await fetch(
-        `${API_BASE_URL}/api/v1/onboarding/questions?page=${page}&limit=${limit}`,
-        {
-          method: 'GET',
-          headers: {
-            'Content-Type': 'application/json',
-            // TODO: Add authentication header
-            // 'Authorization': `Bearer ${userToken}`,
-          },
-        }
-      );
-
-      if (!response.ok) {
-        throw new Error(`Failed to fetch questions: ${response.statusText}`);
-      }
-
-      const data = await response.json();
+      const data = await apiFetch<{
+        questions: OnboardingQuestion[];
+        total_pages: number;
+        total_questions: number;
+      }>(`/onboarding/questions?page=${page}&limit=${limit}`);
       
       // Update questions state
       if (page === 1) {
@@ -147,21 +134,10 @@ export const useOnboarding = (): UseOnboardingReturn => {
         throw new Error('No answers to submit');
       }
 
-      const response = await fetch(`${API_BASE_URL}/api/v1/onboarding/answers`, {
+      const result = await apiFetch<{ success: boolean; message?: string }>('/onboarding/answers', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          // TODO: Add authentication header
-          // 'Authorization': `Bearer ${userToken}`,
-        },
         body: JSON.stringify({ answers: answersArray })
       });
-
-      if (!response.ok) {
-        throw new Error(`Failed to submit answers: ${response.statusText}`);
-      }
-
-      const result = await response.json();
       
       // Update progress based on response
       if (result.success) {
@@ -197,20 +173,9 @@ export const useOnboarding = (): UseOnboardingReturn => {
       }
 
       // Mark onboarding as complete
-      const response = await fetch(`${API_BASE_URL}/api/v1/onboarding/complete`, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          // TODO: Add authentication header
-          // 'Authorization': `Bearer ${userToken}`,
-        }
+      const result = await apiFetch<{ success: boolean; message?: string }>('/onboarding/complete', {
+        method: 'PUT'
       });
-
-      if (!response.ok) {
-        throw new Error(`Failed to complete onboarding: ${response.statusText}`);
-      }
-
-      const result = await response.json();
       
       if (result.success) {
         setProgress(prev => ({

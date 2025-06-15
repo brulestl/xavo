@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { Alert } from 'react-native';
+import { apiFetch, buildApiUrl } from '../src/lib/api';
 
 export interface ChatMessage {
   id: string;
@@ -36,8 +37,6 @@ interface UseChatReturn {
   clearMessages: () => void;
   retryLastMessage: () => Promise<void>;
 }
-
-const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:3000';
 
 export const useChat = (): UseChatReturn => {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -131,7 +130,7 @@ export const useChat = (): UseChatReturn => {
 
   // Handle Server-Sent Events streaming
   const handleSSEStream = async (content: string, sessionId: string, messageId: string) => {
-    const response = await fetch(`${API_BASE_URL}/api/v1/chat/message/stream`, {
+    const response = await fetch(buildApiUrl('/chat/message/stream'), {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -218,7 +217,7 @@ export const useChat = (): UseChatReturn => {
   const handleWebSocketStream = async (content: string, sessionId: string, messageId: string) => {
     // For now, fall back to regular POST request
     // TODO: Implement WebSocket streaming if needed
-    const response = await fetch(`${API_BASE_URL}/api/v1/chat/message`, {
+    const response = await fetch(buildApiUrl('/chat/message'), {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -258,23 +257,13 @@ export const useChat = (): UseChatReturn => {
     setError(null);
 
     try {
-      const response = await fetch(`${API_BASE_URL}/api/v1/chat/sessions`, {
+      const session = await apiFetch<ChatSession>('/chat/sessions', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          // TODO: Add authentication header
-          // 'Authorization': `Bearer ${userToken}`,
-        },
         body: JSON.stringify({
           title: title || `Chat ${new Date().toLocaleDateString()}`
         })
       });
 
-      if (!response.ok) {
-        throw new Error(`Failed to create session: ${response.statusText}`);
-      }
-
-      const session = await response.json();
       setCurrentSession(session);
       setSessions(prev => [session, ...prev]);
       
@@ -296,20 +285,11 @@ export const useChat = (): UseChatReturn => {
     setError(null);
 
     try {
-      const response = await fetch(`${API_BASE_URL}/api/v1/chat/sessions/${sessionId}`, {
-        method: 'GET',
-        headers: {
-          'Content-Type': 'application/json',
-          // TODO: Add authentication header
-          // 'Authorization': `Bearer ${userToken}`,
-        }
-      });
-
-      if (!response.ok) {
-        throw new Error(`Failed to load session: ${response.statusText}`);
-      }
-
-      const data = await response.json();
+      const data = await apiFetch<{
+        session: ChatSession;
+        messages: ChatMessage[];
+      }>(`/chat/sessions/${sessionId}`);
+      
       setCurrentSession(data.session);
       setMessages(data.messages || []);
 
@@ -328,20 +308,7 @@ export const useChat = (): UseChatReturn => {
     setError(null);
 
     try {
-      const response = await fetch(`${API_BASE_URL}/api/v1/chat/sessions`, {
-        method: 'GET',
-        headers: {
-          'Content-Type': 'application/json',
-          // TODO: Add authentication header
-          // 'Authorization': `Bearer ${userToken}`,
-        }
-      });
-
-      if (!response.ok) {
-        throw new Error(`Failed to load sessions: ${response.statusText}`);
-      }
-
-      const sessionsData = await response.json();
+      const sessionsData = await apiFetch<ChatSession[]>('/chat/sessions');
       setSessions(sessionsData || []);
 
     } catch (err) {
@@ -359,18 +326,9 @@ export const useChat = (): UseChatReturn => {
     setError(null);
 
     try {
-      const response = await fetch(`${API_BASE_URL}/api/v1/chat/sessions/${sessionId}`, {
-        method: 'DELETE',
-        headers: {
-          'Content-Type': 'application/json',
-          // TODO: Add authentication header
-          // 'Authorization': `Bearer ${userToken}`,
-        }
+      await apiFetch(`/chat/sessions/${sessionId}`, {
+        method: 'DELETE'
       });
-
-      if (!response.ok) {
-        throw new Error(`Failed to delete session: ${response.statusText}`);
-      }
 
       // Remove from local state
       setSessions(prev => prev.filter(session => session.id !== sessionId));

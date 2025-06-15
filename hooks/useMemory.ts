@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Alert } from 'react-native';
+import { apiFetch } from '../src/lib/api';
 
 export interface Memory {
   id: string;
@@ -34,8 +35,6 @@ interface UseMemoryReturn {
   clearSearch: () => void;
 }
 
-const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:3000';
-
 export const useMemory = (): UseMemoryReturn => {
   const [memories, setMemories] = useState<Memory[]>([]);
   const [searchResults, setSearchResults] = useState<MemorySearchResult | null>(null);
@@ -59,23 +58,11 @@ export const useMemory = (): UseMemoryReturn => {
         limit: limit.toString()
       });
 
-      const response = await fetch(
-        `${API_BASE_URL}/api/v1/memory/search?${searchParams}`,
-        {
-          method: 'GET',
-          headers: {
-            'Content-Type': 'application/json',
-            // TODO: Add authentication header
-            // 'Authorization': `Bearer ${userToken}`,
-          }
-        }
-      );
-
-      if (!response.ok) {
-        throw new Error(`Search failed: ${response.statusText}`);
-      }
-
-      const result = await response.json();
+      const result = await apiFetch<{
+        memories: Memory[];
+        total_count: number;
+        search_time_ms: number;
+      }>(`/memory/search?${searchParams}`);
       
       const searchResult: MemorySearchResult = {
         memories: result.memories || [],
@@ -101,20 +88,7 @@ export const useMemory = (): UseMemoryReturn => {
     setError(null);
 
     try {
-      const response = await fetch(`${API_BASE_URL}/api/v1/memory`, {
-        method: 'GET',
-        headers: {
-          'Content-Type': 'application/json',
-          // TODO: Add authentication header
-          // 'Authorization': `Bearer ${userToken}`,
-        }
-      });
-
-      if (!response.ok) {
-        throw new Error(`Failed to load memories: ${response.statusText}`);
-      }
-
-      const data = await response.json();
+      const data = await apiFetch<{ memories: Memory[] }>('/memory');
       setMemories(data.memories || []);
 
     } catch (err) {
@@ -137,13 +111,8 @@ export const useMemory = (): UseMemoryReturn => {
     setError(null);
 
     try {
-      const response = await fetch(`${API_BASE_URL}/api/v1/memory`, {
+      const newMemory = await apiFetch<Memory>('/memory', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          // TODO: Add authentication header
-          // 'Authorization': `Bearer ${userToken}`,
-        },
         body: JSON.stringify({
           memory_content: content,
           memory_type: type,
@@ -151,12 +120,6 @@ export const useMemory = (): UseMemoryReturn => {
           tags
         })
       });
-
-      if (!response.ok) {
-        throw new Error(`Failed to add memory: ${response.statusText}`);
-      }
-
-      const newMemory = await response.json();
       
       // Add to local state
       setMemories(prev => [newMemory, ...prev]);
@@ -179,21 +142,10 @@ export const useMemory = (): UseMemoryReturn => {
     setError(null);
 
     try {
-      const response = await fetch(`${API_BASE_URL}/api/v1/memory/${id}`, {
+      const updatedMemory = await apiFetch<Memory>(`/memory/${id}`, {
         method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          // TODO: Add authentication header
-          // 'Authorization': `Bearer ${userToken}`,
-        },
         body: JSON.stringify(updates)
       });
-
-      if (!response.ok) {
-        throw new Error(`Failed to update memory: ${response.statusText}`);
-      }
-
-      const updatedMemory = await response.json();
       
       // Update local state
       setMemories(prev => prev.map(memory => 
@@ -228,18 +180,9 @@ export const useMemory = (): UseMemoryReturn => {
     setError(null);
 
     try {
-      const response = await fetch(`${API_BASE_URL}/api/v1/memory/${id}`, {
-        method: 'DELETE',
-        headers: {
-          'Content-Type': 'application/json',
-          // TODO: Add authentication header
-          // 'Authorization': `Bearer ${userToken}`,
-        }
+      await apiFetch(`/memory/${id}`, {
+        method: 'DELETE'
       });
-
-      if (!response.ok) {
-        throw new Error(`Failed to delete memory: ${response.statusText}`);
-      }
 
       // Remove from local state
       setMemories(prev => prev.filter(memory => memory.id !== id));

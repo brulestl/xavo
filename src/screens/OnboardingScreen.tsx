@@ -1,6 +1,9 @@
 import React, { useState, useRef } from 'react';
-import { View, Text, StyleSheet, ScrollView, Dimensions, Animated } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, Dimensions, Animated, Alert } from 'react-native';
+import { useNavigation } from '@react-navigation/native';
 import { useTheme } from '../providers/ThemeProvider';
+import { useAuth } from '../providers/AuthProvider';
+import { supabase } from '../lib/supabase';
 import { Button } from '../components/Button';
 import { Pill } from '../components/Pill';
 
@@ -45,8 +48,11 @@ const PERSONALITY_QUESTIONS = [
 ];
 
 export const OnboardingScreen: React.FC = () => {
+  const navigation = useNavigation();
   const { theme } = useTheme();
+  const { user } = useAuth();
   const [currentStep, setCurrentStep] = useState(0);
+  const [loading, setLoading] = useState(false);
   const [onboardingData, setOnboardingData] = useState<OnboardingData>({
     role: '',
     companySize: '',
@@ -66,16 +72,57 @@ export const OnboardingScreen: React.FC = () => {
     }).start();
   };
 
-  const handleNext = () => {
+  const saveOnboardingData = async () => {
+    if (!user?.id) {
+      throw new Error('User not authenticated');
+    }
+
+    try {
+      console.log('🚀 Saving onboarding data to Supabase...');
+      const { error } = await supabase.rpc('fn_insert_or_update_personalization', {
+        p_user_id: user.id,
+        p_current_position: onboardingData.role,
+        p_company_size: onboardingData.companySize,
+        p_primary_function: onboardingData.function,
+        p_top_challenges: onboardingData.challenges,
+        p_preferred_coaching_style: onboardingData.personalityAnswers.decision_making || null,
+        p_onboarding_status: 'in_progress'
+        // omit p_personality_scores here; defaults to NULL
+      });
+
+      if (error) {
+        console.error('❌ Error saving onboarding data:', error);
+        throw error;
+      }
+
+      console.log('✅ Onboarding data saved successfully');
+    } catch (error) {
+      console.error('💥 Error in saveOnboardingData:', error);
+      throw error;
+    }
+  };
+
+  const handleNext = async () => {
     if (currentStep < 1) {
       const nextStep = currentStep + 1;
       setCurrentStep(nextStep);
       updateProgress(nextStep);
       scrollViewRef.current?.scrollTo({ x: nextStep * screenWidth, animated: true });
     } else {
-      // Complete onboarding
-      console.log('Onboarding complete:', onboardingData);
-      // TODO: Navigate to home screen
+      // Save onboarding data and navigate to personality quiz
+      setLoading(true);
+      
+      try {
+        await saveOnboardingData();
+        
+        console.log('Quick profile complete:', onboardingData);
+        (navigation as any).navigate('PersonalityQuiz', { personalizationData: onboardingData });
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : 'Failed to save your profile. Please try again.';
+        Alert.alert('Error', errorMessage);
+      } finally {
+        setLoading(false);
+      }
     }
   };
 
@@ -282,13 +329,14 @@ export const OnboardingScreen: React.FC = () => {
             variant="outline"
             onPress={handleBack}
             style={styles.navButton}
+            disabled={loading}
           />
         )}
         <Button
-          title={currentStep === 1 ? 'Get Started' : 'Next'}
+          title={loading ? 'Saving...' : (currentStep === 1 ? 'Get Started' : 'Next')}
           variant="cta"
           onPress={handleNext}
-          disabled={!canProceed}
+          disabled={!canProceed || loading}
           style={[styles.navButton, { flex: 1, marginLeft: currentStep > 0 ? 12 : 0 }]}
         />
       </View>

@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
+import { validateUUID } from '../../utils/uuid-validator.util';
 import { 
   OnboardingQuestionDto, 
   CreateOnboardingAnswerDto, 
@@ -37,6 +38,8 @@ export class OnboardingService {
     userId: string, 
     createAnswerDto: CreateOnboardingAnswerDto
   ): Promise<{ success: boolean; message: string }> {
+    // Validate UUID format
+    validateUUID(userId, 'user_id');
     const { data, error } = await this.supabase
       .from('onboarding_answers')
       .upsert({
@@ -62,6 +65,8 @@ export class OnboardingService {
     userId: string, 
     completeDto: CompleteOnboardingDto
   ): Promise<OnboardingStatusDto> {
+    // Validate UUID format
+    validateUUID(userId, 'user_id');
     // Submit all answers in a transaction-like manner
     const answerPromises = completeDto.answers.map(answer => 
       this.submitAnswer(userId, answer)
@@ -95,6 +100,8 @@ export class OnboardingService {
   }
 
   async getOnboardingStatus(userId: string): Promise<OnboardingStatusDto> {
+    // Validate UUID format
+    validateUUID(userId, 'user_id');
     // Get total questions count
     const { count: totalQuestions } = await this.supabase
       .from('onboarding_questions')
@@ -107,11 +114,15 @@ export class OnboardingService {
       .eq('user_id', userId);
 
     // Get user personalization data
-    const { data: personalizationData } = await this.supabase
+    const { data: personalizationData, error: personalizationError } = await this.supabase
       .from('user_personalization')
       .select('onboarding_status, personality_scores')
       .eq('user_id', userId)
-      .single();
+      .maybeSingle();
+
+    if (personalizationError) {
+      console.error('Personalization fetch error:', { code: personalizationError.code, message: personalizationError.message, details: personalizationError.details });
+    }
 
     const status = personalizationData?.onboarding_status || 
       (completedQuestions === 0 ? 'not_started' : 'in_progress');
@@ -125,6 +136,8 @@ export class OnboardingService {
   }
 
   async getUserAnswers(userId: string): Promise<OnboardingAnswerDto[]> {
+    // Validate UUID format
+    validateUUID(userId, 'user_id');
     const { data, error } = await this.supabase
       .from('onboarding_answers')
       .select('*')

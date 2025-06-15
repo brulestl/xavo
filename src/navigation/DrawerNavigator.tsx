@@ -10,6 +10,8 @@ import { SettingsScreen } from '../screens/SettingsScreen';
 import { HistoryScreen } from '../screens/HistoryScreen';
 import { SubscriptionsScreen } from '../screens/SubscriptionsScreen';
 import { OnboardingEditScreen } from '../screens/OnboardingEditScreen';
+import { PersonalityQuizScreen } from '../screens/PersonalityQuizScreen';
+import { HomeScreen } from '../screens/HomeScreen';
 import { useTheme } from '../providers/ThemeProvider';
 import { useAuth } from '../providers/AuthProvider';
 import { SearchBar } from '../components/SearchBar';
@@ -219,11 +221,14 @@ export const DrawerNavigator: React.FC = () => {
           backgroundColor: theme.semanticColors.background,
         },
       }}
+      initialRouteName="Home"
     >
+      <Drawer.Screen name="Home" component={HomeScreen} />
       <Drawer.Screen name="Chat" component={ChatScreen} />
       <Drawer.Screen name="History" component={HistoryScreen} />
       <Drawer.Screen name="Subscriptions" component={SubscriptionsScreen} />
       <Drawer.Screen name="OnboardingEdit" component={OnboardingEditScreen} />
+      <Drawer.Screen name="PersonalityQuiz" component={PersonalityQuizScreen} />
       <Drawer.Screen 
         name="Dashboard" 
         component={DashboardScreen}

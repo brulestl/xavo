@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Alert } from 'react-native';
+import { apiFetch } from '../src/lib/api';
 
 export interface UserProfile {
   user_id: string;
@@ -50,8 +51,6 @@ interface UseProfileReturn {
   getPersonalityInsights: () => PersonalityInterpretation | null;
 }
 
-const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:3000';
-
 export const useProfile = (): UseProfileReturn => {
   const [profileData, setProfileData] = useState<ProfileData>({
     profile: null,
@@ -67,20 +66,10 @@ export const useProfile = (): UseProfileReturn => {
     setError(null);
 
     try {
-      const response = await fetch(`${API_BASE_URL}/api/v1/profile/me`, {
-        method: 'GET',
-        headers: {
-          'Content-Type': 'application/json',
-          // TODO: Add authentication header
-          // 'Authorization': `Bearer ${userToken}`,
-        }
-      });
-
-      if (!response.ok) {
-        throw new Error(`Failed to load profile: ${response.statusText}`);
-      }
-
-      const data = await response.json();
+      const data = await apiFetch<{
+        profile?: UserProfile;
+        personalization?: UserPersonalization;
+      }>('/profile/me');
       
       const newProfileData: ProfileData = {
         profile: data.profile || null,
@@ -105,21 +94,10 @@ export const useProfile = (): UseProfileReturn => {
     setError(null);
 
     try {
-      const response = await fetch(`${API_BASE_URL}/api/v1/profile/personalization`, {
+      const updatedPersonalization = await apiFetch<UserPersonalization>('/profile/personalization', {
         method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          // TODO: Add authentication header
-          // 'Authorization': `Bearer ${userToken}`,
-        },
         body: JSON.stringify(updates)
       });
-
-      if (!response.ok) {
-        throw new Error(`Failed to update personalization: ${response.statusText}`);
-      }
-
-      const updatedPersonalization = await response.json();
       
       // Update local state
       setProfileData(prev => ({
@@ -145,20 +123,7 @@ export const useProfile = (): UseProfileReturn => {
     setError(null);
 
     try {
-      const response = await fetch(`${API_BASE_URL}/api/v1/profile/personality`, {
-        method: 'GET',
-        headers: {
-          'Content-Type': 'application/json',
-          // TODO: Add authentication header
-          // 'Authorization': `Bearer ${userToken}`,
-        }
-      });
-
-      if (!response.ok) {
-        throw new Error(`Failed to refresh personality scores: ${response.statusText}`);
-      }
-
-      const updatedProfile = await response.json();
+      const updatedProfile = await apiFetch<UserProfile>('/profile/personality');
       
       // Update local state
       setProfileData(prev => ({

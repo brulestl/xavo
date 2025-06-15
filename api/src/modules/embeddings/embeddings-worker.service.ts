@@ -14,10 +14,11 @@ interface EmbeddingJob {
 @Injectable()
 export class EmbeddingsWorkerService implements OnModuleInit, OnModuleDestroy {
   private supabase: SupabaseClient;
-  private openai: OpenAI;
-  private redis: Redis;
-  private embeddingQueue: Queue;
-  private embeddingWorker: Worker;
+  private openai: OpenAI | null = null;
+  private redis: Redis | null = null;
+  private embeddingQueue: Queue | null = null;
+  private embeddingWorker: Worker | null = null;
+  private isRedisAvailable = false;
 
   constructor() {
     // Initialize Supabase client
@@ -26,57 +27,91 @@ export class EmbeddingsWorkerService implements OnModuleInit, OnModuleDestroy {
       process.env.SUPABASE_ANON_KEY || ''
     );
 
-    // Initialize OpenAI client
-    this.openai = new OpenAI({
-      apiKey: process.env.OPENAI_API_KEY || '',
-    });
-
-    // Initialize Redis connection
-    this.redis = new Redis({
-      host: process.env.REDIS_HOST || 'localhost',
-      port: parseInt(process.env.REDIS_PORT || '6379'),
-      password: process.env.REDIS_PASSWORD,
-    });
-
-    // Initialize BullMQ queue
-    this.embeddingQueue = new Queue('embeddings', {
-      connection: this.redis,
-      defaultJobOptions: {
-        removeOnComplete: 100,
-        removeOnFail: 50,
-        attempts: 3,
-        backoff: {
-          type: 'exponential',
-          delay: 2000,
-        },
-      },
-    });
+    // OpenAI client will be initialized lazily when needed
+    // Redis will be initialized in onModuleInit to handle connection failures gracefully
   }
 
   async onModuleInit() {
+    // Try to initialize Redis connection
+    await this.initializeRedis();
+
     // Start listening for PostgreSQL notifications
     await this.startNotificationListener();
 
-    // Start the BullMQ worker
-    this.embeddingWorker = new Worker(
-      'embeddings',
-      this.processEmbeddingJob.bind(this),
-      {
+    // Only start BullMQ worker if Redis is available
+    if (this.isRedisAvailable && this.redis) {
+      this.embeddingWorker = new Worker(
+        'embeddings',
+        this.processEmbeddingJob.bind(this),
+        {
+          connection: this.redis,
+          concurrency: 5, // Process up to 5 jobs concurrently
+        }
+      );
+
+      // Set up worker event handlers
+      this.embeddingWorker.on('completed', (job) => {
+        console.log(`Embedding job ${job.id} completed for message ${job.data.messageId}`);
+      });
+
+      this.embeddingWorker.on('failed', (job, err) => {
+        console.error(`Embedding job ${job?.id} failed:`, err);
+      });
+    }
+
+    console.log('Embeddings worker service initialized', 
+      this.isRedisAvailable ? 'with Redis' : 'in stub mode (Redis not available)');
+  }
+
+  private async initializeRedis(): Promise<void> {
+    try {
+      // Initialize Redis connection
+      this.redis = new Redis({
+        host: process.env.REDIS_HOST || 'localhost',
+        port: parseInt(process.env.REDIS_PORT || '6379'),
+        password: process.env.REDIS_PASSWORD,
+        connectTimeout: 5000, // 5 second timeout
+        lazyConnect: true, // Don't connect immediately
+      });
+
+      // Test the connection
+      await this.redis.connect();
+      await this.redis.ping();
+
+      // Initialize BullMQ queue
+      this.embeddingQueue = new Queue('embeddings', {
         connection: this.redis,
-        concurrency: 5, // Process up to 5 jobs concurrently
+        defaultJobOptions: {
+          removeOnComplete: 100,
+          removeOnFail: 50,
+          attempts: 3,
+          backoff: {
+            type: 'exponential',
+            delay: 2000,
+          },
+        },
+      });
+
+      this.isRedisAvailable = true;
+      console.log('Redis connection established successfully');
+    } catch (error) {
+      console.warn('Redis not available, running embeddings service in stub mode:', error instanceof Error ? error.message : String(error));
+      this.isRedisAvailable = false;
+      this.redis = null;
+      this.embeddingQueue = null;
+    }
+  }
+
+  private getOpenAI(): OpenAI {
+    if (!this.openai) {
+      if (!process.env.OPENAI_API_KEY) {
+        throw new Error('OPENAI_API_KEY environment variable is not set. Embeddings feature requires OpenAI API key.');
       }
-    );
-
-    // Set up worker event handlers
-    this.embeddingWorker.on('completed', (job) => {
-      console.log(`Embedding job ${job.id} completed for message ${job.data.messageId}`);
-    });
-
-    this.embeddingWorker.on('failed', (job, err) => {
-      console.error(`Embedding job ${job?.id} failed:`, err);
-    });
-
-    console.log('Embeddings worker service initialized');
+      this.openai = new OpenAI({
+        apiKey: process.env.OPENAI_API_KEY,
+      });
+    }
+    return this.openai;
   }
 
   async onModuleDestroy() {
@@ -119,6 +154,12 @@ export class EmbeddingsWorkerService implements OnModuleInit, OnModuleDestroy {
       
       // Only process messages that don't already have embeddings
       if (newMessage.content_embedding) {
+        return;
+      }
+
+      // If Redis is not available, skip queuing
+      if (!this.isRedisAvailable || !this.embeddingQueue) {
+        console.log(`Redis not available, skipping embedding job for message ${newMessage.id}`);
         return;
       }
 
@@ -171,7 +212,7 @@ export class EmbeddingsWorkerService implements OnModuleInit, OnModuleDestroy {
       const cleanContent = this.cleanContentForEmbedding(content);
 
       // Call OpenAI Embeddings API
-      const response = await this.openai.embeddings.create({
+      const response = await this.getOpenAI().embeddings.create({
         model: 'text-embedding-3-small', // More cost-effective than ada-002
         input: cleanContent,
         encoding_format: 'float',
@@ -184,7 +225,7 @@ export class EmbeddingsWorkerService implements OnModuleInit, OnModuleDestroy {
       return response.data[0].embedding;
     } catch (error) {
       console.error('OpenAI embedding generation failed:', error);
-      throw new Error(`Embedding generation failed: ${error.message}`);
+      throw new Error(`Embedding generation failed: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
 
@@ -272,6 +313,11 @@ export class EmbeddingsWorkerService implements OnModuleInit, OnModuleDestroy {
 
   // Public method to manually queue embedding generation
   async queueEmbeddingGeneration(messageId: string, content: string, userId: string, sessionId: string): Promise<void> {
+    if (!this.isRedisAvailable || !this.embeddingQueue) {
+      console.log(`Redis not available, skipping manual embedding job for message ${messageId}`);
+      return;
+    }
+    
     await this.embeddingQueue.add('generate-embedding', {
       messageId,
       content,
@@ -287,6 +333,15 @@ export class EmbeddingsWorkerService implements OnModuleInit, OnModuleDestroy {
     completed: number;
     failed: number;
   }> {
+    if (!this.isRedisAvailable || !this.embeddingQueue) {
+      return {
+        waiting: 0,
+        active: 0,
+        completed: 0,
+        failed: 0,
+      };
+    }
+
     const waiting = await this.embeddingQueue.getWaiting();
     const active = await this.embeddingQueue.getActive();
     const completed = await this.embeddingQueue.getCompleted();

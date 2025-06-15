@@ -1,0 +1,1 @@
+export type Tier = "trial" | "strategist" | "shark"; 

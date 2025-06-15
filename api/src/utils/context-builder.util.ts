@@ -1,4 +1,5 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
+import { validateUUID } from './uuid-validator.util';
 
 export interface UserContext {
   shortTermContexts: ShortTermContext[];
@@ -70,6 +71,8 @@ export class ContextBuilderUtil {
     currentMessage: string,
     messageEmbedding?: number[]
   ): Promise<UserContext> {
+    // Validate UUID format
+    validateUUID(userId, 'user_id');
     try {
       // Fetch all context components in parallel for efficiency
       const [
@@ -321,10 +324,13 @@ export class ContextBuilderUtil {
       .from('user_personalization')
       .select('communication_style, preferred_topics, goals, learning_preferences, timezone, language')
       .eq('user_id', userId)
-      .single();
+      .maybeSingle();
 
-    if (error || !data) {
-      console.warn('Error fetching user personalization:', error);
+    if (error) {
+      console.warn('Error fetching user personalization:', { code: error.code, message: error.message, details: error.details });
+    }
+
+    if (!data) {
       return {
         communication_style: 'professional',
         preferred_topics: [],

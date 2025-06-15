@@ -27,7 +27,7 @@ CREATE TABLE IF NOT EXISTS conversation_messages (
   action_type TEXT,
   metadata JSONB,
   embedding vector(1536), -- OpenAI text-embedding-3-small dimension
-  timestamp TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   token_count INTEGER
 );
 
@@ -49,7 +49,7 @@ CREATE INDEX IF NOT EXISTS idx_conversation_sessions_active ON conversation_sess
 
 CREATE INDEX IF NOT EXISTS idx_conversation_messages_session_id ON conversation_messages(session_id);
 CREATE INDEX IF NOT EXISTS idx_conversation_messages_user_id ON conversation_messages(user_id);
-CREATE INDEX IF NOT EXISTS idx_conversation_messages_timestamp ON conversation_messages(timestamp DESC);
+CREATE INDEX IF NOT EXISTS idx_conversation_messages_created_at ON conversation_messages(created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_conversation_messages_role ON conversation_messages(role);
 CREATE INDEX IF NOT EXISTS idx_conversation_messages_action_type ON conversation_messages(action_type);
 
@@ -116,7 +116,7 @@ RETURNS TABLE (
   action_type TEXT,
   metadata JSONB,
   embedding vector(1536),
-  timestamp TIMESTAMPTZ,
+  created_at TIMESTAMPTZ,
   token_count INTEGER,
   similarity FLOAT
 )
@@ -133,7 +133,7 @@ BEGIN
     cm.action_type,
     cm.metadata,
     cm.embedding,
-    cm.timestamp,
+    cm.created_at,
     cm.token_count,
     (1 - (cm.embedding <=> query_embedding)) AS similarity
   FROM conversation_messages cm
@@ -172,7 +172,7 @@ AS $$
 BEGIN
   UPDATE conversation_sessions 
   SET 
-    last_message_at = NEW.timestamp,
+    last_message_at = NEW.created_at,
     message_count = message_count + 1
   WHERE id = NEW.session_id;
   

@@ -1,7 +1,7 @@
 import * as SecureStore from 'expo-secure-store';
 import { differenceInDays } from 'date-fns';
 
-export type Tier = 'guest' | 'essential' | 'power';
+export type Tier = 'trial' | 'strategist' | 'shark';
 
 const MAX_FREE_DAILY = 3;
 const ATTEMPTS_KEY = 'dailyAttempts';
@@ -14,8 +14,8 @@ interface AttemptData {
 
 export class AttemptLimiter {
   static async getAttemptsLeft(tier: Tier): Promise<number> {
-    if (tier === 'power') {
-      return Number.MAX_SAFE_INTEGER; // Unlimited for power users
+    if (tier === 'shark') {
+      return Number.MAX_SAFE_INTEGER; // Unlimited for shark users
     }
 
     try {

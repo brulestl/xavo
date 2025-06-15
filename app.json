@@ -57,7 +57,9 @@
     "extra": {
       "eas": {
         "projectId": "4e9c25f4-7c66-43b2-8788-082e84fd5d8d"
-      }
+      },
+      "SUPABASE_URL": "https://wdhmlynmbrhunizbdhdt.supabase.co",
+      "SUPABASE_ANON_KEY": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6IndkaG1seW5tYnJodW5pemJkaGR0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDkzMDQ2NjgsImV4cCI6MjA2NDg4MDY2OH0.ORKN6Ryiz4Yo_BFhE_CS2yHMGPJDncKtYWKTwwI98N4"
     },
     "owner": "brulestl"
   }

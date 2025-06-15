@@ -1,7 +1,8 @@
 import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 import { useTheme } from '../../providers/ThemeProvider';
-import { Tier } from '../../providers/AuthProvider';
+
+export type Tier = 'trial' | 'strategist' | 'shark';
 
 interface TierBadgeProps {
   tier: Tier;
@@ -13,22 +14,22 @@ export const TierBadge: React.FC<TierBadgeProps> = ({ tier, size = 'medium' }) =
 
   const getTierConfig = (tier: Tier) => {
     switch (tier) {
-      case 'power':
+      case 'shark':
         return {
-          label: 'Power',
+          label: 'Shark',
           backgroundColor: theme.colors.growthGreen,
           textColor: theme.colors.pureWhite,
         };
-      case 'essential':
+      case 'strategist':
         return {
-          label: 'Essential',
+          label: 'Strategist',
           backgroundColor: theme.colors.xavoBlue,
           textColor: theme.colors.pureWhite,
         };
-      case 'guest':
+      case 'trial':
       default:
         return {
-          label: 'Guest',
+          label: 'Trial',
           backgroundColor: theme.semanticColors.border,
           textColor: theme.semanticColors.textSecondary,
         };
@@ -79,7 +80,7 @@ export const TierBadge: React.FC<TierBadgeProps> = ({ tier, size = 'medium' }) =
     >
       <Text
         style={[
-          styles.badgeText,
+          styles.text,
           {
             color: tierConfig.textColor,
             fontSize: sizeConfig.fontSize,
@@ -95,17 +96,10 @@ export const TierBadge: React.FC<TierBadgeProps> = ({ tier, size = 'medium' }) =
 const styles = StyleSheet.create({
   badge: {
     alignSelf: 'flex-start',
-    elevation: 2,
-    shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 1,
-    },
-    shadowOpacity: 0.1,
-    shadowRadius: 2,
   },
-  badgeText: {
+  text: {
     fontWeight: '600',
-    textAlign: 'center',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
   },
 }); 

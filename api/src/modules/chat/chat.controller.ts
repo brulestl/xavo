@@ -6,6 +6,7 @@ import {
   Request,
   HttpException,
   HttpStatus,
+  Headers,
 } from '@nestjs/common';
 import {
   ApiTags,
@@ -18,6 +19,9 @@ import { ChatService } from './chat.service';
 import { AuthGuard } from '../auth/auth.guard';
 import { AuthUser } from '../auth/auth.service';
 import { ChatRequestDto, ChatResponseDto } from './dto/chat.dto';
+import { assertPromptCredit } from '../../utils/credits';
+import { callCoachAssistant } from '../../utils/openai';
+import { Tier } from '../../config/plans';
 
 interface AuthenticatedRequest extends Request {
   user: AuthUser;
@@ -56,9 +60,14 @@ export class ChatController {
   async chat(
     @Body() chatRequest: ChatRequestDto,
     @Request() req: AuthenticatedRequest,
+    @Headers('x-tier') tierHeader?: string,
   ): Promise<ChatResponseDto> {
     try {
       const user = req.user;
+      const tier = (tierHeader || "trial") as Tier;
+      
+      // Check prompt credit using tier-based caps
+      await assertPromptCredit(user.id, tier);
       
       // Check if user can make queries (rate limiting)
       const canQuery = await this.chatService.canUserMakeQuery(user);
@@ -73,10 +82,26 @@ export class ChatController {
         );
       }
 
-      // Process the chat request
-      const response = await this.chatService.processChat(chatRequest, user);
+      // Convert chat request to OpenAI format
+      const messages = [
+        { role: 'user' as const, content: chatRequest.message }
+      ];
       
-      return response;
+      // Call OpenAI directly for real AI response
+      const openaiResponse = await callCoachAssistant(messages);
+      
+      // Return the AI response
+      return {
+        id: `msg_${Date.now()}`,
+        message: openaiResponse.choices[0].message.content || "I apologize, but I couldn't generate a response.",
+        timestamp: new Date().toISOString(),
+        sessionId: chatRequest.sessionId || `session_${Date.now()}`,
+        model: "gpt-4o-mini",
+        usage: {
+          tokensUsed: openaiResponse.usage?.total_tokens || 0,
+          remainingQueries: tier === 'shark' ? undefined : 2, // Mock remaining queries
+        },
+      };
     } catch (error) {
       if (error instanceof HttpException) {
         throw error;

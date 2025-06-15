@@ -40,7 +40,7 @@ export function useAuth() {
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [state, setState] = useState<AuthState>({ 
-    tier: 'guest', 
+    tier: 'trial', 
     dailyCounter: 0 
   });
 
@@ -81,13 +81,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       console.log('Mock login:', { email, password });
       
       // Mock response - set tier based on email for demo
-      const tier: Tier = email.includes('power') ? 'power' : 'essential';
+      const tier: Tier = email.includes('shark') ? 'shark' : 'strategist';
       
       setState(prev => ({ 
         ...prev, 
         tier, 
         email,
-        dailyCounter: tier === 'power' ? Number.MAX_SAFE_INTEGER : 3
+        dailyCounter: tier === 'shark' ? Number.MAX_SAFE_INTEGER : 3
       }));
     } catch (error) {
       console.error('Login error:', error);
@@ -100,10 +100,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       console.log('Mock signup:', { email, password });
       
-      // Default to essential tier for new signups
+      // Default to strategist tier for new signups
       setState(prev => ({ 
         ...prev, 
-        tier: 'essential', 
+        tier: 'strategist', 
         email,
         dailyCounter: 3
       }));
@@ -114,20 +114,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const loginAsGuest = () => {
-    setState({ tier: 'guest', dailyCounter: 3 });
+    setState({ tier: 'trial', dailyCounter: 3 });
   };
 
   const logout = () => {
-    setState({ tier: 'guest', dailyCounter: 3 });
+    setState({ tier: 'trial', dailyCounter: 3 });
   };
 
   const subscribePower = async () => {
-    // Mock subscription to power tier
+    // Mock subscription to shark tier
     try {
-      console.log('Mock power subscription');
+      console.log('Mock shark subscription');
       setState(prev => ({ 
         ...prev, 
-        tier: 'power',
+        tier: 'shark',
         dailyCounter: Number.MAX_SAFE_INTEGER
       }));
     } catch (error) {
@@ -141,7 +141,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const decrementCounter = async () => {
-    if (state.tier !== 'power') {
+    if (state.tier !== 'shark') {
       try {
         await AttemptLimiter.decrementAttempts();
         const newCounter = await AttemptLimiter.getAttemptsLeft(state.tier);

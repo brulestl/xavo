@@ -7,3 +7,13 @@
 ## UI Agent Decisions
 
 **UI-Agent**: Added nested SettingsDrawer with profile row in HistoryDrawer. Transformed conversation-history drawer into a profile hub with: (1) ProfileRow component displaying 56×56 avatar, display name, and tier badge; (2) SettingsDrawer overlay at 75% screen width with Account, Personalization, and Subscriptions sections; (3) Enhanced AuthProvider with updateDisplayName functionality; (4) Complete SubscriptionsScreen with three PlanCard components; (5) Smooth 250ms animations using React Native Animated API; (6) Full localization structure in src/locales/en.json; (7) Unit tests for new components. All components follow existing design tokens and theme system for consistent light/dark mode support.
+
+## SQL Agent Decisions
+
+**SQL-Agent**: added usage tracking migration (user_usage + fn_consume_prompt).
+
+## Infra Agent Decisions
+
+**Infra-Agent**: added assistant creation script + tier config.
+
+**Infra-Agent**: tier caps to 3/day, daily_usage RPC, live OpenAI chat.

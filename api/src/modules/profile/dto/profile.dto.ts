@@ -128,4 +128,34 @@ export class CompleteProfileDto {
   profile: UserProfileDto;
   personalization: UserPersonalizationDto;
   personality_scores?: Record<string, number>;
+}
+
+// Save Personality Scores DTO
+export class SavePersonalityScoresDto {
+  @IsOptional()
+  @IsUUID()
+  userId?: string;
+
+  @IsObject()
+  scores: {
+    assertiveness: number;
+    strategic: number;
+    adaptability: number;
+    empathy: number;
+    conscientiousness: number;
+    integrity: number;
+  };
+
+  @IsObject()
+  answers: Record<string, number>;
+
+  @IsOptional()
+  @IsObject()
+  personalizationData?: {
+    role?: string;
+    companySize?: string;
+    function?: string;
+    challenges?: string[];
+    personalityAnswers?: Record<string, string>;
+  };
 } 

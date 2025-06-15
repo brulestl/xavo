@@ -1,4 +1,4 @@
-import { supabase } from '../providers/AuthProvider';
+import { supabase } from './supabase';
 
 const BASE = `${process.env.EXPO_PUBLIC_API_URL}/api/v1`;
 

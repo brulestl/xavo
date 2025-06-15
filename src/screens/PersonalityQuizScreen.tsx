@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
   View,
   Text,
@@ -7,11 +7,14 @@ import {
   TouchableOpacity,
   Alert,
   Dimensions,
+  Animated,
 } from 'react-native';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { Container } from '../components/Container';
 import { Button } from '../components/Button';
 import { useTheme } from '../providers/ThemeProvider';
+import { useAuth } from '../providers/AuthProvider';
+import { supabase } from '../lib/supabase';
 import { Ionicons } from '@expo/vector-icons';
 
 const { width } = Dimensions.get('window');
@@ -19,220 +22,266 @@ const { width } = Dimensions.get('window');
 interface QuizQuestion {
   id: string;
   question: string;
-  options: {
-    text: string;
-    value: number;
-    trait: string;
-  }[];
+  trait: string;
 }
 
 interface PersonalityScores {
   assertiveness: number;
+  strategic: number;
+  adaptability: number;
   empathy: number;
-  analytical: number;
-  collaborative: number;
+  conscientiousness: number;
+  integrity: number;
 }
 
-const quizQuestions: QuizQuestion[][] = [
-  // Page 1: Communication Style
-  [
-    {
-      id: 'comm1',
-      question: 'In meetings, I typically:',
-      options: [
-        { text: 'Speak up early and often', value: 4, trait: 'assertiveness' },
-        { text: 'Share ideas when asked', value: 2, trait: 'assertiveness' },
-        { text: 'Listen more than I speak', value: 1, trait: 'empathy' },
-        { text: 'Ask clarifying questions', value: 3, trait: 'analytical' },
-      ]
-    },
-    {
-      id: 'comm2',
-      question: 'When giving feedback, I:',
-      options: [
-        { text: 'Am direct and to the point', value: 4, trait: 'assertiveness' },
-        { text: 'Focus on specific behaviors', value: 3, trait: 'analytical' },
-        { text: 'Consider the person\'s feelings first', value: 4, trait: 'empathy' },
-        { text: 'Seek input from others first', value: 3, trait: 'collaborative' },
-      ]
-    },
-    {
-      id: 'comm3',
-      question: 'In conflicts, I prefer to:',
-      options: [
-        { text: 'Address issues head-on', value: 4, trait: 'assertiveness' },
-        { text: 'Find common ground first', value: 4, trait: 'collaborative' },
-        { text: 'Understand all perspectives', value: 3, trait: 'empathy' },
-        { text: 'Analyze the root cause', value: 3, trait: 'analytical' },
-      ]
-    }
-  ],
-  // Page 2: Decision Making
-  [
-    {
-      id: 'decision1',
-      question: 'When making important decisions, I:',
-      options: [
-        { text: 'Trust my gut instinct', value: 3, trait: 'assertiveness' },
-        { text: 'Gather extensive data first', value: 4, trait: 'analytical' },
-        { text: 'Consult with my team', value: 4, trait: 'collaborative' },
-        { text: 'Consider impact on others', value: 4, trait: 'empathy' },
-      ]
-    },
-    {
-      id: 'decision2',
-      question: 'Under pressure, I:',
-      options: [
-        { text: 'Make quick decisive choices', value: 4, trait: 'assertiveness' },
-        { text: 'Stick to proven methods', value: 2, trait: 'analytical' },
-        { text: 'Rally the team together', value: 3, trait: 'collaborative' },
-        { text: 'Stay calm and supportive', value: 3, trait: 'empathy' },
-      ]
-    },
-    {
-      id: 'decision3',
-      question: 'I\'m most comfortable when:',
-      options: [
-        { text: 'Leading the charge', value: 4, trait: 'assertiveness' },
-        { text: 'Having all the facts', value: 4, trait: 'analytical' },
-        { text: 'Working as part of a team', value: 4, trait: 'collaborative' },
-        { text: 'Everyone feels heard', value: 4, trait: 'empathy' },
-      ]
-    }
-  ],
-  // Page 3: Relationship Building
-  [
-    {
-      id: 'relationship1',
-      question: 'I build relationships by:',
-      options: [
-        { text: 'Being confident and direct', value: 3, trait: 'assertiveness' },
-        { text: 'Sharing knowledge and insights', value: 3, trait: 'analytical' },
-        { text: 'Finding ways to collaborate', value: 4, trait: 'collaborative' },
-        { text: 'Showing genuine interest in others', value: 4, trait: 'empathy' },
-      ]
-    },
-    {
-      id: 'relationship2',
-      question: 'When someone disagrees with me, I:',
-      options: [
-        { text: 'Stand firm on my position', value: 4, trait: 'assertiveness' },
-        { text: 'Present supporting evidence', value: 4, trait: 'analytical' },
-        { text: 'Look for compromise solutions', value: 4, trait: 'collaborative' },
-        { text: 'Try to understand their viewpoint', value: 4, trait: 'empathy' },
-      ]
-    },
-    {
-      id: 'relationship3',
-      question: 'I gain influence through:',
-      options: [
-        { text: 'Strong leadership presence', value: 4, trait: 'assertiveness' },
-        { text: 'Expertise and competence', value: 4, trait: 'analytical' },
-        { text: 'Building alliances', value: 4, trait: 'collaborative' },
-        { text: 'Earning trust and respect', value: 4, trait: 'empathy' },
-      ]
-    }
-  ],
-  // Page 4: Work Style
-  [
-    {
-      id: 'workstyle1',
-      question: 'My ideal work environment is:',
-      options: [
-        { text: 'Fast-paced and challenging', value: 4, trait: 'assertiveness' },
-        { text: 'Structured and data-driven', value: 4, trait: 'analytical' },
-        { text: 'Collaborative and team-oriented', value: 4, trait: 'collaborative' },
-        { text: 'Supportive and inclusive', value: 4, trait: 'empathy' },
-      ]
-    },
-    {
-      id: 'workstyle2',
-      question: 'I\'m energized by:',
-      options: [
-        { text: 'Taking on new challenges', value: 4, trait: 'assertiveness' },
-        { text: 'Solving complex problems', value: 4, trait: 'analytical' },
-        { text: 'Successful team projects', value: 4, trait: 'collaborative' },
-        { text: 'Helping others succeed', value: 4, trait: 'empathy' },
-      ]
-    },
-    {
-      id: 'workstyle3',
-      question: 'Success to me means:',
-      options: [
-        { text: 'Achieving ambitious goals', value: 4, trait: 'assertiveness' },
-        { text: 'Making data-driven improvements', value: 4, trait: 'analytical' },
-        { text: 'Building strong teams', value: 4, trait: 'collaborative' },
-        { text: 'Creating positive impact', value: 4, trait: 'empathy' },
-      ]
-    }
-  ]
+// 24 questions as specified in the requirements
+const quizQuestions: QuizQuestion[] = [
+  // Assertiveness (Q1-Q4)
+  { id: 'Q1', question: "I'm comfortable pushing back on higher-ups when I believe I'm right.", trait: 'assertiveness' },
+  { id: 'Q2', question: "I enjoy taking the lead in group discussions.", trait: 'assertiveness' },
+  { id: 'Q3', question: "I can negotiate for what I want without feeling uneasy.", trait: 'assertiveness' },
+  { id: 'Q4', question: "Speaking in front of senior leadership energizes me.", trait: 'assertiveness' },
+  
+  // Strategic Thinking (Q5-Q8)
+  { id: 'Q5', question: "I quickly see patterns others miss in complex situations.", trait: 'strategic' },
+  { id: 'Q6', question: "I often think several moves ahead before acting.", trait: 'strategic' },
+  { id: 'Q7', question: "I can map out multiple paths to the same goal.", trait: 'strategic' },
+  { id: 'Q8', question: "I like analyzing power dynamics inside my organization.", trait: 'strategic' },
+  
+  // Adaptability (Q9-Q12)
+  { id: 'Q9', question: "Sudden changes at work rarely throw me off course.", trait: 'adaptability' },
+  { id: 'Q10', question: "I can stay calm when priorities shift unexpectedly.", trait: 'adaptability' },
+  { id: 'Q11', question: "I adjust my communication style to match different audiences.", trait: 'adaptability' },
+  { id: 'Q12', question: "I view setbacks as opportunities to learn.", trait: 'adaptability' },
+  
+  // Empathy (Q13-Q16)
+  { id: 'Q13', question: "I sense when colleagues are uncomfortable even if they don't say so.", trait: 'empathy' },
+  { id: 'Q14', question: "People often come to me for advice on interpersonal issues.", trait: 'empathy' },
+  { id: 'Q15', question: "I pay close attention to non-verbal cues in meetings.", trait: 'empathy' },
+  { id: 'Q16', question: "I modify my arguments based on what matters to the listener.", trait: 'empathy' },
+  
+  // Conscientiousness (Q17-Q20)
+  { id: 'Q17', question: "I double-check details to ensure my work is error-free.", trait: 'conscientiousness' },
+  { id: 'Q18', question: "I keep promises, even under tight deadlines.", trait: 'conscientiousness' },
+  { id: 'Q19', question: "I plan my day to make steady progress on long-term goals.", trait: 'conscientiousness' },
+  { id: 'Q20', question: "Others describe me as reliable and well-prepared.", trait: 'conscientiousness' },
+  
+  // Integrity (Q21-Q24)
+  { id: 'Q21', question: "I refuse to win by bending ethical rules.", trait: 'integrity' },
+  { id: 'Q22', question: "I'm transparent about my intentions with teammates.", trait: 'integrity' },
+  { id: 'Q23', question: "I own up to my mistakes immediately.", trait: 'integrity' },
+  { id: 'Q24', question: "I'd rather lose an argument than mislead someone.", trait: 'integrity' },
+];
+
+// Group questions into pages of 6 questions each (4 pages total)
+const questionsPerPage = 6;
+const totalPages = Math.ceil(quizQuestions.length / questionsPerPage);
+
+const likertOptions = [
+  { value: 1, label: 'Strongly Disagree' },
+  { value: 2, label: 'Disagree' },
+  { value: 3, label: 'Neutral' },
+  { value: 4, label: 'Agree' },
+  { value: 5, label: 'Strongly Agree' },
 ];
 
 export const PersonalityQuizScreen: React.FC = () => {
   const navigation = useNavigation();
   const route = useRoute();
   const { theme } = useTheme();
+  const { user, markOnboardingComplete } = useAuth();
   
   const [currentPage, setCurrentPage] = useState(0);
-  const [answers, setAnswers] = useState<Record<string, { value: number; trait: string }>>({});
+  const [answers, setAnswers] = useState<Record<string, number>>({});
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [questionMap, setQuestionMap] = useState<Record<string, string>>({});
+  const [isLoadingQuestions, setIsLoadingQuestions] = useState(true);
   
-  const currentQuestions = quizQuestions[currentPage];
-  const totalPages = quizQuestions.length;
+  const scrollViewRef = useRef<ScrollView>(null);
+  const slideAnim = useRef(new Animated.Value(0)).current;
+  
+  const startIndex = currentPage * questionsPerPage;
+  const endIndex = Math.min(startIndex + questionsPerPage, quizQuestions.length);
+  const currentQuestions = quizQuestions.slice(startIndex, endIndex);
   const progress = ((currentPage + 1) / totalPages) * 100;
+  
+  // Load question-ID mapping from database
+  useEffect(() => {
+    const loadQuestionMap = async () => {
+      try {
+        setIsLoadingQuestions(true);
+        const { data, error } = await supabase
+          .from('onboarding_questions')
+          .select('id, question_code');
+        
+        if (error) {
+          console.error('❌ Error loading question map:', error);
+          Alert.alert('Error', 'Failed to load questions. Please try again.');
+          return;
+        }
+        
+        const map: Record<string, string> = {};
+        data?.forEach(question => {
+          map[question.question_code] = question.id;
+        });
+        
+        console.log('✅ Question map loaded:', map);
+        setQuestionMap(map);
+      } catch (error) {
+        console.error('❌ Error in loadQuestionMap:', error);
+        Alert.alert('Error', 'Failed to load questions. Please try again.');
+      } finally {
+        setIsLoadingQuestions(false);
+      }
+    };
+    
+    loadQuestionMap();
+  }, []);
+  
+  // Debug logging
+  console.log(`🔍 Component render - Page ${currentPage + 1}/${totalPages}, Questions: ${startIndex + 1}-${endIndex}`);
+  console.log('🔍 Current answers count:', Object.keys(answers).length);
+  console.log('🔍 isSubmitting:', isSubmitting);
+  console.log('🔍 User:', user?.id);
+  console.log('🔍 Question map loaded:', Object.keys(questionMap).length, 'questions');
 
-  const handleAnswerSelect = (questionId: string, option: { value: number; trait: string }) => {
-    setAnswers(prev => ({
-      ...prev,
-      [questionId]: option
-    }));
+  const handleAnswerSelect = (questionId: string, value: number) => {
+    console.log('📝 Answer selected:', questionId, '=', value);
+    setAnswers(prev => {
+      const newAnswers = {
+        ...prev,
+        [questionId]: value
+      };
+      console.log('📝 Updated answers:', newAnswers);
+      return newAnswers;
+    });
   };
 
   const calculatePersonalityScores = (): PersonalityScores => {
     const scores: PersonalityScores = {
       assertiveness: 0,
+      strategic: 0,
+      adaptability: 0,
       empathy: 0,
-      analytical: 0,
-      collaborative: 0,
+      conscientiousness: 0,
+      integrity: 0,
     };
 
     const traitCounts: Record<string, number> = {
       assertiveness: 0,
+      strategic: 0,
+      adaptability: 0,
       empathy: 0,
-      analytical: 0,
-      collaborative: 0,
+      conscientiousness: 0,
+      integrity: 0,
     };
 
-    Object.values(answers).forEach(answer => {
-      scores[answer.trait as keyof PersonalityScores] += answer.value;
-      traitCounts[answer.trait]++;
+    // Calculate sum and count for each trait
+    quizQuestions.forEach(question => {
+      const answer = answers[question.id];
+      if (answer) {
+        scores[question.trait as keyof PersonalityScores] += answer;
+        traitCounts[question.trait]++;
+      }
     });
 
-    // Normalize scores (average them)
+    // Calculate averages (normalize to 0-1 scale)
     Object.keys(scores).forEach(trait => {
       const count = traitCounts[trait];
       if (count > 0) {
-        scores[trait as keyof PersonalityScores] = scores[trait as keyof PersonalityScores] / count;
+        scores[trait as keyof PersonalityScores] = scores[trait as keyof PersonalityScores] / (count * 5); // Divide by count * 5 to normalize
       }
     });
 
     return scores;
   };
 
-  const getPersonalityType = (scores: PersonalityScores): string => {
-    const maxScore = Math.max(...Object.values(scores));
-    const dominantTrait = Object.entries(scores).find(([_, score]) => score === maxScore)?.[0];
+  const savePersonalityData = async (scores: PersonalityScores) => {
+    console.log('🚀 savePersonalityData called with scores:', scores);
     
-    const types = {
-      assertiveness: 'The Leader',
-      analytical: 'The Strategist',
-      collaborative: 'The Connector',
-      empathy: 'The Supporter'
-    };
+    if (!user?.id) {
+      console.error('❌ User not authenticated, user:', user);
+      throw new Error('User not authenticated');
+    }
 
-    return types[dominantTrait as keyof typeof types] || 'The Balanced Professional';
+    // Check if question map is loaded
+    if (Object.keys(questionMap).length === 0) {
+      console.error('❌ Question map not loaded');
+      throw new Error('Question mapping not loaded. Please try again.');
+    }
+
+    try {
+      // Get personalization data from route params
+      const personalizationData = (route.params as any)?.personalizationData;
+      console.log('📋 Personalization data from route:', personalizationData);
+      
+      // 1. Transform answers into full rows with proper question IDs
+      console.log('📝 Transforming and inserting onboarding answers...');
+      const rows = Object.entries(answers).map(([code, value]) => {
+        const question_id = questionMap[code];
+        if (!question_id) {
+          throw new Error(`No UUID for question ${code}`);
+        }
+        return {
+          user_id: user.id,
+          question_id,
+          question_code: code,
+          answer_value: { value },
+        };
+      });
+
+      console.log('📝 Inserting rows:', rows);
+      const { error: answersError } = await supabase
+        .from('onboarding_answers')
+        .insert(rows);
+
+      if (answersError) {
+        console.error('❌ Error inserting answers:', answersError);
+        throw answersError;
+      }
+
+      console.log('✅ Answers inserted successfully');
+
+      // 2. Upsert personalization with scores and completion status
+      console.log('📊 Upserting personalization with scores...');
+      const { error: personalizationError } = await supabase.rpc('fn_insert_or_update_personalization', {
+        p_user_id: user.id,
+        p_personality_scores: scores,
+        p_onboarding_status: 'completed'
+        // omit other p_* fields as they default to NULL and were set in onboarding
+      });
+
+      if (personalizationError) {
+        console.error('❌ Error upserting personalization:', personalizationError);
+        throw personalizationError;
+      }
+
+      console.log('✅ Personalization updated successfully');
+
+      // 3. Optionally compute server-side scores
+      console.log('🧮 Computing server-side personality scores...');
+      const { error: computeError } = await supabase.rpc('fn_compute_personality_scores', { 
+        p_user_id: user.id 
+      });
+
+      if (computeError) {
+        console.warn('⚠️ Warning computing server-side scores (non-critical):', computeError);
+        // Don't throw here as this is optional
+      } else {
+        console.log('✅ Server-side scores computed successfully');
+      }
+
+      console.log('🎉 All personality data saved successfully');
+    } catch (error) {
+      console.error('💥 Error saving personality data:', error);
+      throw error;
+    }
   };
 
-  const handleNext = () => {
+  const handleNext = async () => {
+    console.log('🔥 handleNext fired, currentPage =', currentPage);
+    console.log(`handleNext called - Current page: ${currentPage}, Total pages: ${totalPages}`);
+    
     // Check if all questions on current page are answered
     const unansweredQuestions = currentQuestions.filter(q => !answers[q.id]);
     if (unansweredQuestions.length > 0) {
@@ -241,37 +290,129 @@ export const PersonalityQuizScreen: React.FC = () => {
     }
 
     if (currentPage < totalPages - 1) {
-      setCurrentPage(prev => prev + 1);
-    } else {
-      // Quiz completed
-      const personalityScores = calculatePersonalityScores();
-      const personalityType = getPersonalityType(personalityScores);
+      // Animate slide transition and scroll to top
+      Animated.sequence([
+        Animated.timing(slideAnim, {
+          toValue: -50,
+          duration: 150,
+          useNativeDriver: true,
+        }),
+        Animated.timing(slideAnim, {
+          toValue: 0,
+          duration: 200,
+          useNativeDriver: true,
+        }),
+      ]).start();
       
-      console.log('Personality Quiz Results:', {
-        scores: personalityScores,
-        type: personalityType,
-        personalizationData: route.params
-      });
+      setCurrentPage(prev => prev + 1);
+      
+      // Scroll to top of the new page
+      setTimeout(() => {
+        scrollViewRef.current?.scrollTo({ y: 0, animated: true });
+      }, 100);
+    } else {
+      // Quiz completed - validate ALL questions are answered
+      const totalAnswered = Object.keys(answers).length;
+      const totalQuestions = quizQuestions.length;
+      
+      console.log(`Quiz completion check: ${totalAnswered}/${totalQuestions} questions answered`);
+      
+      if (totalAnswered < totalQuestions) {
+        const missingQuestions = quizQuestions.filter(q => !answers[q.id]).map(q => q.id);
+        console.log('Missing questions:', missingQuestions);
+        Alert.alert(
+          'Incomplete Assessment', 
+          `Please answer all ${totalQuestions} questions before completing the assessment. You have answered ${totalAnswered} questions.`
+        );
+        return;
+      }
+      
+      // Quiz completed - save results
+      console.log('Quiz completed! Starting save process...');
+      setIsSubmitting(true);
+      
+      try {
+        const personalityScores = calculatePersonalityScores();
+        console.log('Calculated scores:', personalityScores);
+        
+        await savePersonalityData(personalityScores);
+        console.log('Personality data saved successfully!');
+        
+        // Mark onboarding as complete in the auth context
+        markOnboardingComplete();
+        
+        // Get dominant trait for display
+        const maxScore = Math.max(...Object.values(personalityScores));
+        const dominantTrait = Object.entries(personalityScores).find(([_, score]) => score === maxScore)?.[0];
+        
+        const traitLabels = {
+          assertiveness: 'Assertive Leader',
+          strategic: 'Strategic Thinker',
+          adaptability: 'Adaptable Professional',
+          empathy: 'Empathetic Collaborator',
+          conscientiousness: 'Conscientious Achiever',
+          integrity: 'Principled Professional'
+        };
 
-      // Navigate to dashboard or completion screen
-      Alert.alert(
-        'Quiz Complete!',
-        `Your personality type: ${personalityType}`,
-        [
-          {
-            text: 'Continue',
-            onPress: () => (navigation as any).navigate('Dashboard')
-          }
-        ]
-      );
+        const personalityType = traitLabels[dominantTrait as keyof typeof traitLabels] || 'Balanced Professional';
+        
+        Alert.alert(
+          'Assessment Complete!',
+          `Your primary strength: ${personalityType}\n\nYour personalized coaching experience is now ready.`,
+          [
+            {
+              text: 'Continue',
+              onPress: () => (navigation as any).navigate('SubscriptionSelection')
+            }
+          ]
+        );
+      } catch (error) {
+        console.error('💥 Error in handleNext:', error);
+        const errorMessage = error instanceof Error ? error.message : 'Failed to save your assessment results. Please try again.';
+        Alert.alert(
+          'Error',
+          errorMessage,
+          [
+            {
+              text: 'Retry',
+              onPress: () => setIsSubmitting(false)
+            }
+          ]
+        );
+      }
     }
   };
 
   const handleBack = () => {
     if (currentPage > 0) {
       setCurrentPage(prev => prev - 1);
+    } else {
+      navigation.goBack();
     }
   };
+
+  const getPageTitle = () => {
+    const pageTraits = {
+      0: 'Leadership & Communication',
+      1: 'Strategic Thinking & Adaptability', 
+      2: 'Empathy & Relationships',
+      3: 'Reliability & Ethics'
+    };
+    return pageTraits[currentPage as keyof typeof pageTraits] || 'Personality Assessment';
+  };
+
+  // Show loading state while questions are being loaded
+  if (isLoadingQuestions) {
+    return (
+      <Container variant="screen">
+        <View style={[styles.container, styles.loadingContainer]}>
+          <Text style={[styles.loadingText, { color: theme.semanticColors.textPrimary }]}>
+            Loading questions...
+          </Text>
+        </View>
+      </Container>
+    );
+  }
 
   return (
     <Container variant="screen">
@@ -279,75 +420,90 @@ export const PersonalityQuizScreen: React.FC = () => {
         {/* Header */}
         <View style={styles.header}>
           <View style={styles.progressContainer}>
-            <View style={[styles.progressBar, { backgroundColor: theme.border }]}>
+            <View style={[styles.progressBar, { backgroundColor: theme.semanticColors.border }]}>
               <View 
                 style={[
                   styles.progressFill, 
-                  { backgroundColor: theme.accent, width: `${progress}%` }
+                  { backgroundColor: theme.semanticColors.accent, width: `${progress}%` }
                 ]} 
               />
             </View>
-            <Text style={[styles.progressText, { color: theme.textSecondary }]}>
-              {currentPage + 1} of {totalPages}
+            <Text style={[styles.progressText, { color: theme.semanticColors.textSecondary }]}>
+              Page {currentPage + 1} of {totalPages}
             </Text>
           </View>
           
-          <Text style={[styles.title, { color: theme.textPrimary }]}>
+          <Text style={[styles.title, { color: theme.semanticColors.textPrimary }]}>
             Personality Assessment
           </Text>
-          <Text style={[styles.subtitle, { color: theme.textSecondary }]}>
-            {currentPage === 0 && 'Communication Style'}
-            {currentPage === 1 && 'Decision Making'}
-            {currentPage === 2 && 'Relationship Building'}
-            {currentPage === 3 && 'Work Style'}
+          <Text style={[styles.subtitle, { color: theme.semanticColors.textSecondary }]}>
+            {getPageTitle()}
           </Text>
         </View>
 
         {/* Questions */}
-        <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
-          {currentQuestions.map((question, index) => (
+        <ScrollView 
+          ref={scrollViewRef}
+          style={styles.content} 
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+          scrollEnabled={true}
+          nestedScrollEnabled={false}
+        >
+          <Animated.View style={{ transform: [{ translateX: slideAnim }] }}>
+            {currentQuestions.map((question, index) => (
             <View key={question.id} style={styles.questionContainer}>
-              <Text style={[styles.questionText, { color: theme.textPrimary }]}>
-                {index + 1}. {question.question}
+              <Text style={[styles.questionText, { color: theme.semanticColors.textPrimary }]}>
+                {startIndex + index + 1}. {question.question}
               </Text>
               
-              <View style={styles.optionsContainer}>
-                {question.options.map((option, optionIndex) => {
-                  const isSelected = answers[question.id]?.value === option.value && 
-                                   answers[question.id]?.trait === option.trait;
+              <View style={styles.likertContainer}>
+                {likertOptions.map((option) => {
+                  const isSelected = answers[question.id] === option.value;
                   
                   return (
                     <TouchableOpacity
-                      key={optionIndex}
+                      key={option.value}
                       style={[
-                        styles.optionButton,
+                        styles.likertOption,
                         {
-                          backgroundColor: isSelected ? theme.accent : theme.surface,
-                          borderColor: isSelected ? theme.accent : theme.border,
+                          backgroundColor: isSelected ? theme.semanticColors.accent : theme.semanticColors.surface,
+                          borderColor: isSelected ? theme.semanticColors.accent : theme.semanticColors.border,
                         }
                       ]}
-                      onPress={() => handleAnswerSelect(question.id, option)}
+                      onPress={() => handleAnswerSelect(question.id, option.value)}
                     >
-                      <View style={styles.optionContent}>
+                      <View style={styles.likertContent}>
                         <View style={[
                           styles.radioButton,
                           {
-                            borderColor: isSelected ? theme.accent : theme.border,
-                            backgroundColor: isSelected ? theme.accent : 'transparent',
+                            borderColor: isSelected ? theme.semanticColors.accent : theme.semanticColors.border,
+                            backgroundColor: isSelected ? theme.semanticColors.accent : 'transparent',
                           }
                         ]}>
                           {isSelected && (
-                            <Ionicons name="checkmark" size={12} color={theme.colors.eerieBlack} />
+                            <View style={[styles.radioInner, { backgroundColor: theme.colors.nearlyBlack }]} />
                           )}
                         </View>
-                        <Text style={[
-                          styles.optionText,
-                          {
-                            color: isSelected ? theme.colors.eerieBlack : theme.textPrimary
-                          }
-                        ]}>
-                          {option.text}
-                        </Text>
+                        <View style={styles.likertLabels}>
+                          <Text style={[
+                            styles.likertValue,
+                            {
+                              color: isSelected ? theme.colors.nearlyBlack : theme.semanticColors.textPrimary,
+                              fontWeight: isSelected ? '600' : '400'
+                            }
+                          ]}>
+                            {option.value}
+                          </Text>
+                          <Text style={[
+                            styles.likertLabel,
+                            {
+                              color: isSelected ? theme.colors.nearlyBlack : theme.semanticColors.textSecondary
+                            }
+                          ]}>
+                            {option.label}
+                          </Text>
+                        </View>
                       </View>
                     </TouchableOpacity>
                   );
@@ -355,24 +511,25 @@ export const PersonalityQuizScreen: React.FC = () => {
               </View>
             </View>
           ))}
+          </Animated.View>
         </ScrollView>
 
         {/* Navigation */}
         <View style={styles.navigation}>
-          {currentPage > 0 && (
-            <Button
-              title="Back"
-              onPress={handleBack}
-              variant="outline"
-              style={styles.backButton}
-            />
-          )}
+          <Button
+            title="Back"
+            onPress={handleBack}
+            variant="outline"
+            style={styles.backButton}
+            disabled={isSubmitting || isLoadingQuestions}
+          />
           
           <Button
-            title={currentPage === totalPages - 1 ? 'Complete Quiz' : 'Next'}
+            title={isSubmitting ? 'Saving...' : (currentPage === totalPages - 1 ? 'Complete Assessment' : 'Next')}
             onPress={handleNext}
-            fullWidth={currentPage === 0}
-            style={currentPage > 0 ? styles.nextButton : undefined}
+            variant="cta"
+            disabled={isSubmitting || isLoadingQuestions}
+            style={styles.nextButton}
           />
         </View>
       </View>
@@ -427,15 +584,15 @@ const styles = StyleSheet.create({
     marginBottom: 16,
     lineHeight: 24,
   },
-  optionsContainer: {
-    gap: 12,
+  likertContainer: {
+    gap: 8,
   },
-  optionButton: {
+  likertOption: {
     borderWidth: 1,
     borderRadius: 12,
     padding: 16,
   },
-  optionContent: {
+  likertContent: {
     flexDirection: 'row',
     alignItems: 'center',
   },
@@ -448,10 +605,25 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  optionText: {
+  radioInner: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+  },
+  likertLabels: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  likertValue: {
+    fontSize: 16,
+    fontWeight: '600',
+    minWidth: 20,
+  },
+  likertLabel: {
     fontSize: 16,
     flex: 1,
-    lineHeight: 22,
   },
   navigation: {
     flexDirection: 'row',
@@ -463,5 +635,13 @@ const styles = StyleSheet.create({
   },
   nextButton: {
     flex: 2,
+  },
+  loadingContainer: {
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  loadingText: {
+    fontSize: 16,
+    textAlign: 'center',
   },
 });

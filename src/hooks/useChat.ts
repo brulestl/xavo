@@ -1,6 +1,7 @@
 import { useState, useCallback } from 'react';
 import useSWRMutation from 'swr/mutation';
 import { useAuth } from '../providers/AuthProvider';
+import { apiFetch } from '../lib/api';
 
 export interface ChatMessage {
   id: string;
@@ -22,30 +23,17 @@ interface SendMessageArgs {
   conversationId?: string;
 }
 
-// API endpoint - adjust based on your backend setup
-const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:3000';
-
 async function sendChatRequest(url: string, { arg }: { arg: SendMessageArgs }) {
   const { message, action, conversationId } = arg;
   
-  const response = await fetch(`${API_BASE_URL}/api/v1/chat`, {
+  return await apiFetch<ChatResponse>('/chat', {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      // Add auth header if needed
-    },
     body: JSON.stringify({
       message,
       action,
       conversationId,
     }),
   });
-
-  if (!response.ok) {
-    throw new Error(`HTTP error! status: ${response.status}`);
-  }
-
-  return response.json() as Promise<ChatResponse>;
 }
 
 export function useChat(conversationId?: string) {

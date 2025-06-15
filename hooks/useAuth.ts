@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Alert } from 'react-native';
+import { apiFetch } from '../src/lib/api';
 
 export interface User {
   id: string;
@@ -18,8 +19,6 @@ interface UseAuthReturn {
   refreshUser: () => Promise<void>;
 }
 
-const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:3000';
-
 export const useAuth = (): UseAuthReturn => {
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -34,18 +33,9 @@ export const useAuth = (): UseAuthReturn => {
 
     try {
       // Call sign out endpoint
-      const response = await fetch(`${API_BASE_URL}/api/v1/auth/signout`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          // TODO: Add authentication header
-          // 'Authorization': `Bearer ${userToken}`,
-        }
+      await apiFetch('/auth/signout', {
+        method: 'POST'
       });
-
-      if (!response.ok) {
-        throw new Error(`Sign out failed: ${response.statusText}`);
-      }
 
       // Clear user state
       setUser(null);
@@ -75,28 +65,16 @@ export const useAuth = (): UseAuthReturn => {
     setError(null);
 
     try {
-      const response = await fetch(`${API_BASE_URL}/api/v1/auth/me`, {
-        method: 'GET',
-        headers: {
-          'Content-Type': 'application/json',
-          // TODO: Add authentication header
-          // 'Authorization': `Bearer ${userToken}`,
-        }
-      });
-
-      if (!response.ok) {
-        if (response.status === 401) {
-          // User is not authenticated
-          setUser(null);
-          return;
-        }
-        throw new Error(`Failed to get user: ${response.statusText}`);
-      }
-
-      const userData = await response.json();
+      const userData = await apiFetch<User>('/auth/me');
       setUser(userData);
 
     } catch (err) {
+      // Handle 401 errors (user not authenticated)
+      if (err instanceof Error && err.message.includes('401')) {
+        setUser(null);
+        return;
+      }
+      
       const errorMessage = err instanceof Error ? err.message : 'Failed to get user data';
       setError(errorMessage);
       console.warn('Failed to refresh user:', errorMessage);
