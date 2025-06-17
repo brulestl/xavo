@@ -1,12 +1,49 @@
 import { supabase } from './supabase';
+import Constants from 'expo-constants';
+import { Platform } from 'react-native';
 
-const BASE = `${process.env.EXPO_PUBLIC_API_URL}/api/v1`;
+// Get API URL from Expo configuration with environment and platform detection
+function getApiUrl(): string {
+  const apiUrlConfig = Constants.expoConfig?.extra?.apiUrl;
+  
+  // If it's a string (old format), use it directly
+  if (typeof apiUrlConfig === 'string') {
+    return apiUrlConfig;
+  }
+  
+  // If it's an object (new format), determine the correct URL
+  if (typeof apiUrlConfig === 'object' && apiUrlConfig !== null) {
+    const environment = __DEV__ ? 'development' : 'production';
+    const envConfig = apiUrlConfig[environment];
+    
+    if (envConfig) {
+      // Determine platform
+      if (Platform.OS === 'web') {
+        return envConfig.web;
+      } else if (Platform.OS === 'android') {
+        // Check if we're running on a real device vs emulator
+        // For now, default to emulator (10.0.2.2)
+        // You can add device detection logic here if needed
+        return envConfig.android;
+      } else if (Platform.OS === 'ios') {
+        return envConfig.ios;
+      }
+    }
+  }
+  
+  // Fallback to localhost
+  return 'http://localhost:3000';
+}
+
+const API_URL = getApiUrl();
+const BASE = `${API_URL}/api/v1`;
 
 export async function apiFetch<T>(
   path: string,
   init: RequestInit & { auth?: boolean } = { auth: true }
 ): Promise<T> {
   console.log('🔍 apiFetch called with:', { path, method: init.method || 'GET' });
+  console.log('🔍 API_URL:', API_URL);
   console.log('🔍 BASE URL:', BASE);
   console.log('🔍 Full URL will be:', `${BASE}${path}`);
   

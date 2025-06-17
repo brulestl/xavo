@@ -6,6 +6,7 @@ import { EmbeddingsModule } from './modules/embeddings/embeddings.module';
 import { MemoryModule } from './modules/memory/memory.module';
 import { RAGModule } from './modules/rag/rag.module';
 import { ProfileModule } from './modules/profile/profile.module';
+import { PromptsModule } from './modules/prompts/prompts.module';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 
@@ -21,6 +22,7 @@ import { AppService } from './app.service';
     RAGModule,
     ChatModule,
     ProfileModule,
+    PromptsModule,
   ],
   controllers: [AppController],
   providers: [AppService],

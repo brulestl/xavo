@@ -61,7 +61,7 @@ export class ConversationMessageDto {
 
   @IsOptional()
   @IsArray()
-  content_embedding?: number[];
+  embedding?: number[];
 
   @IsOptional()
   @IsObject()

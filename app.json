@@ -58,8 +58,22 @@
       "eas": {
         "projectId": "4e9c25f4-7c66-43b2-8788-082e84fd5d8d"
       },
-      "SUPABASE_URL": "https://wdhmlynmbrhunizbdhdt.supabase.co",
-      "SUPABASE_ANON_KEY": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6IndkaG1seW5tYnJodW5pemJkaGR0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDkzMDQ2NjgsImV4cCI6MjA2NDg4MDY2OH0.ORKN6Ryiz4Yo_BFhE_CS2yHMGPJDncKtYWKTwwI98N4"
+      "supabaseUrl": "https://wdhmlynmbrhunizbdhdt.supabase.co",
+      "supabaseAnonKey": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6IndkaG1seW5tYnJodW5pemJkaGR0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDkzMDQ2NjgsImV4cCI6MjA2NDg4MDY2OH0.ORKN6Ryiz4Yo_BFhE_CS2yHMGPJDncKtYWKTwwI98N4",
+      "apiUrl": {
+        "development": {
+          "web": "http://localhost:3000",
+          "android": "http://10.0.2.2:3000",
+          "ios": "http://localhost:3000",
+          "device": "http://192.168.1.100:3000"
+        },
+        "production": {
+          "web": "https://your-production-api.com",
+          "android": "https://your-production-api.com",
+          "ios": "https://your-production-api.com",
+          "device": "https://your-production-api.com"
+        }
+      }
     },
     "owner": "brulestl"
   }

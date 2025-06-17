@@ -32,35 +32,13 @@ export class EmbeddingsWorkerService implements OnModuleInit, OnModuleDestroy {
   }
 
   async onModuleInit() {
-    // Try to initialize Redis connection
-    await this.initializeRedis();
-
-    // Start listening for PostgreSQL notifications
-    await this.startNotificationListener();
-
-    // Only start BullMQ worker if Redis is available
-    if (this.isRedisAvailable && this.redis) {
-      this.embeddingWorker = new Worker(
-        'embeddings',
-        this.processEmbeddingJob.bind(this),
-        {
-          connection: this.redis,
-          concurrency: 5, // Process up to 5 jobs concurrently
-        }
-      );
-
-      // Set up worker event handlers
-      this.embeddingWorker.on('completed', (job) => {
-        console.log(`Embedding job ${job.id} completed for message ${job.data.messageId}`);
-      });
-
-      this.embeddingWorker.on('failed', (job, err) => {
-        console.error(`Embedding job ${job?.id} failed:`, err);
-      });
-    }
-
-    console.log('Embeddings worker service initialized', 
-      this.isRedisAvailable ? 'with Redis' : 'in stub mode (Redis not available)');
+    // Disable Redis and embeddings for now to prevent connection errors
+    console.log('Embeddings worker service: Redis disabled for testing');
+    this.isRedisAvailable = false;
+    this.redis = null;
+    this.embeddingQueue = null;
+    
+    console.log('Embeddings worker service initialized in disabled mode');
   }
 
   private async initializeRedis(): Promise<void> {

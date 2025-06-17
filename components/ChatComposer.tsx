@@ -14,6 +14,8 @@ interface Props {
   disabled?: boolean;
   accentColor?: string;
   onMicPress?: () => void;
+  inputText?: string;
+  onInputChange?: (text: string) => void;
 }
 
 export default function ChatComposer({
@@ -22,13 +24,19 @@ export default function ChatComposer({
   disabled = false,
   accentColor = '#023047',
   onMicPress,
+  inputText,
+  onInputChange,
 }: Props) {
   const [input, setInput] = useState('');
 
+  // Use controlled input if provided, otherwise use internal state
+  const currentInput = inputText !== undefined ? inputText : input;
+  const setCurrentInput = inputText !== undefined ? (onInputChange || (() => {})) : setInput;
+
   const handleSend = () => {
-    if (!input.trim() || disabled) return;
-    onSend(input.trim());
-    setInput('');
+    if (!currentInput.trim() || disabled) return;
+    onSend(currentInput.trim());
+    setCurrentInput('');
   };
 
   const handleMicPress = () => {
@@ -47,9 +55,9 @@ export default function ChatComposer({
 
       <TextInput
         style={[styles.input, { borderColor: accentColor }]}
-        placeholder="Type your message…"
-        value={input}
-        onChangeText={setInput}
+        placeholder="What's on your mind?"
+        value={currentInput}
+        onChangeText={setCurrentInput}
         onSubmitEditing={handleSend}
         editable={!disabled}
       />

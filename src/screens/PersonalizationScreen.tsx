@@ -28,7 +28,7 @@ const industries = [
 ];
 
 const roles = [
-  'Individual Contributor', 'Team Lead', 'Manager', 'Director',
+  'Associate', 'Analyst', 'Intern', 'Individual Contributor', 'Team Lead', 'Manager', 'Director',
   'VP/Executive', 'C-Suite', 'Consultant', 'Entrepreneur'
 ];
 

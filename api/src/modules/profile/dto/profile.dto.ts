@@ -1,4 +1,4 @@
-import { IsUUID, IsString, IsArray, IsOptional, IsEnum, IsObject, IsNumber } from 'class-validator';
+import { IsUUID, IsString, IsArray, IsOptional, IsEnum, IsObject, IsNumber, IsInt, Min } from 'class-validator';
 
 // User Profile DTO
 export class UserProfileDto {
@@ -158,4 +158,32 @@ export class SavePersonalityScoresDto {
     challenges?: string[];
     personalityAnswers?: Record<string, string>;
   };
+}
+
+// Generate AI Prompts DTO
+export class GenerateAiPromptsDto {
+  @IsString()
+  context: string;
+
+  @IsInt()
+  @Min(1)
+  count: number;
+}
+
+// Generate Summary DTO
+export class GenerateSummaryDto {
+  @IsUUID()
+  userId: string;
+}
+
+// Generate Persona Summary DTO
+export class GeneratePersonaSummaryDto {
+  @IsUUID()
+  userId: string;
+}
+
+// Generate Corporate Summary DTO
+export class GenerateCorporateSummaryDto {
+  @IsUUID()
+  userId: string;
 } 

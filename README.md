@@ -125,4 +125,48 @@ The app uses mock data for AI responses until backend endpoints are ready. All a
 
 ## Deployment
 
-Ready for EAS Build and App Store deployment with proper Supabase configuration. 
+Ready for EAS Build and App Store deployment with proper Supabase configuration.
+
+## 🤖 Dynamic AI Prompts Setup
+
+This app now features **true dynamic AI prompts** that generate personalized coaching questions using OpenAI's GPT-4o-mini model.
+
+### Setup Instructions
+
+1. **Get an OpenAI API Key**
+   - Sign up at [OpenAI Platform](https://platform.openai.com/)
+   - Generate a new API key from your dashboard
+
+2. **Configure the API Key**
+   
+   **Option A: app.json (Recommended for development)**
+   ```json
+   {
+     "expo": {
+       "extra": {
+         "openaiApiKey": "sk-your-actual-openai-api-key-here"
+       }
+     }
+   }
+   ```
+
+   **Option B: Environment Variable**
+   ```bash
+   export EXPO_PUBLIC_OPENAI_API_KEY=sk-your-actual-openai-api-key-here
+   ```
+
+3. **How It Works**
+   - Fetches user's complete profile from Supabase (role, function, company size, challenges, personality scores)
+   - Builds rich context and calls OpenAI Chat Completions API
+   - Parses response as JSON and validates exactly 5 unique questions
+   - **NO FALLBACKS** - errors loudly if API key is missing or calls fail
+   - Styles AI prompts with distinctive dashed blue borders
+
+### Features
+- ✅ True dynamic content - no hardcoded lists
+- ✅ Full user profile context integration
+- ✅ GPT-4o-mini model for efficiency
+- ✅ Strict JSON parsing and validation
+- ✅ Rock-solid error handling
+- ✅ Seamless animated UI transitions
+- ✅ Distinctive visual styling for AI prompts 

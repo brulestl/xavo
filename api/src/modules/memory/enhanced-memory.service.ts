@@ -82,7 +82,7 @@ export class EnhancedMemoryService {
 
     } catch (error) {
       console.error('Memory search failed:', error);
-      throw new Error(`Memory search failed: ${error.message}`);
+      throw new Error(`Memory search failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
 
     return result;

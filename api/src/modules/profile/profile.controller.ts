@@ -4,7 +4,11 @@ import {
   CompleteProfileDto,
   UpdateProfileDto,
   UpdatePersonalizationDto,
-  SavePersonalityScoresDto
+  SavePersonalityScoresDto,
+  GenerateAiPromptsDto,
+  GenerateSummaryDto,
+  GeneratePersonaSummaryDto,
+  GenerateCorporateSummaryDto
 } from './dto/profile.dto';
 
 @Controller('api/v1/profile')
@@ -59,5 +63,64 @@ export class ProfileController {
   ) {
     const userId = req.user?.id;
     return this.profileService.updateProfile(userId, updateDto);
+  }
+
+  @Post('generate-ai-prompts')
+  async generateAiPrompts(
+    @Body() dto: GenerateAiPromptsDto,
+    @Req() req: any
+  ): Promise<{ prompts: string[] }> {
+    const userId = req.user?.id;
+    
+    if (!userId) {
+      throw new Error('User ID is required');
+    }
+    
+    return this.profileService.generateAiPrompts(userId, dto);
+  }
+
+  @Post('generate-summary')
+  async generateSummary(
+    @Body() dto: GenerateSummaryDto,
+    @Req() req: any
+  ): Promise<{ summary: string }> {
+    // Use userId from DTO if provided, otherwise from auth
+    const userId = dto.userId || req.user?.id;
+    
+    if (!userId) {
+      throw new Error('User ID is required');
+    }
+    
+    return this.profileService.generateQuizSummary(userId);
+  }
+
+  @Post('generate-persona-summary')
+  async generatePersonaSummary(
+    @Body() dto: GeneratePersonaSummaryDto,
+    @Req() req: any
+  ): Promise<{ summary: string }> {
+    // Use userId from DTO if provided, otherwise from auth
+    const userId = dto.userId || req.user?.id;
+    
+    if (!userId) {
+      throw new Error('User ID is required');
+    }
+    
+    return this.profileService.generatePersonaSummary(userId);
+  }
+
+  @Post('generate-summary')
+  async generateCorporateSummary(
+    @Body() dto: GenerateCorporateSummaryDto,
+    @Req() req: any
+  ): Promise<{ summary: string }> {
+    // Use userId from DTO if provided, otherwise from auth
+    const userId = dto.userId || req.user?.id;
+    
+    if (!userId) {
+      throw new Error('User ID is required');
+    }
+    
+    return this.profileService.generateCorporateSummary(userId);
   }
 } 

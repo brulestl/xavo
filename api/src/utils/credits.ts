@@ -1,34 +1,82 @@
 import { PLAN_LIMITS, Tier } from "../config/plans";
 import { createClient } from '@supabase/supabase-js';
 
-// Initialize Supabase client
+// Initialize Supabase client with service role key for server-side operations
 const supabaseUrl = process.env.SUPABASE_URL || 'https://wdhmlynmbrhunizbdhdt.supabase.co';
-const supabaseKey = process.env.SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6IndkaG1seW5tYnJodW5pemJkaGR0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDkzMDQ2NjgsImV4cCI6MjA2NDg4MDY2OH0.ORKN6Ryiz4Yo_BFhE_CS2yHMGPJDncKtYWKTwwI98N4';
+const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
-const supabase = createClient(supabaseUrl, supabaseKey);
+console.log('🔍 Credits.ts - Supabase configuration:');
+console.log('- URL:', supabaseUrl);
+console.log('- Service key exists:', !!supabaseServiceKey);
+console.log('- Service key length:', supabaseServiceKey?.length || 0);
+console.log('- Service key starts with eyJ:', supabaseServiceKey?.startsWith('eyJ') || false);
+console.log('- Service key preview:', supabaseServiceKey?.substring(0, 20) + '...');
+
+if (!supabaseServiceKey) {
+  throw new Error('SUPABASE_SERVICE_ROLE_KEY is required for credit operations');
+}
+
+if (!supabaseServiceKey.startsWith('eyJ')) {
+  console.warn('WARNING: SUPABASE_SERVICE_ROLE_KEY does not look like a valid JWT token');
+}
+
+const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
 export async function assertPromptCredit(userId: string, tier: Tier) {
   const cap = PLAN_LIMITS[tier].dailyPromptCap;
   
+  console.log(`🎯 Attempting to assert prompt credit for user ${userId} with tier ${tier} (cap: ${cap})`);
+  
   try {
-    const { data, error } = await supabase.rpc("fn_consume_daily", {
+    console.log(`🔍 Calling Supabase RPC fn_consume_daily with params:`, { p_user: userId, p_cap: cap });
+    
+    const { error } = await supabase.rpc("fn_consume_daily", {
       p_user: userId,
       p_cap: cap
     });
     
     if (error) {
-      console.error('Database error in assertPromptCredit:', error);
+      console.error('❌ Supabase RPC error details:', {
+        message: error.message,
+        details: error.details,
+        hint: error.hint,
+        code: error.code
+      });
       throw new Error(`Usage tracking failed: ${error.message}`);
     }
     
-    if (!data) {
-      throw new Error("Daily prompt cap reached");
-    }
-    
-    console.log(`Daily prompt credit checked for user ${userId} with tier ${tier} (cap: ${cap}) - Success`);
+    console.log(`✅ Daily prompt credit consumed for user ${userId} with tier ${tier} (cap: ${cap}) - Success`);
     return true;
   } catch (error) {
-    console.error('Error in assertPromptCredit:', error);
+    console.error('💥 Error in assertPromptCredit:', error);
+    throw error;
+  }
+}
+
+export async function getDailyUsage(userId: string, tier: Tier) {
+  const cap = PLAN_LIMITS[tier].dailyPromptCap;
+  
+  try {
+    const { data, error } = await supabase.rpc("fn_get_daily_usage", {
+      p_user: userId
+    });
+    
+    if (error) {
+      console.error('Database error in getDailyUsage:', error);
+      throw new Error(`Usage check failed: ${error.message}`);
+    }
+    
+    const usage = data || { used: 0 };
+    const remaining = Math.max(0, cap - usage.used);
+    
+    return {
+      used: usage.used,
+      cap: cap,
+      remaining: remaining,
+      date: usage.usage_date || new Date().toISOString().split('T')[0]
+    };
+  } catch (error) {
+    console.error('Error in getDailyUsage:', error);
     throw error;
   }
 } 

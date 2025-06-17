@@ -16,6 +16,7 @@ import { useTheme } from '../providers/ThemeProvider';
 import { useAuth } from '../providers/AuthProvider';
 import { supabase } from '../lib/supabase';
 import { Ionicons } from '@expo/vector-icons';
+import { generateCorporateSummary } from '../services/corporateSummaryService';
 
 const { width } = Dimensions.get('window');
 
@@ -259,16 +260,17 @@ export const PersonalityQuizScreen: React.FC = () => {
       console.log('✅ Personalization updated successfully');
 
       // 3. Optionally compute server-side scores
-      console.log('🧮 Computing server-side personality scores...');
-      const { error: computeError } = await supabase.rpc('fn_compute_personality_scores', { 
-        p_user_id: user.id 
-      });
+      try {
+        console.log('🚀 Calculating server-side personality scores…');
+        console.log('🔍 User ID for RPC call:', user.id, 'Type:', typeof user.id);
+        
+        const { data, error } = await supabase
+          .rpc('fn_calculate_personality_scores', { p_user_id: user.id });
 
-      if (computeError) {
-        console.warn('⚠️ Warning computing server-side scores (non-critical):', computeError);
-        // Don't throw here as this is optional
-      } else {
-        console.log('✅ Server-side scores computed successfully');
+        if (error) throw error;
+        console.log('✅ Server scores calculated, returned user_id:', data);
+      } catch (err) {
+        console.warn('⚠️ Warning computing server-side scores (non-critical):', err);
       }
 
       console.log('🎉 All personality data saved successfully');
@@ -337,6 +339,18 @@ export const PersonalityQuizScreen: React.FC = () => {
         
         await savePersonalityData(personalityScores);
         console.log('Personality data saved successfully!');
+        
+        // Generate corporate summary after quiz completion
+        try {
+          console.log('🏢 Generating corporate summary...');
+          console.log('🔍 User ID for summary generation:', user.id, 'Type:', typeof user.id);
+          
+          const summary = await generateCorporateSummary(user.id);
+          console.log('✅ Corporate summary generated:', summary);
+        } catch (summaryError) {
+          console.warn('⚠️ Warning generating corporate summary (non-critical):', summaryError);
+          // Don't block the flow if summary generation fails
+        }
         
         // Mark onboarding as complete in the auth context
         markOnboardingComplete();
