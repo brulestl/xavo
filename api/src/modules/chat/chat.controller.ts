@@ -11,7 +11,7 @@ import {
   HttpException,
   HttpStatus,
   Headers,
-
+  Patch,
 } from '@nestjs/common';
 import {
   ApiTags,
@@ -24,6 +24,9 @@ import {
 
 import { ChatService } from './chat.service';
 import { EnhancedChatService } from './enhanced-chat.service';
+import { RAGService } from '../rag/rag.service';
+import { ContextInjectionService } from './context-injection.service';
+import { SummaryGenerationService } from './summary-generation.service';
 // import { AuthGuard } from '../auth/auth.guard';
 import { AuthUser } from '../auth/auth.service';
 import { ChatRequestDto, ChatResponseDto } from './dto/chat.dto';
@@ -37,6 +40,7 @@ import {
 } from './dto/enhanced-chat.dto';
 import { assertPromptCredit } from '../../utils/credits';
 import { streamCoachAssistant, buildChatMessages } from '../../utils/openai';
+import { processResponse } from '../../utils/response-processor';
 import { Tier } from '../../config/plans';
 
 interface AuthenticatedRequest extends Request {
@@ -51,6 +55,9 @@ export class ChatController {
   constructor(
     private readonly chatService: ChatService,
     private readonly enhancedChatService: EnhancedChatService,
+    private readonly ragService: RAGService,
+    private readonly contextInjectionService: ContextInjectionService,
+    private readonly summaryGenerationService: SummaryGenerationService,
   ) {}
 
   @Post('stream')
@@ -126,12 +133,63 @@ export class ChatController {
         // Continue anyway for now
       }
       
-      // Get OpenAI messages for context
-      const openaiMessages = buildChatMessages(message);
+      // 🔥 FETCH CONVERSATION CONTEXT (short-term summary + message history)
+      const conversationContext = await this.contextInjectionService.getSessionContext(
+        currentSessionId, 
+        userId, 
+        tier === 'shark' ? 15 : 10 // More context for premium users
+      );
+      
+      console.log(`📊 Context retrieved: ${conversationContext.contextTokens} tokens, ${conversationContext.messageHistory.length} messages`);
+      
+      // Update context access timestamp
+      if (conversationContext.shortTermSummary) {
+        await this.contextInjectionService.updateContextAccess(currentSessionId, userId);
+      }
+
+      // Get user profile for personalization
+      let userPersonalization = {};
+      let personalityScores = {};
+      try {
+        // TODO: Get actual user personalization from profile service
+        // For now, use mock data based on tier
+        userPersonalization = {
+          current_position: 'Manager',
+          industry: 'Technology',
+          seniority_level: tier === 'trial' ? 'mid-management' : 'senior',
+          top_challenges: ['team leadership', 'strategic planning'],
+          communication_style: { formality: 'balanced', directness: 'balanced' }
+        };
+      } catch (error) {
+        console.warn('Could not load user personalization:', error);
+      }
+
+      // Get enhanced context using RAG service
+      const ragContext = await this.ragService.enhanceRequestWithRAG(
+        { message, sessionId: currentSessionId, actionType: 'general' } as any,
+        { id: userId, tier } as any,
+        {
+          useCoachCorpus: true,
+          maxContextTokens: tier === 'shark' ? 8000 : 4000,
+          coachCorpusThreshold: 0.75,
+          coachCorpusCount: 3
+        }
+      );
+
+      // 🔥 Build OpenAI messages with FULL CONTEXT INJECTION
+      const formattedContext = this.contextInjectionService.formatContextForOpenAI(conversationContext);
+      const openaiMessages = buildChatMessages(message, {
+        context: ragContext.enhancedPrompt,
+        tier: tier as any,
+        userPersonalization: userPersonalization as any,
+        personalityScores: personalityScores as any,
+        conversationContext: formattedContext // 🔥 INJECT CONVERSATION CONTEXT
+      });
       
       // Stream the OpenAI response
       const completion = await streamCoachAssistant(openaiMessages);
       let fullResponse = '';
+      let rawResponseChunks = [];
       
       // Send start streaming event
       res.write(`data: ${JSON.stringify({
@@ -139,6 +197,9 @@ export class ChatController {
       })}\n\n`);
       
       for await (const chunk of completion) {
+        // Store raw chunk for later persistence
+        rawResponseChunks.push(chunk);
+        
         const content = chunk.choices[0]?.delta?.content || '';
         if (content) {
           fullResponse += content;
@@ -151,24 +212,40 @@ export class ChatController {
         }
       }
       
-      // Store the complete assistant message
+      // 🔥 APPLY ENHANCED FORMATTING AND CONDITIONAL "Power Move:" PROCESSING
+      const processedResponse = this.processResponseFormatting(fullResponse);
+      console.log(`🎯 Response processed: ${processedResponse !== fullResponse ? 'Formatted and processed' : 'No changes'}`);
+
+      // Store the complete assistant message with raw response
       try {
+        const rawResponseData = {
+          chunks: rawResponseChunks,
+          fullText: fullResponse,
+          processedText: processedResponse,
+          model: 'gpt-4o-mini',
+          timestamp: new Date().toISOString()
+        };
+
         const assistantMessage = await this.storeMessage(
           userId, 
           currentSessionId, 
-          fullResponse, 
-          'assistant'
+          processedResponse, // Store the processed response
+          'assistant',
+          rawResponseData // Store the raw response data
         );
         
         // Update session activity
         await this.updateSessionActivity(currentSessionId);
+        
+        // 🔥 TRIGGER BACKGROUND SUMMARY GENERATION
+        this.summaryGenerationService.triggerSummaryGeneration(currentSessionId, userId);
         
         // Send completion event
         res.write(`data: ${JSON.stringify({
           type: 'stream_complete',
           messageId: assistantMessage.id,
           sessionId: currentSessionId,
-          fullMessage: fullResponse
+          fullMessage: processedResponse // Send the processed response
         })}\n\n`);
         
       } catch (error) {
@@ -242,57 +319,121 @@ export class ChatController {
         }
       }
       
-      // Store user message
-      let userMessageId = '';
+      // Store user message first
+      let userMessageId: string;
       try {
-        const userMessage = await this.storeMessage(userId, currentSessionId, message, 'user');
+        const userMessage = await this.storeMessage(
+          userId, 
+          currentSessionId, 
+          chatRequest.message, 
+          'user'
+        );
         userMessageId = userMessage.id;
         console.log(`✅ Stored user message: ${userMessageId}`);
       } catch (error) {
         console.error('Failed to store user message:', error);
         userMessageId = `user_${Date.now()}`;
       }
+
+      // 🔥 FETCH CONVERSATION CONTEXT (short-term summary + message history)
+      const conversationContext = await this.contextInjectionService.getSessionContext(
+        currentSessionId, 
+        userId, 
+        tier === 'shark' ? 15 : 10 // More context for premium users
+      );
       
-      // Get recent context from session (if available)
-      let context = '';
-      try {
-        const sessionData = await this.enhancedChatService.getChatSession(userId, currentSessionId);
-        const recentMessages = sessionData.messages.slice(-10);
-        context = this.buildContextFromMessages(recentMessages);
-      } catch (error) {
-        console.log('No previous context available, starting fresh conversation');
+      console.log(`📊 Context retrieved: ${conversationContext.contextTokens} tokens, ${conversationContext.messageHistory.length} messages`);
+      
+      // Update context access timestamp
+      if (conversationContext.shortTermSummary) {
+        await this.contextInjectionService.updateContextAccess(currentSessionId, userId);
       }
-      
-      // Build OpenAI messages with context
-      const openaiMessages = buildChatMessages(message, context);
+
+      // Get user profile for personalization (duplicate this logic from streaming endpoint)
+      let userPersonalization = {};
+      let personalityScores = {};
+      try {
+        userPersonalization = {
+          current_position: 'Manager',
+          industry: 'Technology',
+          seniority_level: tier === 'trial' ? 'mid-management' : 'senior',
+          top_challenges: ['team leadership', 'strategic planning'],
+          communication_style: { formality: 'balanced', directness: 'balanced' }
+        };
+      } catch (error) {
+        console.warn('Could not load user personalization:', error);
+      }
+
+      // Get enhanced context using RAG service
+      const ragContext = await this.ragService.enhanceRequestWithRAG(
+        { message, sessionId: currentSessionId, actionType: 'general' } as any,
+        { id: userId, tier } as any,
+        {
+          useCoachCorpus: true,
+          maxContextTokens: tier === 'shark' ? 8000 : 4000,
+          coachCorpusThreshold: 0.75,
+          coachCorpusCount: 3
+        }
+      );
+
+      // 🔥 Build OpenAI messages with FULL CONTEXT INJECTION
+      const formattedContext = this.contextInjectionService.formatContextForOpenAI(conversationContext);
+      const contextMessages = buildChatMessages(message, {
+        context: ragContext.enhancedPrompt,
+        tier: tier as any,
+        userPersonalization: userPersonalization as any,
+        personalityScores: personalityScores as any,
+        conversationContext: formattedContext // 🔥 INJECT CONVERSATION CONTEXT
+      });
       
       // Get streaming response and collect it
       console.log('🤖 Calling OpenAI...');
-      const completion = await streamCoachAssistant(openaiMessages);
+      const completion = await streamCoachAssistant(contextMessages);
       
-      // Collect the full response
+      // Collect the full response and raw chunks
       let fullResponse = '';
+      let rawResponseChunks = [];
       for await (const chunk of completion) {
+        rawResponseChunks.push(chunk);
         const content = chunk.choices[0]?.delta?.content || '';
         fullResponse += content;
       }
       
       console.log(`✅ Generated response: "${fullResponse.substring(0, 100)}..."`);
-      
-      // Store assistant message
-      let assistantMessageId = '';
+
+      // 🔥 APPLY ENHANCED FORMATTING AND CONDITIONAL "Power Move:" PROCESSING
+      const processedResponse = this.processResponseFormatting(fullResponse);
+      console.log(`🎯 Response processed: ${processedResponse !== fullResponse ? 'Formatted' : 'No changes'}`);
+
+      // Store assistant message with complete raw response data
+      let assistantMessageId: string;
       try {
+        const rawResponseData = {
+          chunks: rawResponseChunks,
+          fullText: fullResponse,
+          processedText: processedResponse,
+          model: 'gpt-4o-mini',
+          timestamp: new Date().toISOString(),
+          user_message_id: userMessageId,
+          context_messages_count: contextMessages.length,
+          context_tokens: conversationContext.contextTokens
+        };
+
         const assistantMessage = await this.storeMessage(
           userId, 
           currentSessionId, 
-          fullResponse, 
-          'assistant'
+          processedResponse, // Store the processed response as content
+          'assistant',
+          rawResponseData // Store complete raw response data
         );
         assistantMessageId = assistantMessage.id;
-        console.log(`✅ Stored assistant message: ${assistantMessageId}`);
+        console.log(`✅ Stored assistant message: ${assistantMessageId} with raw response data`);
         
         // Update session activity
         await this.updateSessionActivity(currentSessionId);
+        
+        // 🔥 TRIGGER BACKGROUND SUMMARY GENERATION
+        this.summaryGenerationService.triggerSummaryGeneration(currentSessionId, userId);
       } catch (error) {
         console.error('Failed to store assistant message:', error);
         assistantMessageId = `assistant_${Date.now()}`;
@@ -300,12 +441,12 @@ export class ChatController {
       
       return {
         id: assistantMessageId,
-        message: fullResponse,
+        message: processedResponse, // Return the processed response
         timestamp: new Date().toISOString(),
         sessionId: currentSessionId,
         model: 'gpt-4o-mini',
         usage: {
-          tokensUsed: Math.ceil(fullResponse.length / 4), // Rough estimation
+          tokensUsed: Math.ceil(processedResponse.length / 4), // Rough estimation
           remainingQueries: 999, // Unlimited for testing
         }
       };
@@ -328,15 +469,14 @@ export class ChatController {
     }
   }
 
-
-
   private async storeMessage(
     userId: string,
     sessionId: string,
     content: string,
-    role: 'user' | 'assistant'
+    role: 'user' | 'assistant',
+    rawResponseData?: { chunks: any[]; fullText: string; processedText: string; model: string; timestamp: string }
   ): Promise<{ id: string; created_at: string }> {
-    return await this.enhancedChatService.storeMessage(userId, sessionId, content, role);
+    return await this.enhancedChatService.storeMessage(userId, sessionId, content, role, rawResponseData);
   }
 
   private async updateSessionActivity(sessionId: string): Promise<void> {
@@ -462,6 +602,83 @@ export class ChatController {
     }
   }
 
+  @Patch('sessions/:sessionId')
+  @ApiOperation({ 
+    summary: 'Update a chat session',
+    description: 'Updates chat session properties like title'
+  })
+  @ApiResponse({ 
+    status: 200, 
+    description: 'Chat session updated successfully',
+    type: ChatSessionDto
+  })
+  @ApiParam({ name: 'sessionId', description: 'Chat session ID' })
+  @ApiBody({ 
+    schema: {
+      type: 'object',
+      properties: {
+        title: { type: 'string', description: 'New session title' }
+      }
+    }
+  })
+  async updateSession(
+    @Param('sessionId') sessionId: string,
+    @Body() updateData: { title?: string },
+    @Request() req: AuthenticatedRequest,
+  ): Promise<ChatSessionDto> {
+    try {
+      const userId = req.user?.id || 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11';
+      console.log(`Updating session ${sessionId} with data:`, updateData);
+      
+      const updatedSession = await this.enhancedChatService.updateChatSession(
+        userId, 
+        sessionId, 
+        updateData
+      );
+      
+      return updatedSession;
+    } catch (error) {
+      console.error('Update session error:', error);
+      throw new HttpException(
+        'Failed to update chat session',
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
+  }
+
+  @Post('sessions/:sessionId/activity')
+  @ApiOperation({ 
+    summary: 'Update session activity timestamp',
+    description: 'Updates the last_message_at timestamp for real-time session ordering'
+  })
+  @ApiParam({ name: 'sessionId', description: 'Chat session ID' })
+  async updateSessionActivityEndpoint(
+    @Param('sessionId') sessionId: string,
+    @Request() req: AuthenticatedRequest,
+  ): Promise<{ success: boolean; last_message_at: string }> {
+    try {
+      const userId = req.user?.id || 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11';
+      
+      // Update session timestamp manually (useful for real-time sync)
+      const { data, error } = await this.enhancedChatService.updateSessionTimestamp(sessionId, userId);
+      
+      if (error) {
+        throw new Error(`Failed to update session activity: ${error}`);
+      }
+
+      return {
+        success: true,
+        last_message_at: data.last_message_at
+      };
+    } catch (error) {
+      console.error('Update session activity error:', error);
+      throw new HttpException(
+        'Failed to update session activity',
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
+  }
+
   private generateSessionTitle(message: string): string {
     const words = message.split(' ').slice(0, 6);
     let title = words.join(' ');
@@ -469,5 +686,88 @@ export class ChatController {
       title += '...';
     }
     return title || 'New Conversation';
+  }
+
+  private processResponseFormatting(rawResponse: string): string {
+    // 🚨 ULTRA-AGGRESSIVE FORMATTING to fix LLM formatting issues
+    let formatted = rawResponse;
+    
+    console.log(`🔧 Processing raw response: "${formatted.substring(0, 200)}..."`);
+
+    // 1. FIRST: Handle multiple asterisks patterns at sentence boundaries
+    // Fix patterns like "*****text****" to "**text**"
+    formatted = formatted.replace(/\*{3,}([^*]+)\*{3,}/g, '**$1**');
+    
+    // Fix patterns like "*****text" (opening without proper closing)
+    formatted = formatted.replace(/\*{3,}([^*\n]+)/g, '**$1**');
+    
+    // Fix patterns like "text****" (closing without proper opening)  
+    formatted = formatted.replace(/([^*\n]+)\*{3,}/g, '**$1**');
+    
+    // 2. Clean up any remaining excessive asterisks
+    formatted = formatted.replace(/\*{4,}/g, '**'); // Replace 4+ asterisks with proper bold
+    formatted = formatted.replace(/\*{3}/g, '**'); // Replace triple asterisks with double
+    
+    // 3. Fix single asterisks to proper bold format
+    formatted = formatted.replace(/(?<!\*)\*([^*\n]+)\*(?!\*)/g, '**$1**'); // Convert *text* to **text**
+    
+    // 4. Remove other inappropriate symbols
+    formatted = formatted.replace(/~+/g, ''); // Remove tildes
+    formatted = formatted.replace(/[_]{3,}/g, ''); // Remove multiple underscores
+    
+    // 5. Fix malformed bold at start of response
+    formatted = formatted.replace(/^\*+([^*]+)\*+/, '**$1**'); // Fix opening bold
+    
+    // 6. Ensure Power Move formatting and positioning
+    formatted = formatted.replace(/([.!?])\s*(Power Move:)/gi, '$1\n\n**$2**');
+    formatted = formatted.replace(/Power Move:/g, 'Power Move:'); // Normalize case
+    
+    // 7. AGGRESSIVE paragraph breaking for readability
+    // Break after 3+ sentences in a row without breaks
+    formatted = formatted.replace(/([.!?])\s+([A-Z][^.!?]*[.!?])\s+([A-Z][^.!?]*[.!?])\s+([A-Z])/g, '$1\n\n$2\n\n$3\n\n$4');
+    
+    // Break long sentences that should be separate thoughts
+    formatted = formatted.replace(/([.!?])\s+(However|But|Additionally|Furthermore|Moreover|Therefore|Thus|Consequently)\s+/g, '$1\n\n$2 ');
+    formatted = formatted.replace(/([.!?])\s+(Here's|Here are|This|These|The key|Your|You should)\s+/g, '$1\n\n$2 ');
+    
+    // 8. Ensure numbered lists have proper formatting
+    formatted = formatted.replace(/(\d+\.\s*\*\*[^*]+\*\*)/g, '\n\n$1'); // Lists with bold headings
+    formatted = formatted.replace(/([.!?])\s*(\d+\.\s)/g, '$1\n\n$2'); // Regular numbered lists
+    formatted = formatted.replace(/(\d+\.\s)/g, '$1'); // Clean up
+    
+    // 9. Ensure bullet points have proper formatting  
+    formatted = formatted.replace(/([.!?])\s*([•\-\*]\s)/g, '$1\n\n$2');
+    formatted = formatted.replace(/([•\-\*]\s[^•\-\*\n]+)\s*([•\-\*]\s)/g, '$1\n\n$2'); // Separate bullets
+    
+    // 10. Ensure bold introductions are properly separated
+    formatted = formatted.replace(/(\*\*[^*]+\*\*)\s*([A-Z][^*\n]+)/g, '$1\n\n$2');
+    
+    // 11. Clean up multiple line breaks but preserve intentional structure
+    formatted = formatted.replace(/\n{4,}/g, '\n\n\n'); // Max 3 line breaks
+    formatted = formatted.replace(/\n{3}/g, '\n\n'); // Convert triple to double
+    
+    // 12. Ensure proper spacing around sections
+    formatted = formatted.replace(/(\*\*[^*]+\*\*)\n([A-Z])/g, '$1\n\n$2'); // Bold headings need space
+    formatted = formatted.replace(/([.!?])\n(\*\*)/g, '$1\n\n$2'); // Space before bold sections
+    
+    // 13. Fix common wall-of-text patterns
+    formatted = formatted.replace(/\s+(and\s+then|so\s+you\s+should|while\s+also|because\s+this)\s+/gi, '\n\n'); // Break connecting phrases that create run-ons
+    
+    // 14. Trim whitespace and normalize
+    formatted = formatted.trim();
+    
+    // 15. Final check for opening bold statement (mandatory format)
+    if (!formatted.match(/^\*\*[^*]+\*\*/)) {
+      // If response doesn't start with bold, make first sentence bold
+      const firstSentence = formatted.match(/^([^.!?]+[.!?])/);
+      if (firstSentence) {
+        formatted = formatted.replace(/^([^.!?]+[.!?])/, '**$1**');
+      }
+    }
+
+    console.log(`🔧 BEFORE formatting: "${rawResponse.substring(0, 150)}..."`);
+    console.log(`🔧 AFTER formatting: "${formatted.substring(0, 150)}..."`);
+    console.log(`🔧 Length change: ${rawResponse.length} → ${formatted.length}`);
+    return formatted;
   }
 } 

@@ -70,7 +70,8 @@ export class EnhancedChatService {
         userId,
         session_id,
         aiResponse.content,
-        'assistant'
+        'assistant',
+        aiResponse.functionCalls
       );
 
       // 6. Generate embedding for AI response
@@ -201,19 +202,27 @@ export class EnhancedChatService {
     userId: string,
     sessionId: string,
     content: string,
-    role: 'user' | 'assistant'
+    role: 'user' | 'assistant',
+    rawResponse?: any
   ): Promise<{ id: string; created_at: string }> {
     try {
+      const messageData: any = {
+        user_id: userId,
+        session_id: sessionId,
+        content,
+        role,
+        message_timestamp: new Date().toISOString(),
+        created_at: new Date().toISOString()
+      };
+
+      // Add raw response if provided (for assistant messages)
+      if (rawResponse) {
+        messageData.raw_response = rawResponse;
+      }
+
       const { data, error } = await this.supabase
         .from('conversation_messages')
-        .insert({
-          user_id: userId,
-          session_id: sessionId,
-          content,
-          role,
-          message_timestamp: new Date().toISOString(),
-          created_at: new Date().toISOString()
-        })
+        .insert(messageData)
         .select('id, created_at')
         .single();
 
@@ -297,7 +306,7 @@ export class EnhancedChatService {
         ],
         tools: tools,
         tool_choice: 'auto', // Let the model decide when to use tools
-        temperature: 0.7,
+        temperature: Number(process.env.OPENAI_TEMPERATURE) || 0.7,
         max_tokens: 1000
       });
 
@@ -352,16 +361,46 @@ export class EnhancedChatService {
   }
 
   async updateSessionActivity(sessionId: string): Promise<void> {
-    const { error } = await this.supabase
-      .from('conversation_sessions')
-      .update({ 
-        last_message_at: new Date().toISOString(),
-        updated_at: new Date().toISOString()
-      })
-      .eq('id', sessionId);
+    try {
+      const { error } = await this.supabase
+        .from('conversation_sessions')
+        .update({
+          last_message_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', sessionId);
 
-    if (error) {
-      console.warn(`Failed to update session activity: ${error.message}`);
+      if (error) {
+        console.error('Failed to update session activity:', error.message);
+      }
+    } catch (error) {
+      console.error('Session activity update error:', error);
+    }
+  }
+
+  async updateSessionTimestamp(sessionId: string, userId: string): Promise<{ data: { last_message_at: string }; error?: string }> {
+    try {
+      const { data, error } = await this.supabase
+        .from('conversation_sessions')
+        .update({
+          last_message_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', sessionId)
+        .eq('user_id', userId)
+        .select('last_message_at')
+        .single();
+
+      if (error) {
+        return { data: { last_message_at: '' }, error: error.message };
+      }
+
+      return { data: { last_message_at: data.last_message_at }, error: undefined };
+    } catch (error) {
+      return { 
+        data: { last_message_at: '' }, 
+        error: error instanceof Error ? error.message : 'Unknown error' 
+      };
     }
   }
 
@@ -525,26 +564,58 @@ export class EnhancedChatService {
   }
 
   async deleteChatSession(userId: string, sessionId: string): Promise<void> {
-    // First delete all messages in the session
-    const { error: messagesError } = await this.supabase
-      .from('conversation_messages')
-      .delete()
-      .eq('session_id', sessionId)
-      .eq('user_id', userId);
+    console.log(`🔄 Backend: Deleting session ${sessionId} for user ${userId}`);
+    
+    try {
+      // Delete the session - CASCADE constraint will automatically delete messages
+      console.log(`🔄 Backend: Deleting session record ${sessionId} (messages will be auto-deleted via CASCADE)`);
+      const { error: sessionError } = await this.supabase
+        .from('conversation_sessions')
+        .delete()
+        .eq('id', sessionId)
+        .eq('user_id', userId);
 
-    if (messagesError) {
-      throw new Error(`Failed to delete session messages: ${messagesError.message}`);
+      if (sessionError) {
+        console.error(`❌ Backend: Failed to delete session ${sessionId}:`, sessionError.message);
+        throw new Error(`Failed to delete session: ${sessionError.message}`);
+      }
+
+      console.log(`✅ Backend: Session and associated messages deleted successfully: ${sessionId}`);
+    } catch (error) {
+      console.error(`❌ Backend: Error in deleteChatSession for ${sessionId}:`, error);
+      throw error;
     }
+  }
 
-    // Then delete the session
-    const { error: sessionError } = await this.supabase
-      .from('conversation_sessions')
-      .delete()
-      .eq('id', sessionId)
-      .eq('user_id', userId);
+  async updateChatSession(
+    userId: string, 
+    sessionId: string, 
+    updateData: { title?: string }
+  ): Promise<ChatSessionDto> {
+    try {
+      console.log(`🔄 Backend: Updating session ${sessionId} with title: "${updateData.title}"`);
+      
+      const { data, error } = await this.supabase
+        .from('conversation_sessions')
+        .update({
+          title: updateData.title,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', sessionId)
+        .eq('user_id', userId)
+        .select('id, title, created_at, last_message_at, message_count')
+        .single();
 
-    if (sessionError) {
-      throw new Error(`Failed to delete session: ${sessionError.message}`);
+      if (error) {
+        console.error('Failed to update session in database:', error.message);
+        throw new Error(`Failed to update session: ${error.message}`);
+      }
+
+      console.log(`✅ Backend: Session updated successfully: ${sessionId} - "${updateData.title}"`);
+      return data;
+    } catch (error) {
+      console.error('Session update error:', error);
+      throw error;
     }
   }
 

@@ -20,7 +20,7 @@ export const ChatBubble: React.FC<ChatBubbleProps> = ({
   const dynamicBubbleStyle: ViewStyle = {
     backgroundColor: isUser 
       ? theme.semanticColors.primary 
-      : (isDark ? theme.colors.jet : '#F5F5F5'),
+      : (isDark ? '#2C2C2C' : '#F5F5F5'),
     alignSelf: isUser ? 'flex-end' : 'flex-start',
     shadowColor: theme.semanticColors.shadow,
   };
@@ -57,13 +57,7 @@ export const ChatBubble: React.FC<ChatBubbleProps> = ({
     >
       <View style={bubbleStyle}>
         <Text style={textStyle}>{message}</Text>
-        {timestamp && (
-          <Text style={[styles.timestamp, { 
-            color: isUser ? 'rgba(255,255,255,0.7)' : theme.semanticColors.textSecondary 
-          }]}>
-            {timestamp}
-          </Text>
-        )}
+        {/* 🔥 Timestamps removed for cleaner UI */}
       </View>
     </Animated.View>
   );
@@ -92,10 +86,5 @@ const styles = StyleSheet.create({
   messageText: {
     fontSize: 16,
     lineHeight: 22,
-  },
-  timestamp: {
-    fontSize: 12,
-    marginTop: 4,
-    opacity: 0.7,
   },
 });

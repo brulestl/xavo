@@ -38,6 +38,7 @@ interface UseChatReturn {
   currentSession: ChatSession | null;
   isLoading: boolean;
   isStreaming: boolean;
+  isThinking: boolean;
   error: string | null;
   
   // Actions
@@ -46,6 +47,7 @@ interface UseChatReturn {
   loadSession: (sessionId: string, preserveCurrentMessages?: boolean) => Promise<void>;
   loadSessions: () => Promise<void>;
   deleteSession: (sessionId: string) => Promise<void>;
+  renameSession: (sessionId: string, newTitle: string) => Promise<void>;
   clearMessages: () => void;
   retryLastMessage: () => Promise<void>;
 }
@@ -56,6 +58,7 @@ export const useChat = (): UseChatReturn => {
   const [currentSession, setCurrentSession] = useState<ChatSession | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [isStreaming, setIsStreaming] = useState(false);
+  const [isThinking, setIsThinking] = useState(false);
   const [error, setError] = useState<string | null>(null);
   
   const lastUserMessageRef = useRef<string>('');
@@ -70,6 +73,7 @@ export const useChat = (): UseChatReturn => {
     if (!content.trim()) return null;
     
     setIsLoading(true);
+    setIsThinking(true);
     setError(null);
     lastUserMessageRef.current = content;
 
@@ -79,15 +83,30 @@ export const useChat = (): UseChatReturn => {
     }
 
     try {
-      // Use current session or provided sessionId
-      let targetSessionId = sessionId || currentSession?.id;
+      // 🔥 FIX: Prioritize currentSession?.id over provided sessionId to ensure 
+      // messages go to the currently selected session, not route parameter
+      let targetSessionId = currentSession?.id || sessionId;
+      
+      // Add guard to ensure we have a valid session context
+      if (!targetSessionId) {
+        // If no session is available, create a new one with the message content as title
+        const cleanTitle = content.trim().replace(/\n/g, ' ').replace(/\s+/g, ' ');
+        const sessionTitle = cleanTitle.length > 50 ? cleanTitle.substring(0, 50) + '...' : cleanTitle;
+        const newSession = await createSession(sessionTitle);
+        if (!newSession) {
+          throw new Error('Failed to create new session');
+        }
+        targetSessionId = newSession.id;
+      }
+
+      console.log(`🎯 Sending message to session: ${targetSessionId} (current: ${currentSession?.id}, provided: ${sessionId})`);
 
       // Add user message to UI immediately
       const userMessage: ChatMessage = {
         id: `temp-user-${Date.now()}`,
         content,
         role: 'user',
-        session_id: targetSessionId || 'temp',
+        session_id: targetSessionId,
         created_at: new Date().toISOString()
       };
       
@@ -115,6 +134,7 @@ export const useChat = (): UseChatReturn => {
     } finally {
       setIsLoading(false);
       setIsStreaming(false);
+      setIsThinking(false);
     }
   };
 
@@ -220,6 +240,82 @@ export const useChat = (): UseChatReturn => {
       let finalSessionId = targetSessionId;
       let finalMessageId = streamingMessageId;
 
+      // 🎯 Enhanced streaming: Buffer for paragraph-based display
+      let tokenBuffer = '';
+      let displayedContent = '';
+      const updateInterval = 150; // ms between updates
+      let lastUpdateTime = 0;
+
+      // Helper function to update display content in chunks
+      const updateDisplayContent = (forceUpdate = false) => {
+        const now = Date.now();
+        const timeSinceLastUpdate = now - lastUpdateTime;
+        
+        if (!forceUpdate && timeSinceLastUpdate < updateInterval) {
+          return; // Too soon for next update
+        }
+
+        // Look for good breaking points for paragraph-like streaming
+        const breakPoints = [
+          '\n\n',  // Paragraph breaks
+          '. ',    // Sentence endings
+          '? ',    // Question endings  
+          '! ',    // Exclamation endings
+          ': ',    // Colon (often leads to examples/lists)
+          '; '     // Semicolon
+        ];
+
+        let updateContent = displayedContent;
+        let foundBreakPoint = false;
+
+        // Find the furthest break point we can display
+        for (const breakPoint of breakPoints) {
+          const breakIndex = tokenBuffer.lastIndexOf(breakPoint);
+          if (breakIndex > displayedContent.length - tokenBuffer.indexOf(displayedContent)) {
+            const newContent = tokenBuffer.substring(0, breakIndex + breakPoint.length);
+            if (newContent.length > displayedContent.length) {
+              updateContent = newContent;
+              foundBreakPoint = true;
+              break;
+            }
+          }
+        }
+
+        // If no break point found, gradually show more content
+        if (!foundBreakPoint && tokenBuffer.length > displayedContent.length + 10) {
+          // Show content in 10-15 character chunks
+          const chunkSize = Math.min(15, tokenBuffer.length - displayedContent.length);
+          updateContent = tokenBuffer.substring(0, displayedContent.length + chunkSize);
+        }
+
+        // Update UI if we have new content to show
+        if (updateContent.length > displayedContent.length || forceUpdate) {
+          const previousLength = displayedContent.length;
+          displayedContent = updateContent;
+          lastUpdateTime = now;
+          
+          // 🎯 Add slight delay for paragraph breaks for better readability
+          const isNewParagraph = updateContent.includes('\n\n') && 
+                                updateContent.lastIndexOf('\n\n') >= previousLength;
+          
+          const updateUI = () => {
+            setMessages(prev => prev.map(msg => {
+              if (msg.id === streamingMessageId) {
+                return { ...msg, content: displayedContent };
+              }
+              return msg;
+            }));
+          };
+          
+          if (isNewParagraph && !forceUpdate) {
+            // Small delay for paragraph breaks (makes it more readable)
+            setTimeout(updateUI, 250);
+          } else {
+            updateUI();
+          }
+        }
+      };
+
       try {
         while (true) {
           const { done, value } = await reader.read();
@@ -246,39 +342,52 @@ export const useChat = (): UseChatReturn => {
                     break;
 
                   case 'user_message_stored':
-                    console.log('User message stored successfully');
+                    // User message stored in database
                     break;
 
                   case 'stream_start':
-                    console.log('Stream started');
+                    // Streaming started - reset buffer for clean start
+                    tokenBuffer = '';
+                    displayedContent = '';
+                    lastUpdateTime = 0;
                     break;
 
                   case 'token':
+                    // 🔥 Filter out loading/interim messages
+                    if (!data.content || data.content === '[loading…]') break;
+                    
+                    // 🎯 First real token received - stop thinking indicator
+                    setIsThinking(false);
+                    
+                    // 🎯 Add to buffer and update display intelligently
+                    tokenBuffer += data.content;
                     fullResponse += data.content;
-                    // Update the streaming message content in real-time
-                    setMessages(prev => prev.map(msg => 
-                      msg.id === streamingMessageId 
-                        ? { ...msg, content: fullResponse }
-                        : msg
-                    ));
+                    
+                    // Update display using paragraph-based logic
+                    updateDisplayContent();
                     break;
 
                   case 'stream_complete':
                     finalMessageId = data.messageId;
                     finalSessionId = data.sessionId;
                     
-                    // Mark message as complete and update with final data
-                    setMessages(prev => prev.map(msg => 
-                      msg.id === streamingMessageId 
-                        ? { 
+                    // 🎯 Force final update to show complete content
+                    tokenBuffer = data.fullMessage || fullResponse;
+                    updateDisplayContent(true); // Force final update
+                    
+                    // 🔥 Mark message as complete
+                    setMessages(prev => prev.map(msg => {
+                      if (msg.id === streamingMessageId) {
+                        return { 
                             ...msg, 
                             id: data.messageId,
                             content: data.fullMessage || fullResponse,
                             isStreaming: false,
                             created_at: new Date().toISOString()
+                        };
                           }
-                        : msg
-                    ));
+                      return msg;
+                    }));
 
                     // Load session details if this was a new session
                     if (data.sessionId && !currentSession) {
@@ -301,8 +410,8 @@ export const useChat = (): UseChatReturn => {
                     throw new Error(data.message);
                 }
               } catch (parseError) {
-                // Ignore parse errors for incomplete chunks
-                console.warn('Parse error (ignored):', parseError);
+                // Ignore parse errors for incomplete JSON chunks during streaming
+                continue;
               }
             }
           }
@@ -362,7 +471,6 @@ export const useChat = (): UseChatReturn => {
 
   // Load specific chat session
   const loadSession = async (sessionId: string, preserveCurrentMessages: boolean = false) => {
-    console.log(`🔄 loadSession called: sessionId=${sessionId}, preserveCurrentMessages=${preserveCurrentMessages}`);
     setIsLoading(true);
     setError(null);
 
@@ -372,22 +480,17 @@ export const useChat = (): UseChatReturn => {
         messages: ChatMessage[];
       }>(`/chat/sessions/${sessionId}`);
       
+      // 🔥 FIX: Always update currentSession to ensure proper session tracking
       setCurrentSession(data.session);
-      console.log(`📥 Session data received: ${(data.messages || []).length} messages from server`);
+      console.log(`🔄 Loaded session: ${data.session.id} - "${data.session.title}"`);
       
-      // Only update messages if we're not preserving current ones
+      // Clear messages first, then load new ones (unless preserving for streaming)
       if (!preserveCurrentMessages) {
-        console.log('🔄 NOT preserving messages, setting to server messages');
         setMessages(data.messages || []);
       } else {
-        // When preserving messages, check current state using callback
-        console.log('🔒 Preserving current messages, checking state...');
+        // When preserving messages (during streaming), only update if we don't have current messages
         setMessages(currentMessages => {
-          console.log(`🔒 Current messages count: ${currentMessages.length}, Server messages count: ${(data.messages || []).length}`);
-          // If we have current messages, keep them; otherwise use server messages
-          const result = currentMessages.length > 0 ? currentMessages : (data.messages || []);
-          console.log(`🔒 Decision: ${currentMessages.length > 0 ? 'KEEPING current messages' : 'USING server messages'}`);
-          return result;
+          return currentMessages.length > 0 ? currentMessages : (data.messages || []);
         });
       }
 
@@ -395,6 +498,7 @@ export const useChat = (): UseChatReturn => {
       const errorMessage = err instanceof Error ? err.message : 'Failed to load session';
       setError(errorMessage);
       Alert.alert('Error', errorMessage);
+      console.error('Load session error:', err);
     } finally {
       setIsLoading(false);
     }
@@ -424,23 +528,74 @@ export const useChat = (): UseChatReturn => {
     setError(null);
 
     try {
+      // Call backend to delete session and all its messages
       await apiFetch(`/chat/sessions/${sessionId}`, {
         method: 'DELETE'
       });
 
+      console.log(`🗑️ Deleted session: ${sessionId}`);
+
       // Remove from local state
       setSessions(prev => prev.filter(session => session.id !== sessionId));
       
-      // Clear current session if it was deleted
+      // 🔥 FIX: Clear current session and messages if the deleted session was active
       if (currentSession?.id === sessionId) {
         setCurrentSession(null);
         setMessages([]);
+        console.log('🔄 Cleared active session state after deletion');
       }
+
+      // Refresh sessions list to ensure consistency
+      await loadSessions();
 
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Failed to delete session';
       setError(errorMessage);
       Alert.alert('Error', errorMessage);
+      console.error('Delete session error:', err);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Rename chat session
+  const renameSession = async (sessionId: string, newTitle: string) => {
+    if (!newTitle.trim()) {
+      Alert.alert('Error', 'Session title cannot be empty');
+      return;
+    }
+
+    setIsLoading(true);
+    setError(null);
+
+    try {
+      // Call backend to update session title
+      const updatedSession = await apiFetch<ChatSession>(`/chat/sessions/${sessionId}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ title: newTitle.trim() })
+      });
+
+      console.log(`✏️ Renamed session: ${sessionId} to "${newTitle}"`);
+
+      // Update local state
+      setSessions(prev => 
+        prev.map(session => 
+          session.id === sessionId 
+            ? { ...session, title: updatedSession.title }
+            : session
+        )
+      );
+
+      // Update current session if it's the one being renamed
+      if (currentSession?.id === sessionId) {
+        setCurrentSession(prev => prev ? { ...prev, title: updatedSession.title } : null);
+      }
+
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Failed to rename session';
+      setError(errorMessage);
+      Alert.alert('Error', errorMessage);
+      console.error('Rename session error:', err);
     } finally {
       setIsLoading(false);
     }
@@ -487,6 +642,7 @@ export const useChat = (): UseChatReturn => {
     currentSession,
     isLoading,
     isStreaming,
+    isThinking,
     error,
     
     // Actions
@@ -495,6 +651,7 @@ export const useChat = (): UseChatReturn => {
     loadSession,
     loadSessions,
     deleteSession,
+    renameSession,
     clearMessages,
     retryLastMessage
   };

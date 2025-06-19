@@ -320,7 +320,7 @@ export class ProfileService {
           { role: 'system', content: systemPrompt },
           { role: 'user', content: userPrompt }
         ],
-        temperature: 0.7,
+        temperature: Number(process.env.OPENAI_TEMPERATURE) || 0.7,
         max_tokens: 1000,
       });
 
@@ -500,7 +500,7 @@ User Profile:`;
           { role: 'system', content: systemPrompt },
           { role: 'user', content: context }
         ],
-        temperature: 0.7,
+        temperature: Number(process.env.OPENAI_TEMPERATURE) || 0.7,
         max_tokens: 100, // Keep it short for 280 char limit
       });
 
@@ -786,7 +786,7 @@ Return only the refined summary, no additional text.`;
           }
         ],
         max_tokens: 200,
-        temperature: 0.7,
+        temperature: Number(process.env.OPENAI_TEMPERATURE) || 0.7,
       });
 
       let aiSummary = completion.choices[0]?.message?.content?.trim();

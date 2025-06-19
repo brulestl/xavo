@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { supabase } from '../lib/supabase';
+import { apiFetch } from '../lib/api';
 import { useAuth } from '../providers/AuthProvider';
 
 export interface Message {
@@ -18,14 +18,20 @@ export interface Conversation {
   messages: Message[];
 }
 
-interface ConversationSession {
+interface ApiSession {
   id: string;
   title?: string;
   created_at: string;
   last_message_at: string;
   message_count: number;
-  user_id: string;
-  is_active: boolean;
+}
+
+interface ApiMessage {
+  id: string;
+  role: 'user' | 'assistant';
+  content: string;
+  created_at: string;
+  message_timestamp: string;
 }
 
 export function useConversations() {
@@ -33,41 +39,64 @@ export function useConversations() {
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [loading, setLoading] = useState(false);
 
-  // Load conversations from Supabase
+  // Load conversations from API
   const loadConversations = async () => {
     if (!user?.id) return;
     
     setLoading(true);
     try {
-      const { data, error } = await supabase
-        .from('conversation_sessions')
-        .select('id, title, created_at, last_message_at, message_count')
-        .eq('user_id', user.id)
-        .eq('is_active', true)
-        .order('last_message_at', { ascending: false, nullsFirst: false })
-        .order('created_at', { ascending: false })
-        .limit(20);
+      const response = await apiFetch<{ sessions: ApiSession[] }>('/chat/sessions');
+      
+      if (response?.sessions) {
+        // Convert API sessions to local format
+        const formattedConversations: Conversation[] = response.sessions.map(session => ({
+          id: session.id,
+          title: session.title || 'Untitled Conversation',
+          preview: session.title || 'Conversation',
+          lastMessage: '',
+          timestamp: session.last_message_at || session.created_at,
+          messages: [] // Messages will be loaded separately when needed
+        }));
 
-      if (error) {
-        console.error('Error loading conversations:', error);
-        return;
+        // Sort by timestamp (most recent first)
+        formattedConversations.sort((a, b) => 
+          new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
+        );
+
+        setConversations(formattedConversations);
+        console.log(`✅ Loaded ${formattedConversations.length} conversations from API`);
+      } else {
+        console.warn('No sessions found in API response');
+        setConversations([]);
       }
-
-      // Convert to local format
-      const formattedConversations: Conversation[] = (data || []).map(session => ({
-        id: session.id,
-        title: session.title || 'Untitled Conversation',
-        preview: session.title || 'Conversation',
-        lastMessage: '',
-        timestamp: session.last_message_at || session.created_at,
-        messages: []
-      }));
-
-      setConversations(formattedConversations);
     } catch (error) {
-      console.error('Failed to load conversations:', error);
+      console.error('Failed to load conversations from API:', error);
+      setConversations([]);
     } finally {
       setLoading(false);
+    }
+  };
+
+  // Load messages for a specific conversation
+  const loadConversationMessages = async (conversationId: string): Promise<Message[]> => {
+    try {
+      const response = await apiFetch<{
+        session: ApiSession;
+        messages: ApiMessage[];
+      }>(`/chat/sessions/${conversationId}`);
+
+      if (response?.messages) {
+        return response.messages.map(msg => ({
+          id: msg.id,
+          role: msg.role,
+          content: msg.content,
+          timestamp: msg.message_timestamp || msg.created_at
+        }));
+      }
+      return [];
+    } catch (error) {
+      console.error(`Failed to load messages for conversation ${conversationId}:`, error);
+      return [];
     }
   };
 
@@ -85,7 +114,7 @@ export function useConversations() {
   const createConversation = (firstMessage: string): Conversation => {
     // This will be created by the API, so we just return a placeholder
     const newConversation: Conversation = {
-      id: Date.now().toString(),
+      id: `temp_${Date.now()}`,
       title: firstMessage.slice(0, 50) + (firstMessage.length > 50 ? '...' : ''),
       preview: firstMessage,
       lastMessage: '',
@@ -125,7 +154,9 @@ export function useConversations() {
         return updatedConv;
       }
       return conv;
-    }));
+    }).sort((a, b) => 
+      new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
+    ));
   };
 
   const updateConversationTitle = (conversationId: string, title: string): void => {
@@ -140,6 +171,87 @@ export function useConversations() {
     setConversations(prev => prev.filter(conv => conv.id !== conversationId));
   };
 
+  // 🔥 INSTANT RENAME with backend sync
+  const renameConversationInstant = async (conversationId: string, newTitle: string): Promise<boolean> => {
+    if (!newTitle.trim()) {
+      throw new Error('Title cannot be empty');
+    }
+
+    // Store original title for rollback
+    const originalConversation = conversations.find(conv => conv.id === conversationId);
+    if (!originalConversation) {
+      throw new Error('Conversation not found');
+    }
+
+    // 1. INSTANT UI update (optimistic)
+    updateConversationTitle(conversationId, newTitle.trim());
+    console.log(`✨ Instant rename: ${conversationId} to "${newTitle}"`);
+
+    try {
+      // 2. Sync with backend
+      const response = await apiFetch(`/chat/sessions/${conversationId}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ title: newTitle.trim() })
+      });
+
+      console.log(`✅ Backend sync successful for rename: ${conversationId}`);
+      return true;
+    } catch (error) {
+      console.error(`❌ Backend sync failed for rename: ${conversationId}`, error);
+      
+      // 3. Rollback on failure
+      updateConversationTitle(conversationId, originalConversation.title);
+      console.log(`🔄 Rolled back rename for: ${conversationId}`);
+      
+      throw error;
+    }
+  };
+
+  // 🔥 INSTANT DELETE with backend sync
+  const deleteConversationInstant = async (conversationId: string): Promise<boolean> => {
+    console.log(`🚀 Frontend: Starting delete for conversation ${conversationId}`);
+    
+    // Store original conversation for rollback
+    const originalConversation = conversations.find(conv => conv.id === conversationId);
+    if (!originalConversation) {
+      console.error(`❌ Frontend: Conversation ${conversationId} not found in local state`);
+      throw new Error('Conversation not found');
+    }
+
+    console.log(`📋 Frontend: Found conversation to delete: "${originalConversation.title}"`);
+
+    // 1. INSTANT UI update (optimistic)
+    deleteConversation(conversationId);
+    console.log(`✨ Frontend: Instant delete UI update completed for ${conversationId}`);
+
+    try {
+      // 2. Sync with backend
+      console.log(`🔄 Frontend: Calling backend DELETE for ${conversationId}`);
+      const response = await apiFetch(`/chat/sessions/${conversationId}`, {
+        method: 'DELETE'
+      });
+
+      console.log(`✅ Frontend: Backend DELETE response:`, response);
+      console.log(`✅ Backend sync successful for delete: ${conversationId}`);
+      return true;
+    } catch (error) {
+      console.error(`❌ Frontend: Backend sync failed for delete: ${conversationId}`, error);
+      console.error(`❌ Frontend: Error details:`, {
+        message: error instanceof Error ? error.message : 'Unknown error',
+        stack: error instanceof Error ? error.stack : 'No stack'
+      });
+      
+      // 3. Rollback on failure
+      console.log(`🔄 Frontend: Rolling back delete for: ${conversationId}`);
+      setConversations(prev => [originalConversation, ...prev].sort((a, b) => 
+        new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
+      ));
+      console.log(`🔄 Rolled back delete for: ${conversationId}`);
+      
+      throw error;
+    }
+  };
+
   const clearAllConversations = (): void => {
     setConversations([]);
   };
@@ -152,11 +264,14 @@ export function useConversations() {
     conversations,
     loading,
     getConversation,
+    loadConversationMessages, // New function to load messages
     createConversation,
     addMessageToConversation,
     updateConversationTitle,
     deleteConversation,
     clearAllConversations,
-    refreshConversations // New function to refresh when needed
+    refreshConversations,
+    renameConversationInstant,
+    deleteConversationInstant
   };
 } 

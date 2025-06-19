@@ -10,6 +10,7 @@ export async function callCoachAssistant(
 ) {
   return openai.chat.completions.create({
     model: "gpt-4o-mini",
-    messages
+    messages,
+    temperature: Number(process.env.OPENAI_TEMPERATURE) || 0.7,
   });
 } 

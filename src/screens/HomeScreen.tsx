@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Animated, ActivityIndicator, ToastAndroid, Platform, Image } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Animated, ActivityIndicator, ToastAndroid, Platform, Image, Alert, Modal, TextInput } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import { useTheme } from '../providers/ThemeProvider';
@@ -9,9 +9,12 @@ import { Composer } from '../components/Composer';
 import { Drawer } from '../components/Drawer';
 import { SettingsDrawer } from '../components/SettingsDrawer';
 import { usePersonalizationPrompts } from '../hooks/usePersonalizationPrompts';
+import { useChat } from '../hooks/useChat';
 import { generateAiPrompts } from '../services/aiPromptService';
 import { apiFetch } from '../lib/api';
 import { supabase } from '../lib/supabase';
+import { useConversations } from '../hooks/useConversations';
+
 
 // Mock data - TODO: Replace with actual user data from onboarding
 const HERO_QUESTIONS = [
@@ -49,27 +52,79 @@ interface ConversationSession {
   message_count: number;
 }
 
+const COACHING_PROMPTS = [
+  { 
+    id: 'credit-grabber', 
+    title: 'Handle Credit Grabber', 
+    subtitle: 'Deal with colleagues who claim your work',
+    prompt: 'A colleague keeps taking credit for my work in team meetings. How do I address this professionally while protecting my reputation?'
+  },
+  { 
+    id: 'salary-negotiation', 
+    title: 'Negotiate Salary', 
+    subtitle: 'Confidently advocate for your worth',
+    prompt: 'I have been in my role for 2 years with excellent performance reviews, but my salary hasn\'t increased. How should I approach my manager about a raise?'
+  },
+  { 
+    id: 'difficult-conversation', 
+    title: 'Diffuse Conflict', 
+    subtitle: 'Navigate tense workplace situations',
+    prompt: 'Two team members are in constant conflict and it\'s affecting everyone\'s productivity. As their manager, how should I intervene?'
+  },
+  { 
+    id: 'manage-up', 
+    title: 'Manage Difficult Boss', 
+    subtitle: 'Build better relationships upward',
+    prompt: 'My manager micromanages everything I do and rarely gives positive feedback. How can I improve this relationship and gain more autonomy?'
+  },
+  { 
+    id: 'networking', 
+    title: 'Network Authentically', 
+    subtitle: 'Build genuine professional connections',
+    prompt: 'I struggle with networking because it feels forced and transactional. How can I build authentic professional relationships?'
+  },
+];
+
 export const HomeScreen: React.FC = () => {
   const { theme } = useTheme();
   const navigation = useNavigation();
-  const { clearAllData, user } = useAuth();
+  const { clearAllData, user, tier } = useAuth();
   const [isDrawerVisible, setIsDrawerVisible] = useState(false);
   const [isSettingsDrawerVisible, setIsSettingsDrawerVisible] = useState(false);
   const [selectedPrompt, setSelectedPrompt] = useState<string | null>(null);
   const [heroQuestion] = useState(HERO_QUESTIONS[0]); // TODO: Make this contextual
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [morePrompts, setMorePrompts] = useState<string[]>([]);
-  const [conversations, setConversations] = useState<ConversationSession[]>([]);
-  const [isLoadingConversations, setIsLoadingConversations] = useState(false);
   const [isSendingMessage, setIsSendingMessage] = useState(false);
-  const [conversationsLoaded, setConversationsLoaded] = useState(false);
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(30)).current;
   const aiPromptsAnim = useRef(new Animated.Value(0)).current;
 
+  // Rename modal state
+  const [isRenameModalVisible, setIsRenameModalVisible] = useState(false);
+  const [renamingSessionId, setRenamingSessionId] = useState<string | null>(null);
+  const [renameInputValue, setRenameInputValue] = useState('');
+
+  // Delete confirmation modal state
+  const [isDeleteModalVisible, setIsDeleteModalVisible] = useState(false);
+  const [deletingConversation, setDeletingConversation] = useState<any>(null);
+
   // Get personalized prompts
   const { prompts: personalizedPrompts, loading: promptsLoading, personalizationData } = usePersonalizationPrompts();
+  
+  // Use the real API-based conversations hook
+  const { 
+    conversations, 
+    loading: conversationsLoading, 
+    refreshConversations,
+    renameConversationInstant,
+    deleteConversationInstant
+  } = useConversations();
 
+  // Use chat hook for session management
+  const { deleteSession, renameSession } = useChat();
+
+  // Use chat hook for session management
   useEffect(() => {
     // Animate content on mount
     Animated.parallel([
@@ -85,66 +140,27 @@ export const HomeScreen: React.FC = () => {
       }),
     ]).start();
 
-    // Load conversations once when app starts
-    if (user?.id && !conversationsLoaded) {
-      loadConversationsFromSupabase();
-    }
-  }, [fadeAnim, slideAnim, user?.id, conversationsLoaded]);
+    // Note: conversations are automatically loaded by the useConversations hook
+  }, [fadeAnim, slideAnim]);
 
-  const loadConversationsFromSupabase = async () => {
-    if (!user?.id || isLoadingConversations) return;
-    
-    setIsLoadingConversations(true);
-    try {
-      console.log('📱 Loading conversations from Supabase for user:', user.id);
-      
-      const { data, error } = await supabase
-        .from('conversation_sessions')
-        .select('id, title, created_at, last_message_at, message_count')
-        .eq('user_id', user.id)
-        .eq('is_active', true)
-        .order('last_message_at', { ascending: false, nullsFirst: false })
-        .order('created_at', { ascending: false })
-        .limit(20);
+  // Refresh conversations when screen is focused
+  useEffect(() => {
+    const unsubscribe = navigation.addListener('focus', () => {
+      refreshConversations();
+    });
 
-      if (error) {
-        console.error('❌ Error loading conversations:', error);
-        return;
-      }
-
-      console.log('✅ Loaded conversations:', data?.length || 0);
-      setConversations(data || []);
-      setConversationsLoaded(true);
-    } catch (error) {
-      console.error('💥 Failed to load conversations:', error);
-    } finally {
-      setIsLoadingConversations(false);
-    }
-  };
+    return unsubscribe;
+  }, [navigation, refreshConversations]);
 
   const startConversation = async (message: string) => {
     if (!user?.id || isSendingMessage) return;
     
     setIsSendingMessage(true);
     try {
-      // Send message to OpenAI API (temporarily without auth)
-      const response = await apiFetch<ChatResponse>('/chat', {
-        method: 'POST',
-        auth: false, // Temporarily disable auth for testing
-        body: JSON.stringify({
-          message: message,
-          actionType: 'general_chat',
-        }),
-      });
-
-      console.log('✅ OpenAI Response:', response);
-
-      // Refresh conversations list to include the new one
-      await loadConversationsFromSupabase();
-
-      // Navigate to chat screen with the new session
+      // 🔥 Navigate directly to chat screen with message - let ChatScreen handle everything
+      // No need to refresh conversations here - ChatScreen will create the session
+      // and useConversations will automatically pick it up
       (navigation as any).navigate('Chat', { 
-        sessionId: response.sessionId,
         initialMessage: message 
       });
 
@@ -166,9 +182,31 @@ export const HomeScreen: React.FC = () => {
   const handlePromptPress = async (prompt: string) => {
     if (isSendingMessage) return;
     
-    setSelectedPrompt(selectedPrompt === prompt ? null : prompt);
-    // Start conversation with the selected prompt
-    await startConversation(prompt);
+    // Check if a conversation with this prompt already exists
+    const existingConversation = conversations.find(conv => 
+      conv.title.toLowerCase().includes(prompt.toLowerCase().split(' ')[0]) ||
+      conv.preview.includes(prompt)
+    );
+
+    if (existingConversation) {
+      // Navigate to existing conversation
+      (navigation as any).navigate('Chat', { 
+        sessionId: existingConversation.id,
+        conversationId: existingConversation.id 
+      });
+    } else {
+      // Create new conversation with the prompt
+      setSelectedPrompt(selectedPrompt === prompt ? null : prompt);
+      await startConversation(prompt);
+    }
+  };
+
+  const navigateToChat = (conversationId: string) => {
+    (navigation as any).navigate('Chat', { 
+      sessionId: conversationId,
+      conversationId: conversationId
+    });
+    setIsDrawerVisible(false);
   };
 
   const handleLoadMore = async () => {
@@ -229,6 +267,89 @@ export const HomeScreen: React.FC = () => {
 
   const handleSignOut = async () => {
     await clearAllData();
+  };
+
+  const getGreeting = () => {
+    const hour = new Date().getHours();
+    if (hour < 12) return 'Good morning';
+    if (hour < 18) return 'Good afternoon';
+    return 'Good evening';
+  };
+
+  const handleRenamePress = (conversation: any) => {
+    setRenamingSessionId(conversation.id);
+    setRenameInputValue(conversation.title || '');
+    setIsRenameModalVisible(true);
+  };
+
+  const handleRenameSubmit = async () => {
+    if (!renamingSessionId || !renameInputValue.trim()) {
+      Alert.alert('Error', 'Please enter a valid title');
+      return;
+    }
+
+    // Store values before clearing state
+    const sessionId = renamingSessionId;
+    const newTitle = renameInputValue.trim();
+
+    // Close modal immediately - UI updates are optimistic
+    setIsRenameModalVisible(false);
+    setRenamingSessionId(null);
+    setRenameInputValue('');
+
+    try {
+      // 🔥 Use instant rename - UI updates immediately, backend syncs in background
+      await renameConversationInstant(sessionId, newTitle);
+      console.log(`✨ Instant rename completed successfully`);
+    } catch (error) {
+      console.error('Failed to rename conversation:', error);
+      // Even if backend fails, we don't reopen the modal since UI was already updated
+      // The rollback will happen automatically in renameConversationInstant
+      Alert.alert('Warning', 'Rename saved locally but failed to sync with server. Changes may be lost.');
+    }
+  };
+
+  const handleRenameCancel = () => {
+    setIsRenameModalVisible(false);
+    setRenamingSessionId(null);
+    setRenameInputValue('');
+  };
+
+  const handleDeletePress = (conversation: any) => {
+    console.log('🔥 handleDeletePress called with:', conversation);
+    console.log('🔥 Conversation ID:', conversation.id);
+    console.log('🔥 Conversation title:', conversation.title);
+    
+    console.log('🚨 About to show confirmation dialog...');
+    setDeletingConversation(conversation);
+    setIsDeleteModalVisible(true);
+    console.log('🚨 Delete modal should be visible now');
+  };
+
+  const handleDeleteConfirm = async () => {
+    if (!deletingConversation) return;
+
+    try {
+      console.log('🔥 User confirmed deletion, proceeding...');
+      console.log('🔥 Calling deleteConversationInstant for:', deletingConversation.id);
+      
+      // Close modal first
+      setIsDeleteModalVisible(false);
+      setDeletingConversation(null);
+      
+      // 🔥 Use instant delete for immediate UI feedback
+      await deleteConversationInstant(deletingConversation.id);
+      console.log(`✨ Instant delete completed successfully for: ${deletingConversation.id}`);
+    } catch (error) {
+      console.error('❌ Failed to delete conversation:', error);
+      Alert.alert('Error', 'Failed to delete conversation. Please try again.');
+    }
+  };
+
+  const handleDeleteCancel = () => {
+    console.log('❌ User cancelled deletion');
+    setIsDeleteModalVisible(false);
+    setDeletingConversation(null);
   };
 
   return (
@@ -376,7 +497,7 @@ export const HomeScreen: React.FC = () => {
         title="Conversations"
       >
         <View style={styles.drawerContent}>
-          {isLoadingConversations ? (
+          {conversationsLoading ? (
             <View style={styles.loadingContainer}>
               <ActivityIndicator size="small" color={theme.semanticColors.accent} />
               <Text style={[styles.loadingText, { color: theme.semanticColors.textSecondary }]}>
@@ -386,28 +507,62 @@ export const HomeScreen: React.FC = () => {
           ) : conversations.length > 0 ? (
             <ScrollView showsVerticalScrollIndicator={false}>
               {conversations.map((conversation) => (
-                <TouchableOpacity
+                <View
                   key={conversation.id}
                   style={[styles.conversationItem, { borderBottomColor: theme.semanticColors.border }]}
-                  onPress={() => {
-                    setIsDrawerVisible(false);
-                    (navigation as any).navigate('Chat', { sessionId: conversation.id });
-                  }}
                 >
-                  <View style={styles.conversationContent}>
-                    <Text style={[styles.conversationTitle, { color: theme.semanticColors.textPrimary }]} numberOfLines={1}>
-                      {conversation.title || 'Untitled Conversation'}
-                    </Text>
-                    <Text style={[styles.conversationDate, { color: theme.semanticColors.textSecondary }]}>
-                      {new Date(conversation.last_message_at).toLocaleDateString()}
-                    </Text>
+                  <TouchableOpacity
+                    style={styles.conversationMain}
+                    onPress={() => {
+                      setIsDrawerVisible(false);
+                      navigateToChat(conversation.id);
+                    }}
+                  >
+                    <View style={styles.conversationContent}>
+                      <Text style={[styles.conversationTitle, { color: theme.semanticColors.textPrimary }]} numberOfLines={1}>
+                        {conversation.title || 'Untitled Conversation'}
+                      </Text>
+                      <Text style={[styles.conversationDate, { color: theme.semanticColors.textSecondary }]}>
+                        {new Date(conversation.timestamp).toLocaleDateString()}
+                      </Text>
+                    </View>
+                    <Ionicons 
+                      name="chevron-forward" 
+                      size={16} 
+                      color={theme.semanticColors.textSecondary} 
+                    />
+                  </TouchableOpacity>
+                  
+                  {/* Action buttons */}
+                  <View style={styles.conversationActions}>
+                    {/* Rename button */}
+                    <TouchableOpacity
+                      style={styles.actionButton}
+                      onPress={() => {
+                        console.log('🖱️ Rename button pressed for:', conversation.id);
+                        handleRenamePress(conversation);
+                      }}
+                      hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                      activeOpacity={0.7}
+                    >
+                      <Ionicons name="pencil-outline" size={18} color={theme.semanticColors.textSecondary} />
+                    </TouchableOpacity>
+                    
+                    {/* Delete button */}
+                    <TouchableOpacity
+                      style={[styles.actionButton, styles.deleteActionButton]}
+                      onPress={() => {
+                        console.log('🖱️ DELETE button pressed for:', conversation.id);
+                        console.log('🖱️ Conversation title:', conversation.title);
+                        handleDeletePress(conversation);
+                      }}
+                      hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                      activeOpacity={0.7}
+                    >
+                      <Ionicons name="trash-outline" size={18} color="#FF6B6B" />
+                    </TouchableOpacity>
                   </View>
-                  <Ionicons 
-                    name="chevron-forward" 
-                    size={16} 
-                    color={theme.semanticColors.textSecondary} 
-                  />
-                </TouchableOpacity>
+                </View>
               ))}
             </ScrollView>
           ) : (
@@ -425,6 +580,120 @@ export const HomeScreen: React.FC = () => {
         onNavigateToSubscriptions={handleNavigateToSubscriptions}
         onNavigateToOnboardingEdit={handleNavigateToOnboardingEdit}
       />
+
+      {/* Rename Modal */}
+      <Modal
+        visible={isRenameModalVisible}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={handleRenameCancel}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalContent, { backgroundColor: theme.semanticColors.background }]}>
+            <Text style={[styles.modalTitle, { color: theme.semanticColors.textPrimary }]}>
+              Rename Conversation
+            </Text>
+            
+            <TextInput
+              style={[
+                styles.modalInput,
+                {
+                  backgroundColor: theme.semanticColors.background,
+                  borderColor: theme.semanticColors.border,
+                  color: theme.semanticColors.textPrimary,
+                }
+              ]}
+              value={renameInputValue}
+              onChangeText={setRenameInputValue}
+              placeholder="Enter conversation title"
+              placeholderTextColor={theme.semanticColors.textSecondary}
+              autoFocus={true}
+              onSubmitEditing={handleRenameSubmit}
+              maxLength={100}
+            />
+            
+            <View style={styles.modalButtons}>
+              <TouchableOpacity
+                style={[
+                  styles.modalButton, 
+                  styles.cancelButton,
+                  { borderColor: theme.semanticColors.border }
+                ]}
+                onPress={handleRenameCancel}
+              >
+                <Text style={[styles.buttonText, { color: theme.semanticColors.textSecondary }]}>
+                  Cancel
+                </Text>
+              </TouchableOpacity>
+              
+              <TouchableOpacity
+                style={[
+                  styles.modalButton,
+                  styles.saveButton,
+                  { 
+                    backgroundColor: theme.semanticColors.primary,
+                    opacity: renameInputValue.trim() ? 1 : 0.5
+                  }
+                ]}
+                onPress={handleRenameSubmit}
+                disabled={!renameInputValue.trim()}
+              >
+                <Text style={[styles.buttonText, { color: '#FFFFFF' }]}>
+                  Save
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Delete Confirmation Modal */}
+      <Modal
+        visible={isDeleteModalVisible}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={handleDeleteCancel}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalContent, { backgroundColor: theme.semanticColors.background }]}>
+            <Text style={[styles.modalTitle, { color: theme.semanticColors.textPrimary }]}>
+              Delete Conversation
+            </Text>
+            
+            <Text style={[styles.modalMessage, { color: theme.semanticColors.textSecondary }]}>
+              Are you sure you want to delete "{deletingConversation?.title || 'Untitled Conversation'}"?{'\n\n'}This action cannot be undone.
+            </Text>
+            
+            <View style={styles.modalButtons}>
+              <TouchableOpacity
+                style={[
+                  styles.modalButton, 
+                  styles.cancelButton,
+                  { borderColor: theme.semanticColors.border }
+                ]}
+                onPress={handleDeleteCancel}
+              >
+                <Text style={[styles.buttonText, { color: theme.semanticColors.textSecondary }]}>
+                  Cancel
+                </Text>
+              </TouchableOpacity>
+              
+              <TouchableOpacity
+                style={[
+                  styles.modalButton,
+                  styles.deleteButton,
+                  { backgroundColor: '#FF6B6B' }
+                ]}
+                onPress={handleDeleteConfirm}
+              >
+                <Text style={[styles.buttonText, { color: '#FFFFFF' }]}>
+                  Delete
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 };
@@ -579,19 +848,106 @@ const styles = StyleSheet.create({
   conversationItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    borderBottomWidth: StyleSheet.hairlineWidth,
+    paddingVertical: 16,
+    paddingHorizontal: 0,
+    borderBottomWidth: 1,
+  },
+  conversationMain: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
   },
   conversationContent: {
     flex: 1,
   },
   conversationTitle: {
     fontSize: 16,
-    fontWeight: '500',
+    fontWeight: '600',
     marginBottom: 4,
   },
   conversationDate: {
     fontSize: 12,
+  },
+  conversationActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginLeft: 8,
+  },
+  actionButton: {
+    padding: 8,
+    borderRadius: 6,
+    marginLeft: 4,
+    minWidth: 32,
+    minHeight: 32,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  deleteActionButton: {
+    backgroundColor: 'rgba(255, 107, 107, 0.1)',
+  },
+  modalOverlay: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+  },
+  modalContent: {
+    padding: 24,
+    borderRadius: 12,
+    width: '85%',
+    maxWidth: 400,
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.25,
+    shadowRadius: 3.84,
+    elevation: 5,
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    marginBottom: 16,
+    textAlign: 'center',
+  },
+  modalMessage: {
+    fontSize: 16,
+    lineHeight: 24,
+    marginBottom: 20,
+    textAlign: 'center',
+  },
+  modalInput: {
+    borderWidth: 1,
+    borderRadius: 8,
+    padding: 12,
+    marginBottom: 20,
+    fontSize: 16,
+  },
+  modalButtons: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    gap: 12,
+  },
+  modalButton: {
+    flex: 1,
+    padding: 12,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  cancelButton: {
+    backgroundColor: 'transparent',
+    borderWidth: 1,
+    borderColor: '#E0E0E0',
+  },
+  saveButton: {
+    // backgroundColor set dynamically with theme
+  },
+  deleteButton: {
+    // backgroundColor set to red in JSX
+  },
+  buttonText: {
+    fontSize: 16,
+    fontWeight: '600',
   },
 }); 

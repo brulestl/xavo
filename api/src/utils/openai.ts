@@ -27,7 +27,8 @@ export async function callCoachAssistant(
 ) {
   return openai().chat.completions.create({
     model: "gpt-4o-mini",
-    messages
+    messages,
+    temperature: Number(process.env.OPENAI_TEMPERATURE) || 0.7,
   });
 }
 
@@ -39,39 +40,77 @@ export async function streamCoachAssistant(
     model: "gpt-4o-mini", 
     messages,
     stream: true,
-    temperature: 0.7,
+    temperature: Number(process.env.OPENAI_TEMPERATURE) || 0.7,
     max_tokens: 1000
   });
 }
 
-// Helper function to build chat messages for OpenAI
+import { buildCoachPrompt, UserPersonalization, PersonalityScores } from './coach-prompt';
+
+export interface ChatMessageOptions {
+  userPersonalization?: UserPersonalization;
+  personalityScores?: PersonalityScores;
+  tier?: 'trial' | 'strategist' | 'shark';
+  context?: string;
+  systemPrompt?: string;
+  conversationContext?: Array<{
+    role: 'system' | 'user' | 'assistant';
+    content: string;
+  }>;
+}
+
+// Enhanced function to build chat messages with coach prompt and personalization
 export function buildChatMessages(
   userMessage: string,
-  context?: string,
-  systemPrompt?: string
+  options: ChatMessageOptions = {}
 ): OpenAI.Chat.Completions.ChatCompletionMessageParam[] {
+  const {
+    userPersonalization,
+    personalityScores,
+    tier = 'trial',
+    context,
+    systemPrompt,
+    conversationContext // New parameter for injected context
+  } = options;
+
   const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [];
 
-  // Add system prompt
+  // Add system prompt (prioritize custom, then coach prompt, then fallback)
   if (systemPrompt) {
     messages.push({
       role: 'system',
       content: systemPrompt
     });
   } else {
+    // Use the dynamic coach prompt with personalization
+    const coachPrompt = buildCoachPrompt({
+      tier,
+      userPersonalization,
+      personalityScores,
+      currentDateTime: new Date().toISOString(),
+    });
+    
     messages.push({
       role: 'system',
-      content: `You are a helpful AI assistant specializing in corporate influence and professional development. 
-      Provide practical, actionable advice to help users navigate workplace dynamics and advance their careers.
-      Keep responses concise but comprehensive.`
+      content: coachPrompt
     });
   }
 
-  // Add context if provided
+  // 🔥 INJECT CONVERSATION CONTEXT (short-term summary + message history)
+  if (conversationContext && conversationContext.length > 0) {
+    conversationContext.forEach(contextMessage => {
+      messages.push({
+        role: contextMessage.role,
+        content: contextMessage.content
+      });
+    });
+  }
+
+  // Add RAG context if provided
   if (context) {
     messages.push({
       role: 'system', 
-      content: `Context: ${context}`
+      content: `Additional Context: ${context}`
     });
   }
 
@@ -82,4 +121,16 @@ export function buildChatMessages(
   });
 
   return messages;
+}
+
+// Legacy function for backward compatibility
+export function buildChatMessagesLegacy(
+  userMessage: string,
+  context?: string,
+  systemPrompt?: string
+): OpenAI.Chat.Completions.ChatCompletionMessageParam[] {
+  return buildChatMessages(userMessage, {
+    context,
+    systemPrompt
+  });
 } 

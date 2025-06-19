@@ -260,7 +260,7 @@ async function callOpenAIChatAPI(apiKey: string, systemPrompt: string, userPromp
           { role: 'system', content: systemPrompt },
           { role: 'user', content: userPrompt }
         ],
-        temperature: 0.8,
+        temperature: Number(process.env.OPENAI_TEMPERATURE) || 0.7,
         max_tokens: 300,
       }),
     });

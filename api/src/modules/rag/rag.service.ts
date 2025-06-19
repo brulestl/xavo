@@ -1,28 +1,57 @@
 import { Injectable } from '@nestjs/common';
+import { createClient, SupabaseClient } from '@supabase/supabase-js';
+import OpenAI from 'openai';
 import { MemoryService } from '../memory/memory.service';
 import { MemoryContext, MemoryStorageOptions } from '../memory/memory.types';
 import { ChatRequestDto } from '../chat/dto/chat.dto';
 import { AuthUser } from '../auth/auth.service';
 
+export interface CoachCorpusMatch {
+  id: string;
+  chunk: string;
+  tags: string[];
+  source: string;
+  speaker: string;
+  metadata: any;
+  similarity: number;
+}
+
 export interface RAGContext {
   userQuery: string;
   memoryContext: MemoryContext;
+  coachContext: CoachCorpusMatch[];
   enhancedPrompt: string;
   contextSources: string[];
   relevanceScore: number;
+  coachContextUsed: boolean;
 }
 
 export interface RAGOptions {
   useRecentContext?: boolean;
   useHistoricalContext?: boolean;
   useUserProfile?: boolean;
+  useCoachCorpus?: boolean;
   maxContextTokens?: number;
+  coachCorpusThreshold?: number;
+  coachCorpusCount?: number;
   memoryOptions?: MemoryStorageOptions;
 }
 
 @Injectable()
 export class RAGService {
-  constructor(private memoryService: MemoryService) {}
+  private supabase: SupabaseClient;
+  private openai: OpenAI;
+
+  constructor(private memoryService: MemoryService) {
+    this.supabase = createClient(
+      process.env.SUPABASE_URL || '',
+      process.env.SUPABASE_SERVICE_ROLE_KEY || ''
+    );
+
+    this.openai = new OpenAI({
+      apiKey: process.env.OPENAI_API_KEY || '',
+    });
+  }
 
   async enhanceRequestWithRAG(
     request: ChatRequestDto,
@@ -33,7 +62,10 @@ export class RAGService {
       useRecentContext = true,
       useHistoricalContext = true,
       useUserProfile = true,
-      maxContextTokens = 2000,
+      useCoachCorpus = true,
+      maxContextTokens = 4000,
+      coachCorpusThreshold = 0.75,
+      coachCorpusCount = 3,
       memoryOptions = {},
     } = options;
 
@@ -51,25 +83,38 @@ export class RAGService {
         },
       );
 
-      // Build enhanced prompt with context
-      const enhancedPrompt = this.buildEnhancedPrompt(
+      // Get coach corpus context (new functionality)
+      let coachContext: CoachCorpusMatch[] = [];
+      if (useCoachCorpus) {
+        coachContext = await this.searchCoachCorpus(
+          request.message,
+          coachCorpusThreshold,
+          coachCorpusCount
+        );
+      }
+
+      // Build enhanced prompt with all context
+      const enhancedPrompt = this.buildComprehensivePrompt(
         request,
         memoryContext,
+        coachContext,
         maxContextTokens,
       );
 
       // Track context sources for transparency
-      const contextSources = this.getContextSources(memoryContext);
+      const contextSources = this.getAllContextSources(memoryContext, coachContext);
 
       // Calculate overall relevance score
-      const relevanceScore = this.calculateContextRelevance(memoryContext);
+      const relevanceScore = this.calculateOverallRelevance(memoryContext, coachContext);
 
       return {
         userQuery: request.message,
         memoryContext,
+        coachContext,
         enhancedPrompt,
         contextSources,
         relevanceScore,
+        coachContextUsed: coachContext.length > 0,
       };
     } catch (error) {
       console.error('Error enhancing request with RAG:', error);
@@ -81,9 +126,11 @@ export class RAGService {
           recentMessages: [],
           relevantHistory: [],
         },
+        coachContext: [],
         enhancedPrompt: this.buildBasicPrompt(request),
         contextSources: [],
         relevanceScore: 0,
+        coachContextUsed: false,
       };
     }
   }
@@ -283,5 +330,215 @@ export class RAGService {
   private estimateTokens(text: string): number {
     // Rough estimation: ~4 characters per token
     return Math.ceil(text.length / 4);
+  }
+
+  /**
+   * Search coach corpus for relevant content
+   */
+  private async searchCoachCorpus(
+    query: string,
+    threshold: number = 0.75,
+    matchCount: number = 3
+  ): Promise<CoachCorpusMatch[]> {
+    try {
+      // Generate embedding for the query
+      const queryEmbedding = await this.generateQueryEmbedding(query);
+
+      // Search using the database function
+      const { data, error } = await this.supabase.rpc('match_coach_corpus', {
+        query_embedding: queryEmbedding,
+        match_threshold: threshold,
+        match_count: matchCount,
+      });
+
+      if (error) {
+        console.error('Error searching coach corpus:', error);
+        return [];
+      }
+
+      return data || [];
+    } catch (error) {
+      console.error('Error in searchCoachCorpus:', error);
+      return [];
+    }
+  }
+
+  /**
+   * Generate embedding for query text
+   */
+  private async generateQueryEmbedding(text: string): Promise<number[]> {
+    try {
+      const response = await this.openai.embeddings.create({
+        model: 'text-embedding-3-small',
+        input: text.trim().substring(0, 8000),
+        encoding_format: 'float',
+      });
+
+      return response.data[0].embedding;
+    } catch (error) {
+      console.error('Error generating query embedding:', error);
+      // Return zero vector as fallback
+      return new Array(1536).fill(0);
+    }
+  }
+
+  /**
+   * Build comprehensive prompt with all available context
+   */
+  private buildComprehensivePrompt(
+    request: ChatRequestDto,
+    memoryContext: MemoryContext,
+    coachContext: CoachCorpusMatch[],
+    maxTokens: number,
+  ): string {
+    let prompt = '';
+    let tokenCount = 0;
+
+    // Add system context
+    const systemContext = this.getSystemContext(request.actionType);
+    prompt += systemContext;
+    tokenCount += this.estimateTokens(systemContext);
+
+    // Add coach corpus context (highest priority)
+    if (coachContext.length > 0 && tokenCount < maxTokens * 0.4) {
+      const coachContextStr = this.buildCoachContext(coachContext);
+      if (tokenCount + this.estimateTokens(coachContextStr) < maxTokens * 0.4) {
+        prompt += coachContextStr;
+        tokenCount += this.estimateTokens(coachContextStr);
+      }
+    }
+
+    // Add user profile context
+    if (memoryContext.userProfile && tokenCount < maxTokens * 0.6) {
+      const profileContext = this.buildProfileContext(memoryContext.userProfile);
+      if (tokenCount + this.estimateTokens(profileContext) < maxTokens * 0.6) {
+        prompt += profileContext;
+        tokenCount += this.estimateTokens(profileContext);
+      }
+    }
+
+    // Add recent conversation context
+    if (memoryContext.recentMessages.length > 0 && tokenCount < maxTokens * 0.8) {
+      const recentContext = this.buildRecentContext(memoryContext.recentMessages);
+      if (tokenCount + this.estimateTokens(recentContext) < maxTokens * 0.8) {
+        prompt += recentContext;
+        tokenCount += this.estimateTokens(recentContext);
+      }
+    }
+
+    // Add relevant historical context (lowest priority)
+    if (memoryContext.relevantHistory.length > 0 && tokenCount < maxTokens * 0.9) {
+      const historyContext = this.buildHistoryContext(memoryContext.relevantHistory);
+      if (tokenCount + this.estimateTokens(historyContext) < maxTokens * 0.9) {
+        prompt += historyContext;
+        tokenCount += this.estimateTokens(historyContext);
+      }
+    }
+
+    // Add current user query
+    prompt += `\n\nCurrent Question: ${request.message}\n\nPlease provide a comprehensive response that incorporates the coach expertise above, takes into account the conversation history and user context, and follows the system guidelines.`;
+
+    return prompt;
+  }
+
+  /**
+   * Build coach context from corpus matches
+   */
+  private buildCoachContext(coachMatches: CoachCorpusMatch[]): string {
+    if (coachMatches.length === 0) return '';
+
+    let context = '\n\nRelevant Coach Expertise:\n';
+    
+    coachMatches.forEach((match, index) => {
+      context += `\n--- Expert Insight ${index + 1} (${(match.similarity * 100).toFixed(1)}% relevant) ---\n`;
+      context += `Source: ${match.source}\n`;
+      if (match.tags.length > 0) {
+        context += `Topics: ${match.tags.join(', ')}\n`;
+      }
+      context += `Content: ${match.chunk}\n`;
+    });
+
+    context += '\n--- End Expert Insights ---\n';
+    return context;
+  }
+
+  /**
+   * Get all context sources including coach corpus
+   */
+  private getAllContextSources(memoryContext: MemoryContext, coachContext: CoachCorpusMatch[]): string[] {
+    const sources: string[] = [];
+
+    if (coachContext.length > 0) {
+      const uniqueSources = [...new Set(coachContext.map(c => c.source))];
+      sources.push(`coach expertise from ${uniqueSources.length} source(s)`);
+    }
+
+    if (memoryContext.recentMessages.length > 0) {
+      sources.push(`${memoryContext.recentMessages.length} recent messages`);
+    }
+
+    if (memoryContext.relevantHistory.length > 0) {
+      sources.push(`${memoryContext.relevantHistory.length} relevant past discussions`);
+    }
+
+    if (memoryContext.userProfile) {
+      sources.push('user profile');
+    }
+
+    return sources;
+  }
+
+  /**
+   * Calculate overall relevance including coach corpus
+   */
+  private calculateOverallRelevance(memoryContext: MemoryContext, coachContext: CoachCorpusMatch[]): number {
+    let totalRelevance = 0;
+    let factorCount = 0;
+
+    // Coach corpus relevance (weighted highest)
+    if (coachContext.length > 0) {
+      const avgCoachRelevance = coachContext.reduce((sum, match) => sum + match.similarity, 0) / coachContext.length;
+      totalRelevance += avgCoachRelevance * 2; // Double weight for coach context
+      factorCount += 2;
+    }
+
+    // Recent messages relevance
+    if (memoryContext.recentMessages.length > 0) {
+      totalRelevance += 0.8;
+      factorCount++;
+    }
+
+    // Historical context relevance
+    if (memoryContext.relevantHistory.length > 0) {
+      totalRelevance += 0.6;
+      factorCount++;
+    }
+
+    // User profile relevance
+    if (memoryContext.userProfile) {
+      totalRelevance += 0.4;
+      factorCount++;
+    }
+
+    return factorCount > 0 ? totalRelevance / factorCount : 0;
+  }
+
+  /**
+   * Get coach corpus statistics
+   */
+  async getCoachCorpusStats(): Promise<any> {
+    try {
+      const { data, error } = await this.supabase.rpc('get_coach_corpus_stats');
+      
+      if (error) {
+        console.error('Error getting corpus stats:', error);
+        return null;
+      }
+
+      return data?.[0] || null;
+    } catch (error) {
+      console.error('Error in getCoachCorpusStats:', error);
+      return null;
+    }
   }
 } 
