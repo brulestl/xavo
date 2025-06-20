@@ -37,7 +37,8 @@ export default function OnboardingLoginChoice() {
           return;
         }
       }
-      navigation.navigate('Home' as never);
+      // Success - let AuthProvider/App.tsx handle navigation based on auth state
+      console.log('Email auth successful - auth state will trigger navigation');
     } catch (error) {
       Alert.alert('Error', 'Authentication failed. Please try again.');
     } finally {
@@ -72,9 +73,8 @@ export default function OnboardingLoginChoice() {
         
         Alert.alert('Google Sign-In Error', `${errorMessage}\n\nDebug info: ${error.message}`);
       } else {
-        // Success - navigate to Home screen
-        console.log('Google OAuth successful from OnboardingLoginChoice screen');
-        navigation.navigate('Home' as never);
+        // Success - let AuthProvider/App.tsx handle navigation based on auth state
+        console.log('Google OAuth successful from OnboardingLoginChoice screen - auth state will trigger navigation');
       }
     } catch (error) {
       console.error('Google OAuth error:', error);
@@ -115,9 +115,8 @@ export default function OnboardingLoginChoice() {
         
         Alert.alert('LinkedIn Sign-In Error', `${errorMessage}\n\nDebug info: ${error.message}`);
       } else {
-        // Success - navigate to Home screen
-        console.log('LinkedIn OAuth successful from OnboardingLoginChoice screen');
-        navigation.navigate('Home' as never);
+        // Success - let AuthProvider/App.tsx handle navigation based on auth state
+        console.log('LinkedIn OAuth successful from OnboardingLoginChoice screen - auth state will trigger navigation');
       }
     } catch (error) {
       console.error('LinkedIn OAuth error:', error);

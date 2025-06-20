@@ -26,13 +26,13 @@ export const PillPrompt: React.FC<PillPromptProps> = ({
       Animated.parallel([
         Animated.spring(animatedValue, {
           toValue: 1,
-          useNativeDriver: true,
+          useNativeDriver: false,
           tension: 100,
           friction: 8,
         }),
         Animated.spring(scaleValue, {
           toValue: 1,
-          useNativeDriver: true,
+          useNativeDriver: false,
           tension: 120,
           friction: 7,
         })
@@ -50,12 +50,12 @@ export const PillPrompt: React.FC<PillPromptProps> = ({
       Animated.timing(scaleValue, {
         toValue: 0.95,
         duration: 100,
-        useNativeDriver: true,
+        useNativeDriver: false,
         easing: Easing.out(Easing.quad),
       }),
       Animated.spring(scaleValue, {
         toValue: 1,
-        useNativeDriver: true,
+        useNativeDriver: false,
         tension: 300,
         friction: 10,
       })
@@ -67,7 +67,7 @@ export const PillPrompt: React.FC<PillPromptProps> = ({
   const pillStyle = [
     styles.pill,
     {
-      backgroundColor: isDark ? theme.colors.jet : '#F5F5F5',
+      backgroundColor: isDark ? theme.semanticColors.surface : '#F5F5F5',
       borderColor: theme.semanticColors.border,
       opacity: disabled ? 0.5 : 1,
     }

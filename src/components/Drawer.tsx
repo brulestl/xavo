@@ -32,12 +32,12 @@ export const Drawer: React.FC<DrawerProps> = ({
         Animated.timing(slideAnim, {
           toValue: 0,
           duration: 250,
-          useNativeDriver: true,
+          useNativeDriver: false,
         }),
         Animated.timing(overlayOpacity, {
           toValue: 0.5,
           duration: 250,
-          useNativeDriver: true,
+          useNativeDriver: false,
         }),
       ]).start();
     } else {
@@ -46,12 +46,12 @@ export const Drawer: React.FC<DrawerProps> = ({
         Animated.timing(slideAnim, {
           toValue: -drawerWidth,
           duration: 250,
-          useNativeDriver: true,
+          useNativeDriver: false,
         }),
         Animated.timing(overlayOpacity, {
           toValue: 0,
           duration: 250,
-          useNativeDriver: true,
+          useNativeDriver: false,
         }),
       ]).start();
     }

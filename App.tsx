@@ -26,13 +26,18 @@ const Stack = createNativeStackNavigator();
 const AppNavigator: React.FC = () => {
   const { loading, session, user, hasCompletedOnboarding } = useAuth();
 
+  console.log('🚦 AppNavigator render - Loading:', loading, 'Session:', !!session, 'User:', !!user, 'Onboarding complete:', hasCompletedOnboarding);
+  console.log('🔍 Auth state details - Session ID:', session?.access_token ? 'exists' : 'null', 'User ID:', user?.id || 'null');
+
   if (loading) {
+    console.log('⏩ Showing splash screen due to loading state');
     return <SplashScreen />;
   }
 
   // If user is authenticated, check if they need onboarding
   if (session && user) {
     if (!hasCompletedOnboarding) {
+      console.log('🎯 Showing onboarding stack - user needs to complete onboarding');
       // User is authenticated but needs onboarding
       return (
         <Stack.Navigator
@@ -56,10 +61,12 @@ const AppNavigator: React.FC = () => {
       );
     }
     
+    console.log('🏠 Showing main app - user is authenticated and onboarding complete');
     // User is authenticated and has completed onboarding - go directly to main app
     return <DrawerNavigator />;
   }
 
+  console.log('🔐 Showing auth stack - user not authenticated');
   // If user is not authenticated, show auth screens
   return (
     <Stack.Navigator

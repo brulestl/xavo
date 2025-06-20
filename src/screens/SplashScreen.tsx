@@ -15,7 +15,7 @@ export const SplashScreen: React.FC = () => {
     Animated.timing(fadeAnim, {
       toValue: 1,
       duration: 1000,
-      useNativeDriver: true,
+      useNativeDriver: false,
     }).start();
 
     // Navigate after 2 seconds

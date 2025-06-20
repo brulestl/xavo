@@ -353,7 +353,7 @@ export const PersonalityQuizScreen: React.FC = () => {
         }
         
         // Mark onboarding as complete in the auth context
-        markOnboardingComplete();
+        await markOnboardingComplete();
         
         // Get dominant trait for display
         const maxScore = Math.max(...Object.values(personalityScores));

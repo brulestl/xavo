@@ -8,6 +8,12 @@
     "userInterfaceStyle": "light",
     "newArchEnabled": true,
     "scheme": "xavo",
+    "updates": {
+      "fallbackToCacheTimeout": 0
+    },
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
     "splash": {
       "image": "./assets/splash-icon.png",
       "resizeMode": "contain",
@@ -31,6 +37,11 @@
         "backgroundColor": "#ffffff"
       },
       "package": "com.xavo.influence",
+      "versionCode": 1,
+      "permissions": [
+        "READ_EXTERNAL_STORAGE",
+        "WRITE_EXTERNAL_STORAGE"
+      ],
       "intentFilters": [
         {
           "action": "VIEW",
@@ -52,7 +63,8 @@
     "description": "AI-powered corporate influence coaching app",
     "plugins": [
       "expo-secure-store",
-      "expo-web-browser"
+      "expo-web-browser",
+      "expo-document-picker"
     ],
     "extra": {
       "eas": {

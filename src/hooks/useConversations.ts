@@ -35,9 +35,10 @@ interface ApiMessage {
 }
 
 export function useConversations() {
-  const { user } = useAuth();
+  const { user, loading: authLoading } = useAuth();
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [loading, setLoading] = useState(false);
+  const [hasLoaded, setHasLoaded] = useState(false);
 
   // Load conversations from API
   const loadConversations = async () => {
@@ -45,6 +46,7 @@ export function useConversations() {
     
     setLoading(true);
     try {
+      console.log('🔍 Loading conversations for user:', user.id);
       const response = await apiFetch<{ sessions: ApiSession[] }>('/chat/sessions');
       
       if (response?.sessions) {
@@ -64,10 +66,12 @@ export function useConversations() {
         );
 
         setConversations(formattedConversations);
+        setHasLoaded(true);
         console.log(`✅ Loaded ${formattedConversations.length} conversations from API`);
       } else {
         console.warn('No sessions found in API response');
         setConversations([]);
+        setHasLoaded(true);
       }
     } catch (error) {
       console.error('Failed to load conversations from API:', error);
@@ -100,12 +104,13 @@ export function useConversations() {
     }
   };
 
-  // Load conversations when user changes
+  // Load conversations when user changes (but only once auth is stable)
   useEffect(() => {
-    if (user?.id) {
+    if (!authLoading && user?.id && !hasLoaded) {
+      console.log('🚀 useConversations: Loading conversations for user:', user.id);
       loadConversations();
     }
-  }, [user?.id]);
+  }, [user?.id, authLoading, hasLoaded]);
 
   const getConversation = (id: string): Conversation | undefined => {
     return conversations.find(conv => conv.id === id);

@@ -30,12 +30,12 @@ export const TypingDots: React.FC<TypingDotsProps> = ({ visible }) => {
           Animated.timing(opacity, {
             toValue: 1,
             duration: duration / 2,
-            useNativeDriver: true,
+            useNativeDriver: false,
           }),
           Animated.timing(opacity, {
             toValue: 0.3,
             duration: duration / 2,
-            useNativeDriver: true,
+            useNativeDriver: false,
           }),
         ]);
 
@@ -54,24 +54,24 @@ export const TypingDots: React.FC<TypingDotsProps> = ({ visible }) => {
   if (!visible) return null;
 
   return (
-    <View style={[styles.container, { backgroundColor: theme.surface }]}>
+    <View style={[styles.container, { backgroundColor: theme.semanticColors.surface }]}>
       <View style={styles.dotsContainer}>
         <Animated.View
           style={[
             styles.dot,
-            { backgroundColor: theme.textSecondary, opacity: dot1Opacity },
+            { backgroundColor: theme.semanticColors.textSecondary, opacity: dot1Opacity },
           ]}
         />
         <Animated.View
           style={[
             styles.dot,
-            { backgroundColor: theme.textSecondary, opacity: dot2Opacity },
+            { backgroundColor: theme.semanticColors.textSecondary, opacity: dot2Opacity },
           ]}
         />
         <Animated.View
           style={[
             styles.dot,
-            { backgroundColor: theme.textSecondary, opacity: dot3Opacity },
+            { backgroundColor: theme.semanticColors.textSecondary, opacity: dot3Opacity },
           ]}
         />
       </View>

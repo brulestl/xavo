@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { Alert } from 'react-native';
 import { apiFetch, buildApiUrl } from '../lib/api';
+import { useAuth } from '../providers/AuthProvider';
 
 export interface ChatMessage {
   id: string;
@@ -622,10 +623,16 @@ export const useChat = (): UseChatReturn => {
     }
   };
 
-  // Load sessions on mount
+  // Load sessions on mount (only after auth is stable)
+  const { loading: authLoading } = useAuth();
+  const [hasLoadedSessions, setHasLoadedSessions] = useState(false);
+
   useEffect(() => {
-    loadSessions();
-  }, []);
+    if (!authLoading && !hasLoadedSessions) {
+      console.log('🚀 useChat: Loading sessions after auth stabilized');
+      loadSessions().then(() => setHasLoadedSessions(true));
+    }
+  }, [authLoading, hasLoadedSessions]);
 
   // Cleanup on unmount
   useEffect(() => {

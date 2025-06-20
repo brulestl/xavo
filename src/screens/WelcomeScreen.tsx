@@ -19,12 +19,12 @@ export const WelcomeScreen: React.FC = () => {
       Animated.timing(slideAnim, {
         toValue: 0,
         duration: 800,
-        useNativeDriver: true,
+        useNativeDriver: false,
       }),
       Animated.timing(fadeAnim, {
         toValue: 1,
         duration: 800,
-        useNativeDriver: true,
+        useNativeDriver: false,
       }),
     ]).start();
   }, [slideAnim, fadeAnim]);
@@ -64,9 +64,8 @@ export const WelcomeScreen: React.FC = () => {
         
         Alert.alert('Google Sign-In Error', `${errorMessage}\n\nDebug info: ${error.message}`);
       } else {
-        // Success - navigate to Home screen
-        console.log('Google OAuth successful from Welcome screen');
-        navigation.navigate('Home' as never);
+        // Success - let AuthProvider/App.tsx handle navigation based on auth state
+        console.log('Google OAuth successful from Welcome screen - auth state will trigger navigation');
       }
     } catch (error) {
       console.error('Google OAuth error:', error);
@@ -107,9 +106,8 @@ export const WelcomeScreen: React.FC = () => {
         
         Alert.alert('LinkedIn Sign-In Error', `${errorMessage}\n\nDebug info: ${error.message}`);
       } else {
-        // Success - navigate to Home screen
-        console.log('LinkedIn OAuth successful from Welcome screen');
-        navigation.navigate('Home' as never);
+        // Success - let AuthProvider/App.tsx handle navigation based on auth state
+        console.log('LinkedIn OAuth successful from Welcome screen - auth state will trigger navigation');
       }
     } catch (error) {
       console.error('LinkedIn OAuth error:', error);

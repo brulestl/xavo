@@ -38,20 +38,37 @@ function getApiUrl(): string {
 const API_URL = getApiUrl();
 const BASE = `${API_URL}/api/v1`;
 
+// Cache session to avoid repeated fetches
+let cachedSession: any = null;
+let sessionCacheTime = 0;
+const SESSION_CACHE_DURATION = 5000; // 5 seconds
+
 export async function apiFetch<T>(
   path: string,
   init: RequestInit & { auth?: boolean } = { auth: true }
 ): Promise<T> {
-  console.log('🔍 apiFetch called with:', { path, method: init.method || 'GET' });
-  console.log('🔍 API_URL:', API_URL);
-  console.log('🔍 BASE URL:', BASE);
-  console.log('🔍 Full URL will be:', `${BASE}${path}`);
+  const isSessionRequest = path === '/chat/sessions' && (init.method || 'GET') === 'GET';
+  
+  if (!isSessionRequest) {
+    console.log('🔍 apiFetch called with:', { path, method: init.method || 'GET' });
+  }
   
   try {
-    console.log('🔍 Getting session...');
-    const session = (await supabase.auth.getSession()).data.session;
-    console.log('🔍 Session exists:', !!session);
-    console.log('🔍 Access token exists:', !!session?.access_token);
+    // Use cached session if available and recent
+    let session = cachedSession;
+    const now = Date.now();
+    
+    if (!session || (now - sessionCacheTime) > SESSION_CACHE_DURATION) {
+      if (!isSessionRequest) console.log('🔍 Getting fresh session...');
+      session = (await supabase.auth.getSession()).data.session;
+      cachedSession = session;
+      sessionCacheTime = now;
+    }
+    
+    if (!isSessionRequest) {
+      console.log('🔍 Session exists:', !!session);
+      console.log('🔍 Access token exists:', !!session?.access_token);
+    }
     
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
@@ -66,15 +83,18 @@ export async function apiFetch<T>(
         throw new Error('No Supabase session – user must be logged in');
       }
       headers.Authorization = `Bearer ${session.access_token}`;
-      console.log('🔍 Authorization header added');
+      if (!isSessionRequest) console.log('🔍 Authorization header added');
     }
     
-    console.log('🔍 Request headers:', Object.keys(headers));
-    console.log('🔍 Request body:', init.body ? 'Present' : 'None');
+    if (!isSessionRequest) {
+      console.log('🔍 Request headers:', Object.keys(headers));
+      console.log('🔍 Request body:', init.body ? 'Present' : 'None');
+      console.log('🌐 Making fetch request to:', `${BASE}${path}`);
+    }
     
-    console.log('🌐 Making fetch request to:', `${BASE}${path}`);
     const res = await fetch(`${BASE}${path}`, { ...init, headers });
-    console.log('🌐 Fetch completed, status:', res.status);
+    
+    if (!isSessionRequest) console.log('🌐 Fetch completed, status:', res.status);
     
     if (!res.ok) {
       console.error('🚨 Response not OK:', res.status, res.statusText);
@@ -83,9 +103,9 @@ export async function apiFetch<T>(
       throw new Error(`API ${res.status} ${res.statusText}: ${text}`);
     }
     
-    console.log('✅ Response OK, parsing JSON...');
+    if (!isSessionRequest) console.log('✅ Response OK, parsing JSON...');
     const result = await res.json();
-    console.log('✅ JSON parsed successfully');
+    if (!isSessionRequest) console.log('✅ JSON parsed successfully');
     return result as T;
   } catch (error) {
     console.error('💥 apiFetch error:', error);

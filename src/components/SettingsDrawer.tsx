@@ -30,6 +30,7 @@ export const SettingsDrawer: React.FC<SettingsDrawerProps> = ({
   onNavigateToSubscriptions,
   onNavigateToOnboardingEdit,
 }) => {
+  console.log('🔧 SettingsDrawer rendered - isVisible:', isVisible); // Debug log
   const { theme } = useTheme();
   const { displayName, user, tier, updateDisplayName, logout } = useAuth();
   
@@ -49,12 +50,12 @@ export const SettingsDrawer: React.FC<SettingsDrawerProps> = ({
         Animated.timing(slideAnim, {
           toValue: 1,
           duration: 250,
-          useNativeDriver: true,
+          useNativeDriver: false,
         }),
         Animated.timing(fadeAnim, {
           toValue: 1,
           duration: 250,
-          useNativeDriver: true,
+          useNativeDriver: false,
         }),
       ]).start();
     } else {
@@ -62,12 +63,12 @@ export const SettingsDrawer: React.FC<SettingsDrawerProps> = ({
         Animated.timing(slideAnim, {
           toValue: 0,
           duration: 250,
-          useNativeDriver: true,
+          useNativeDriver: false,
         }),
         Animated.timing(fadeAnim, {
           toValue: 0,
           duration: 250,
-          useNativeDriver: true,
+          useNativeDriver: false,
         }),
       ]).start(() => {
         setShouldRender(false);
@@ -101,12 +102,12 @@ export const SettingsDrawer: React.FC<SettingsDrawerProps> = ({
           Animated.timing(slideAnim, {
             toValue: 1,
             duration: 150,
-            useNativeDriver: true,
+            useNativeDriver: false,
           }),
           Animated.timing(fadeAnim, {
             toValue: 1,
             duration: 150,
-            useNativeDriver: true,
+            useNativeDriver: false,
           }),
         ]).start();
       }
@@ -130,22 +131,16 @@ export const SettingsDrawer: React.FC<SettingsDrawerProps> = ({
     }
   };
 
-  const handleSignOut = () => {
-    Alert.alert(
-      'Sign Out',
-      'Are you sure you want to sign out?',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        { 
-          text: 'Sign Out', 
-          style: 'destructive',
-          onPress: async () => {
-            onClose(); // Close the drawer first
-            await logout(); // Then logout
-          },
-        },
-      ]
-    );
+  const handleSignOut = async () => {
+    console.log('🔥 Sign out button pressed!'); // Debug log
+    try {
+      onClose(); // Close the drawer first
+      await logout(); // Then logout
+      console.log('✅ User signed out successfully');
+    } catch (error) {
+      console.error('❌ Error during sign out:', error);
+      Alert.alert('Error', 'Failed to sign out. Please try again.');
+    }
   };
 
   const translateX = slideAnim.interpolate({
@@ -320,6 +315,8 @@ export const SettingsDrawer: React.FC<SettingsDrawerProps> = ({
             <TouchableOpacity
               style={styles.signOutButton}
               onPress={handleSignOut}
+              activeOpacity={0.7}
+              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
             >
               <Text style={styles.signOutText}>
                 Sign Out
@@ -440,7 +437,16 @@ const styles = StyleSheet.create({
   },
   signOutButton: {
     alignItems: 'center',
+    justifyContent: 'center',
     paddingVertical: 16,
+    paddingHorizontal: 16,
+    marginVertical: 8,
+    borderWidth: 1,
+    borderColor: '#FF3B30',
+    borderRadius: 8,
+    backgroundColor: '#FFF0F0', // Light red background to make it more visible
+    minHeight: 44, // Ensure minimum touch target size
+    width: '100%', // Ensure full width
   },
   signOutText: {
     fontSize: 16,

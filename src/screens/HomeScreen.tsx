@@ -131,12 +131,12 @@ export const HomeScreen: React.FC = () => {
       Animated.timing(fadeAnim, {
         toValue: 1,
         duration: 600,
-        useNativeDriver: true,
+        useNativeDriver: false,
       }),
       Animated.timing(slideAnim, {
         toValue: 0,
         duration: 600,
-        useNativeDriver: true,
+        useNativeDriver: false,
       }),
     ]).start();
 
@@ -228,7 +228,7 @@ export const HomeScreen: React.FC = () => {
       Animated.timing(aiPromptsAnim, {
         toValue: 1,
         duration: 500,
-        useNativeDriver: true,
+        useNativeDriver: false,
       }).start();
       
     } catch (error) {
@@ -483,10 +483,16 @@ export const HomeScreen: React.FC = () => {
       <View style={styles.composerContainer}>
         <Composer
           onSend={handleSendMessage}
+          onFileAttach={(fileUrl, fileName, fileType) => {
+            // Create a file attachment message and start conversation
+            const fileMessage = `📎 Attached file: ${fileName}\n\nFile URL: ${fileUrl}`;
+            handleSendMessage(fileMessage);
+          }}
           onUpload={handleUpload}
           onVoiceNote={handleVoiceNote}
           placeholder={isSendingMessage ? "Starting conversation..." : "What's on your mind?"}
           disabled={isSendingMessage}
+          sessionId={undefined} // Will be updated when we have active session
         />
       </View>
 
@@ -498,9 +504,9 @@ export const HomeScreen: React.FC = () => {
       >
         <View style={styles.drawerContent}>
           {conversationsLoading ? (
-            <View style={styles.loadingContainer}>
-              <ActivityIndicator size="small" color={theme.semanticColors.accent} />
-              <Text style={[styles.loadingText, { color: theme.semanticColors.textSecondary }]}>
+            <View style={styles.conversationLoadingContainer}>
+              <ActivityIndicator size="large" color={theme.semanticColors.primary} />
+              <Text style={[styles.conversationLoadingText, { color: theme.semanticColors.textSecondary }]}>
                 Loading conversations...
               </Text>
             </View>
@@ -773,6 +779,17 @@ const styles = StyleSheet.create({
   loadingText: {
     marginLeft: 8,
     fontSize: 14,
+  },
+  conversationLoadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingVertical: 40,
+  },
+  conversationLoadingText: {
+    marginTop: 16,
+    fontSize: 16,
+    fontWeight: '500',
   },
   loadMoreContainer: {
     alignItems: 'center',
