@@ -13,7 +13,12 @@
     "test:watch": "jest --watch",
     "test:coverage": "jest --coverage",
     "create:assistants": "tsx scripts/createAssistants.ts",
-    "sql:push": "supabase db push sql/daily_usage.sql"
+    "sql:push": "supabase db push sql/daily_usage.sql",
+    "deploy:functions": "supabase functions deploy",
+    "deploy:chat": "supabase functions deploy chat",
+    "deploy:sessions": "supabase functions deploy sessions",
+    "functions:logs": "supabase functions logs --follow",
+    "functions:setup": "supabase link --project-ref wdhmlynmbrhunizbdhdt"
   },
   "dependencies": {
     "@expo/metro-runtime": "~5.0.4",
@@ -36,7 +41,6 @@
     "expo-secure-store": "~14.2.3",
     "expo-web-browser": "~14.2.0",
     "nativewind": "^4.1.19",
-    "openai": "^5.5.1",
     "react": "19.0.0",
     "react-dom": "19.0.0",
     "react-markdown": "^10.1.0",

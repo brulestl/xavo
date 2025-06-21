@@ -1,4 +1,4 @@
-package com.brulestl.snack3df5363678e44334a6d147b626a96f16
+package com.xavo.influence
 
 import android.app.Application
 import android.content.res.Configuration
@@ -24,7 +24,7 @@ class MainApplication : Application(), ReactApplication {
           override fun getPackages(): List<ReactPackage> {
             val packages = PackageList(this).packages
             // Packages that cannot be autolinked yet can be added manually here, for example:
-            // packages.add(new MyReactNativePackage());
+            // packages.add(MyReactNativePackage())
             return packages
           }
 

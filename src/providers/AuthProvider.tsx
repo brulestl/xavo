@@ -350,7 +350,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
           })
         : makeRedirectUri({
             scheme: 'exp',
-            path: '/--/auth/callback',
+            path: '/auth/callback',
           });
       
       console.log('🔗 OAuth redirect URI:', redirectTo);
@@ -378,8 +378,17 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         if (result.type === 'success' && result.url) {
           // Extract the session from the redirect URL
           const url = new URL(result.url);
-          const accessToken = url.searchParams.get('access_token');
-          const refreshToken = url.searchParams.get('refresh_token');
+          
+          // Check for tokens in URL fragment (after #) - this is where Supabase puts them
+          let accessToken = url.searchParams.get('access_token');
+          let refreshToken = url.searchParams.get('refresh_token');
+          
+          // If not in search params, check the fragment (hash)
+          if (!accessToken && url.hash) {
+            const hashParams = new URLSearchParams(url.hash.substring(1)); // Remove # and parse
+            accessToken = hashParams.get('access_token');
+            refreshToken = hashParams.get('refresh_token');
+          }
           
           if (accessToken) {
             console.log('✅ OAuth tokens received, setting session');

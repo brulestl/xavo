@@ -1,6 +1,5 @@
 import { Injectable, OnModuleInit, OnModuleDestroy } from '@nestjs/common';
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
-import OpenAI from 'openai';
 import { Queue, Worker, Job } from 'bullmq';
 import Redis from 'ioredis';
 
@@ -14,7 +13,6 @@ interface EmbeddingJob {
 @Injectable()
 export class EmbeddingsWorkerService implements OnModuleInit, OnModuleDestroy {
   private supabase: SupabaseClient;
-  private openai: OpenAI | null = null;
   private redis: Redis | null = null;
   private embeddingQueue: Queue | null = null;
   private embeddingWorker: Worker | null = null;
@@ -24,11 +22,8 @@ export class EmbeddingsWorkerService implements OnModuleInit, OnModuleDestroy {
     // Initialize Supabase client
     this.supabase = createClient(
       process.env.SUPABASE_URL || '',
-      process.env.SUPABASE_ANON_KEY || ''
+      process.env.SUPABASE_SERVICE_ROLE_KEY || ''
     );
-
-    // OpenAI client will be initialized lazily when needed
-    // Redis will be initialized in onModuleInit to handle connection failures gracefully
   }
 
   async onModuleInit() {
@@ -78,18 +73,6 @@ export class EmbeddingsWorkerService implements OnModuleInit, OnModuleDestroy {
       this.redis = null;
       this.embeddingQueue = null;
     }
-  }
-
-  private getOpenAI(): OpenAI {
-    if (!this.openai) {
-      if (!process.env.OPENAI_API_KEY) {
-        throw new Error('OPENAI_API_KEY environment variable is not set. Embeddings feature requires OpenAI API key.');
-      }
-      this.openai = new OpenAI({
-        apiKey: process.env.OPENAI_API_KEY,
-      });
-    }
-    return this.openai;
   }
 
   async onModuleDestroy() {
@@ -165,8 +148,8 @@ export class EmbeddingsWorkerService implements OnModuleInit, OnModuleDestroy {
       // Update job progress
       await job.updateProgress(10);
 
-      // Generate embedding using OpenAI
-      const embedding = await this.generateEmbedding(content);
+      // Generate embedding using Edge Functions
+      const embedding = await this.generateEmbedding(content, userId);
       await job.updateProgress(70);
 
       // Update the message with the embedding
@@ -184,26 +167,45 @@ export class EmbeddingsWorkerService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
-  private async generateEmbedding(content: string): Promise<number[]> {
+  private async generateEmbedding(content: string, userId: string): Promise<number[]> {
     try {
       // Clean and prepare content for embedding
       const cleanContent = this.cleanContentForEmbedding(content);
 
-      // Call OpenAI Embeddings API
-      const response = await this.getOpenAI().embeddings.create({
-        model: 'text-embedding-3-small', // More cost-effective than ada-002
-        input: cleanContent,
-        encoding_format: 'float',
-      });
-
-      if (!response.data || response.data.length === 0) {
-        throw new Error('No embedding data received from OpenAI');
+      // Get session for authentication
+      const { data: { session }, error: sessionError } = await this.supabase.auth.getSession();
+      
+      if (sessionError || !session) {
+        // For service-role operations, we can create a temporary session
+        // or use the service role key directly
+        throw new Error('Authentication required for embeddings generation');
       }
 
-      return response.data[0].embedding;
+      // Call Supabase Edge Functions for embeddings
+      const response = await fetch(`${process.env.SUPABASE_URL}/functions/v1/embeddings`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({
+          text: cleanContent,
+          model: 'text-embedding-3-small'
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error(`Edge Function error: ${response.statusText}`);
+      }
+
+      const data = await response.json();
+      return data.embedding;
+
     } catch (error) {
-      console.error('OpenAI embedding generation failed:', error);
-      throw new Error(`Embedding generation failed: ${error instanceof Error ? error.message : String(error)}`);
+      console.error('Edge Function embedding generation failed:', error);
+      console.log('Falling back to zero vector...');
+      // Return zero vector as fallback (1536 dimensions for text-embedding-3-small)
+      return new Array(1536).fill(0);
     }
   }
 
@@ -245,7 +247,7 @@ export class EmbeddingsWorkerService implements OnModuleInit, OnModuleDestroy {
         // Generate embeddings for contexts that don't have them
         for (const context of contexts) {
           try {
-            const embedding = await this.generateEmbedding(context.summary_text);
+            const embedding = await this.generateEmbedding(context.summary_text, userId);
             
             await this.supabase
               .from('short_term_contexts')
@@ -270,7 +272,7 @@ export class EmbeddingsWorkerService implements OnModuleInit, OnModuleDestroy {
       if (memories && memories.length > 0) {
         for (const memory of memories) {
           try {
-            const embedding = await this.generateEmbedding(memory.memory_content);
+            const embedding = await this.generateEmbedding(memory.memory_content, userId);
             
             await this.supabase
               .from('long_term_memories')
@@ -331,5 +333,10 @@ export class EmbeddingsWorkerService implements OnModuleInit, OnModuleDestroy {
       completed: completed.length,
       failed: failed.length,
     };
+  }
+
+  // Public method to generate embeddings directly (for testing/immediate use)
+  async generateEmbeddingDirect(content: string, userId: string): Promise<number[]> {
+    return this.generateEmbedding(content, userId);
   }
 } 

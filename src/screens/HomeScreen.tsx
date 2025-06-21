@@ -11,7 +11,6 @@ import { SettingsDrawer } from '../components/SettingsDrawer';
 import { usePersonalizationPrompts } from '../hooks/usePersonalizationPrompts';
 import { useChat } from '../hooks/useChat';
 import { generateAiPrompts } from '../services/aiPromptService';
-import { apiFetch } from '../lib/api';
 import { supabase } from '../lib/supabase';
 import { useConversations } from '../hooks/useConversations';
 
@@ -182,23 +181,10 @@ export const HomeScreen: React.FC = () => {
   const handlePromptPress = async (prompt: string) => {
     if (isSendingMessage) return;
     
-    // Check if a conversation with this prompt already exists
-    const existingConversation = conversations.find(conv => 
-      conv.title.toLowerCase().includes(prompt.toLowerCase().split(' ')[0]) ||
-      conv.preview.includes(prompt)
-    );
-
-    if (existingConversation) {
-      // Navigate to existing conversation
-      (navigation as any).navigate('Chat', { 
-        sessionId: existingConversation.id,
-        conversationId: existingConversation.id 
-      });
-    } else {
-      // Create new conversation with the prompt
-      setSelectedPrompt(selectedPrompt === prompt ? null : prompt);
-      await startConversation(prompt);
-    }
+    // 🔥 ALWAYS create new conversation for prompts
+    // Each prompt should start a fresh conversation, not navigate to existing ones
+    setSelectedPrompt(selectedPrompt === prompt ? null : prompt);
+    await startConversation(prompt);
   };
 
   const navigateToChat = (conversationId: string) => {

@@ -1,4 +1,4 @@
-package com.brulestl.snack3df5363678e44334a6d147b626a96f16
+package com.xavo.influence
 
 import android.os.Build
 import android.os.Bundle

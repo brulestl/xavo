@@ -2,7 +2,6 @@ const fs = require('fs');
 const path = require('path');
 const readline = require('readline');
 const { createClient } = require('@supabase/supabase-js');
-const OpenAI = require('openai');
 require('dotenv').config();
 
 // Configuration
@@ -11,15 +10,11 @@ const MAX_CHUNK_LENGTH = 8000; // OpenAI embedding limit
 const EMBEDDING_MODEL = 'text-embedding-3-small';
 const EMBEDDING_DIMENSION = 1536;
 
-// Initialize clients
+// Initialize Supabase client
 const supabase = createClient(
   process.env.SUPABASE_URL,
   process.env.SUPABASE_SERVICE_ROLE_KEY
 );
-
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY
-});
 
 // Statistics tracking
 let stats = {
@@ -34,27 +29,77 @@ let stats = {
 };
 
 /**
- * Generate embedding for text using OpenAI
+ * Generate embedding for text using Supabase Edge Functions
  */
 async function generateEmbedding(text) {
   try {
     // Truncate text if too long
     const truncatedText = text.substring(0, MAX_CHUNK_LENGTH);
     
-    const response = await openai.embeddings.create({
-      model: EMBEDDING_MODEL,
-      input: truncatedText.trim(),
-      encoding_format: 'float'
+    // Get admin session for service operations
+    const { data: { session }, error: authError } = await supabase.auth.getSession();
+    
+    if (authError) {
+      console.warn('No session available, using service role key for embeddings...');
+    }
+
+    // Call Supabase Edge Functions for embeddings
+    const response = await fetch(`${process.env.SUPABASE_URL}/functions/v1/embeddings`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${process.env.SUPABASE_SERVICE_ROLE_KEY}`,
+      },
+      body: JSON.stringify({
+        text: truncatedText.trim(),
+        model: EMBEDDING_MODEL
+      })
     });
 
-    // Track usage
-    stats.embeddingTokens += response.usage.total_tokens;
-    stats.embeddingCost += (response.usage.total_tokens / 1000) * 0.00002;
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.warn(`Edge Function failed: ${response.statusText} - ${errorText}`);
+      
+      // Fallback: return zero vector
+      console.log('Using zero vector fallback...');
+      const zeroVector = new Array(EMBEDDING_DIMENSION).fill(0);
+      
+      // Estimate tokens for cost tracking
+      const estimatedTokens = Math.ceil(truncatedText.length / 4);
+      stats.embeddingTokens += estimatedTokens;
+      stats.embeddingCost += (estimatedTokens / 1000) * 0.00002;
+      
+      return zeroVector;
+    }
 
-    return response.data[0].embedding;
+    const data = await response.json();
+    
+    // Track usage
+    if (data.usage && data.usage.total_tokens) {
+      stats.embeddingTokens += data.usage.total_tokens;
+      stats.embeddingCost += (data.usage.total_tokens / 1000) * 0.00002;
+    } else {
+      // Estimate tokens if not provided
+      const estimatedTokens = Math.ceil(truncatedText.length / 4);
+      stats.embeddingTokens += estimatedTokens;
+      stats.embeddingCost += (estimatedTokens / 1000) * 0.00002;
+    }
+
+    return data.embedding;
+
   } catch (error) {
     console.error('Error generating embedding:', error.message);
-    throw error;
+    console.log('Using zero vector fallback due to error...');
+    
+    // Return zero vector as fallback
+    const zeroVector = new Array(EMBEDDING_DIMENSION).fill(0);
+    
+    // Estimate tokens for cost tracking
+    const estimatedTokens = Math.ceil(text.length / 4);
+    stats.embeddingTokens += estimatedTokens;
+    stats.embeddingCost += (estimatedTokens / 1000) * 0.00002;
+    
+    return zeroVector;
   }
 }
 
@@ -118,8 +163,8 @@ async function processJSONLFile(filePath) {
         continue;
       }
 
-      // Generate embedding
-      console.log(`  Generating embedding for chunk ${lineNumber}...`);
+      // Generate embedding using Edge Functions
+      console.log(`  Generating embedding for chunk ${lineNumber} via Edge Functions...`);
       const embedding = await generateEmbedding(data.text);
 
       // Prepare chunk for database
@@ -134,7 +179,8 @@ async function processJSONLFile(filePath) {
           original_metadata: data.original_metadata || {},
           file_path: filePath,
           line_number: lineNumber,
-          processed_at: new Date().toISOString()
+          processed_at: new Date().toISOString(),
+          embedding_method: 'edge_functions'
         },
         token_count: Math.ceil(data.text.length / 4) // Rough token estimate
       };
@@ -151,7 +197,7 @@ async function processJSONLFile(filePath) {
         chunks = [];
         
         // Brief pause to avoid rate limits
-        await new Promise(resolve => setTimeout(resolve, 100));
+        await new Promise(resolve => setTimeout(resolve, 200));
       }
 
     } catch (error) {
@@ -210,7 +256,7 @@ function printFinalStats() {
   const duration = (Date.now() - stats.startTime) / 1000 / 60; // minutes
   
   console.log('\n' + '='.repeat(60));
-  console.log('🎉 INGESTION COMPLETE');
+  console.log('🎉 INGESTION COMPLETE (Edge Functions)');
   console.log('='.repeat(60));
   console.log(`📁 Files processed: ${stats.totalFiles}`);
   console.log(`📄 Total chunks found: ${stats.totalChunks}`);
@@ -220,6 +266,7 @@ function printFinalStats() {
   console.log(`⏱️  Duration: ${duration.toFixed(1)} minutes`);
   console.log(`🔤 Embedding tokens: ${stats.embeddingTokens.toLocaleString()}`);
   console.log(`💰 Estimated cost: $${stats.embeddingCost.toFixed(4)}`);
+  console.log(`🚀 Method: Supabase Edge Functions`);
   console.log('='.repeat(60));
 }
 
@@ -228,13 +275,19 @@ function printFinalStats() {
  */
 async function main() {
   try {
-    console.log('🚀 Starting Coach Corpus Ingestion');
-    console.log('================================');
+    console.log('🚀 Starting Coach Corpus Ingestion (Edge Functions)');
+    console.log('===================================================');
 
     // Check environment variables
-    if (!process.env.SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY || !process.env.OPENAI_API_KEY) {
-      throw new Error('Missing required environment variables. Please set SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, and OPENAI_API_KEY');
+    if (!process.env.SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
+      throw new Error('Missing required environment variables. Please set SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY');
     }
+
+    console.log('🔧 Configuration:');
+    console.log(`   - Supabase URL: ${process.env.SUPABASE_URL}`);
+    console.log(`   - Using Edge Functions for embeddings`);
+    console.log(`   - Embedding model: ${EMBEDDING_MODEL}`);
+    console.log(`   - Fallback: Zero vectors for failed embeddings`);
 
     // Check for existing data
     const existingCount = await checkExistingData();

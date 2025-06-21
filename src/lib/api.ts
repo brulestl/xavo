@@ -22,9 +22,14 @@ function getApiUrl(): string {
         return envConfig.web;
       } else if (Platform.OS === 'android') {
         // Check if we're running on a real device vs emulator
-        // For now, default to emulator (10.0.2.2)
-        // You can add device detection logic here if needed
-        return envConfig.android;
+        // For Expo Go on real device, use the device URL
+        if (Constants.appOwnership === 'expo') {
+          // Running in Expo Go - use device URL for real device
+          return envConfig.device;
+        } else {
+          // Running in standalone app or emulator - use android URL
+          return envConfig.android;
+        }
       } else if (Platform.OS === 'ios') {
         return envConfig.ios;
       }
@@ -36,7 +41,7 @@ function getApiUrl(): string {
 }
 
 const API_URL = getApiUrl();
-const BASE = `${API_URL}/api/v1`;
+const BASE = API_URL; // Edge Functions don't need /api/v1 prefix
 
 // Cache session to avoid repeated fetches
 let cachedSession: any = null;
@@ -47,7 +52,7 @@ export async function apiFetch<T>(
   path: string,
   init: RequestInit & { auth?: boolean } = { auth: true }
 ): Promise<T> {
-  const isSessionRequest = path === '/chat/sessions' && (init.method || 'GET') === 'GET';
+  const isSessionRequest = path === '/sessions' && (init.method || 'GET') === 'GET';
   
   if (!isSessionRequest) {
     console.log('🔍 apiFetch called with:', { path, method: init.method || 'GET' });

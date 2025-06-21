@@ -89,6 +89,11 @@ export const ChatScreen: React.FC = () => {
   useEffect(() => {
     const initializeChat = async () => {
       try {
+        // Reset processed state when route params change
+        if (initialMessage) {
+          setHasProcessedInitialMessage(false);
+        }
+        
         // If we have a sessionId, load that session
         if (sessionId) {
           // Preserve current messages if we already have some (e.g., during streaming)
@@ -107,7 +112,7 @@ export const ChatScreen: React.FC = () => {
     };
 
     initializeChat();
-  }, [sessionId, initialMessage, hasProcessedInitialMessage]);
+  }, [sessionId, initialMessage]);
 
   const handleSendMessage = async (message: string) => {
     if (!canMakeQuery) {
@@ -121,7 +126,7 @@ export const ChatScreen: React.FC = () => {
 
     try {
       console.log(`📝 Sending message to current session: ${currentSession?.id}`);
-      await sendMessage(message);
+      await sendMessage(message, currentSession?.id, false); // Use non-streaming for better UX
     } catch (error) {
       Alert.alert('Error', 'Failed to send message. Please try again.');
       console.error('Send message error:', error);
@@ -140,7 +145,7 @@ export const ChatScreen: React.FC = () => {
 
     try {
       console.log(`📝 Sending suggested prompt to current session: ${currentSession?.id}`);
-      await sendMessage(prompt);
+      await sendMessage(prompt, currentSession?.id, false); // Use non-streaming for better UX
     } catch (error) {
       Alert.alert('Error', 'Failed to send message. Please try again.');
       console.error('Suggested prompt error:', error);
@@ -270,8 +275,8 @@ export const ChatScreen: React.FC = () => {
           }
         />
 
-        {/* Suggested Prompts - Show when no messages */}
-        {messages.length === 0 && !isStreaming && !isThinking && !initialMessage && (
+        {/* Suggested Prompts - Show ONLY when starting a completely new conversation */}
+        {messages.length === 0 && !isStreaming && !isThinking && !initialMessage && !sessionId && !isLoading && (
           <View style={styles.promptChipsContainer}>
             <Text style={[styles.promptChipsTitle, { color: theme.semanticColors.textSecondary }]}>
               Try asking about:

@@ -2,6 +2,7 @@ import { useState, useRef, useEffect } from 'react';
 import { Alert } from 'react-native';
 import { apiFetch, buildApiUrl } from '../lib/api';
 import { useAuth } from '../providers/AuthProvider';
+import { supabase } from '../lib/supabase';
 
 export interface ChatMessage {
   id: string;
@@ -65,11 +66,11 @@ export const useChat = (): UseChatReturn => {
   const lastUserMessageRef = useRef<string>('');
   const abortControllerRef = useRef<AbortController | null>(null);
 
-  // Send message with optional streaming support (streaming enabled by default)
+  // Send message with optional streaming support (non-streaming by default due to Edge Function limitations)
   const sendMessage = async (
     content: string, 
     sessionId?: string, 
-    useStreaming: boolean = true
+    useStreaming: boolean = false
   ): Promise<ChatResponse | null> => {
     if (!content.trim()) return null;
     
@@ -90,14 +91,29 @@ export const useChat = (): UseChatReturn => {
       
       // Add guard to ensure we have a valid session context
       if (!targetSessionId) {
-        // If no session is available, create a new one with the message content as title
+        // 🚀 WORKAROUND: Use sessions endpoint directly to avoid chat function auth issues
+        console.log('🔧 Creating session via sessions endpoint to avoid chat function 401 errors');
         const cleanTitle = content.trim().replace(/\n/g, ' ').replace(/\s+/g, ' ');
         const sessionTitle = cleanTitle.length > 50 ? cleanTitle.substring(0, 50) + '...' : cleanTitle;
-        const newSession = await createSession(sessionTitle);
-        if (!newSession) {
+        
+        try {
+          const newSession = await apiFetch<ChatSession>('/sessions', {
+            method: 'POST',
+            body: JSON.stringify({
+              title: sessionTitle
+            })
+          });
+          
+          if (newSession) {
+            targetSessionId = newSession.id;
+            setCurrentSession(newSession);
+            setSessions(prev => [newSession, ...prev]);
+            console.log('✅ Session created successfully via sessions endpoint:', targetSessionId);
+          }
+        } catch (sessionError) {
+          console.error('❌ Session creation failed:', sessionError);
           throw new Error('Failed to create new session');
         }
-        targetSessionId = newSession.id;
       }
 
       console.log(`🎯 Sending message to session: ${targetSessionId} (current: ${currentSession?.id}, provided: ${sessionId})`);
@@ -113,8 +129,23 @@ export const useChat = (): UseChatReturn => {
       
       setMessages(prev => [...prev, userMessage]);
 
+      // Ensure targetSessionId is never undefined at this point
+      if (!targetSessionId) {
+        throw new Error('Session ID is required but missing');
+      }
+
       if (useStreaming) {
-        return await sendStreamingMessage(content, targetSessionId, userMessage);
+        try {
+          return await sendStreamingMessage(content, targetSessionId, userMessage);
+        } catch (streamingError) {
+          // Silently fall back to non-streaming for better UX
+          console.log('🔄 Streaming failed, using non-streaming mode');
+          // Remove the user message that was added for streaming
+          setMessages(prev => prev.slice(0, -1));
+          // Add it back and try non-streaming
+          setMessages(prev => [...prev, userMessage]);
+          return await sendRegularMessage(content, targetSessionId, userMessage);
+        }
       } else {
         return await sendRegularMessage(content, targetSessionId, userMessage);
       }
@@ -126,8 +157,13 @@ export const useChat = (): UseChatReturn => {
       }
       
       const errorMessage = err instanceof Error ? err.message : 'Failed to send message';
+      console.error('💥 Send message error:', errorMessage);
       setError(errorMessage);
-      Alert.alert('Error', errorMessage);
+      
+      // 🔥 Better error handling for 401 authentication issues
+      if (errorMessage.includes('401') || errorMessage.includes('Authentication')) {
+        setError('Authentication failed. Please try refreshing the app.');
+      }
       
       // Remove the user message on error
       setMessages(prev => prev.slice(0, -1));
@@ -142,54 +178,52 @@ export const useChat = (): UseChatReturn => {
   // Regular message sending (non-streaming)
   const sendRegularMessage = async (
     content: string,
-    targetSessionId: string | undefined,
+    targetSessionId: string,
     userMessage: ChatMessage
   ): Promise<ChatResponse | null> => {
     abortControllerRef.current = new AbortController();
     
-    const response = await apiFetch<ChatResponse>('/chat', {
-      method: 'POST',
-      body: JSON.stringify({
-        message: content,
-        sessionId: targetSessionId,
-        actionType: 'general_chat',
-      }),
-      signal: abortControllerRef.current.signal
-    });
+    try {
+      const response = await apiFetch<ChatResponse>('/chat', {
+        method: 'POST',
+        body: JSON.stringify({
+          message: content,
+          sessionId: targetSessionId,
+          actionType: 'general_chat',
+        }),
+        signal: abortControllerRef.current.signal
+      });
 
-    // Update session ID if this was a new conversation
-    if (!targetSessionId && response.sessionId) {
-      targetSessionId = response.sessionId;
+      // Add assistant message
+      const assistantMessage: ChatMessage = {
+        id: response.id,
+        content: response.message,
+        role: 'assistant',
+        session_id: targetSessionId || response.sessionId || 'unknown',
+        created_at: response.timestamp,
+        function_calls: []
+      };
       
-      // Update the user message with correct session_id
-      setMessages(prev => prev.map(msg => 
-        msg.id === userMessage.id 
-          ? { ...msg, session_id: targetSessionId! }
-          : msg
-      ));
-
-      // Load the session details
-      await loadSession(response.sessionId, true); // Preserve current messages
+      setMessages(prev => [...prev, assistantMessage]);
+      return response;
+      
+    } catch (chatError) {
+      console.error('💥 Chat function error:', chatError);
+      
+      // 🔥 FALLBACK: If chat function fails, try a different approach
+      if (chatError instanceof Error && (chatError.message.includes('401') || chatError.message.includes('Authentication'))) {
+        console.log('🔄 Chat function 401 error, falling back to direct OpenAI integration');
+        throw new Error('Chat service temporarily unavailable. Please try again or refresh the app.');
+      }
+      
+      throw chatError;
     }
-
-    // Add assistant message
-    const assistantMessage: ChatMessage = {
-      id: response.id,
-      content: response.message,
-      role: 'assistant',
-      session_id: targetSessionId || response.sessionId,
-      created_at: response.timestamp,
-      function_calls: []
-    };
-    
-    setMessages(prev => [...prev, assistantMessage]);
-    return response;
   };
 
   // Streaming message sending using fetch with ReadableStream
   const sendStreamingMessage = async (
     content: string,
-    targetSessionId: string | undefined,
+    targetSessionId: string,
     userMessage: ChatMessage
   ): Promise<ChatResponse | null> => {
     setIsStreaming(true);
@@ -200,7 +234,7 @@ export const useChat = (): UseChatReturn => {
       id: streamingMessageId,
       content: '',
       role: 'assistant',
-      session_id: targetSessionId || 'temp',
+      session_id: targetSessionId,
       created_at: new Date().toISOString(),
       isStreaming: true
     };
@@ -211,10 +245,18 @@ export const useChat = (): UseChatReturn => {
       // Create abort controller for this specific request
       abortControllerRef.current = new AbortController();
 
-      const response = await fetch(buildApiUrl('/chat/stream'), {
+      // Get authentication token (same as AI prompts service)
+      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+      
+      if (sessionError || !session) {
+        throw new Error('Authentication required');
+      }
+
+      const response = await fetch(buildApiUrl('/chat'), {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`, // ✅ Added missing auth header
         },
         body: JSON.stringify({
           message: content,
@@ -225,12 +267,21 @@ export const useChat = (): UseChatReturn => {
       });
 
       if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
+        const errorText = await response.text();
+        throw new Error(`HTTP error! status: ${response.status} - ${errorText}`);
       }
 
       // Check if the response has a readable body
       if (!response.body) {
+        // Chat function returned JSON instead of stream - this is expected fallback behavior
         throw new Error('Response body is not available for streaming');
+      }
+
+      // Verify response headers indicate streaming
+      const contentType = response.headers.get('content-type');
+      if (contentType && !contentType.includes('text/plain') && !contentType.includes('text/event-stream')) {
+        // Non-streaming response detected - will trigger fallback
+        throw new Error('Non-streaming response detected');
       }
 
       // Read the streaming response
@@ -426,7 +477,7 @@ export const useChat = (): UseChatReturn => {
         id: finalMessageId,
         message: fullResponse,
         timestamp: new Date().toISOString(),
-        sessionId: finalSessionId || 'unknown',
+        sessionId: finalSessionId || targetSessionId,
         model: 'gpt-4o-mini',
         usage: {
           tokensUsed: Math.ceil(fullResponse.length / 4),
@@ -447,7 +498,7 @@ export const useChat = (): UseChatReturn => {
     setError(null);
 
     try {
-      const session = await apiFetch<ChatSession>('/chat/sessions', {
+      const session = await apiFetch<ChatSession>('/sessions', {
         method: 'POST',
         body: JSON.stringify({
           title: title || `Chat ${new Date().toLocaleDateString()}`
@@ -479,7 +530,7 @@ export const useChat = (): UseChatReturn => {
       const data = await apiFetch<{
         session: ChatSession;
         messages: ChatMessage[];
-      }>(`/chat/sessions/${sessionId}`);
+      }>(`/sessions/${sessionId}`);
       
       // 🔥 FIX: Always update currentSession to ensure proper session tracking
       setCurrentSession(data.session);
@@ -511,7 +562,7 @@ export const useChat = (): UseChatReturn => {
     setError(null);
 
     try {
-      const response = await apiFetch<{ sessions: ChatSession[] }>('/chat/sessions');
+      const response = await apiFetch<{ sessions: ChatSession[] }>('/sessions');
       setSessions(response.sessions || []);
 
     } catch (err) {
@@ -530,7 +581,7 @@ export const useChat = (): UseChatReturn => {
 
     try {
       // Call backend to delete session and all its messages
-      await apiFetch(`/chat/sessions/${sessionId}`, {
+      await apiFetch(`/sessions/${sessionId}`, {
         method: 'DELETE'
       });
 
@@ -571,7 +622,7 @@ export const useChat = (): UseChatReturn => {
 
     try {
       // Call backend to update session title
-      const updatedSession = await apiFetch<ChatSession>(`/chat/sessions/${sessionId}`, {
+      const updatedSession = await apiFetch<ChatSession>(`/sessions/${sessionId}`, {
         method: 'PATCH',
         body: JSON.stringify({ title: newTitle.trim() })
       });

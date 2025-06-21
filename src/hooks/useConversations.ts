@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
-import { apiFetch } from '../lib/api';
 import { useAuth } from '../providers/AuthProvider';
+import { supabase } from '../lib/supabase';
 
 export interface Message {
   id: string;
@@ -18,88 +18,93 @@ export interface Conversation {
   messages: Message[];
 }
 
-interface ApiSession {
-  id: string;
-  title?: string;
-  created_at: string;
-  last_message_at: string;
-  message_count: number;
-}
-
-interface ApiMessage {
-  id: string;
-  role: 'user' | 'assistant';
-  content: string;
-  created_at: string;
-  message_timestamp: string;
-}
-
 export function useConversations() {
   const { user, loading: authLoading } = useAuth();
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [loading, setLoading] = useState(false);
   const [hasLoaded, setHasLoaded] = useState(false);
 
-  // Load conversations from API
+
+
+  // Load conversations directly from Supabase (PRIMARY METHOD)
   const loadConversations = async () => {
     if (!user?.id) return;
     
     setLoading(true);
     try {
-      console.log('🔍 Loading conversations for user:', user.id);
-      const response = await apiFetch<{ sessions: ApiSession[] }>('/chat/sessions');
+      console.log('🚀 Loading conversations directly from Supabase for user:', user.id);
       
-      if (response?.sessions) {
-        // Convert API sessions to local format
-        const formattedConversations: Conversation[] = response.sessions.map(session => ({
+      const { data: sessions, error } = await supabase
+        .from('conversation_sessions')
+        .select('*')
+        .eq('user_id', user.id)
+        .eq('is_active', true)
+        .order('last_message_at', { ascending: false });
+
+      if (error) {
+        console.error('❌ Supabase query error:', error);
+        throw error;
+      }
+
+      if (sessions) {
+        const formattedConversations: Conversation[] = sessions.map(session => ({
           id: session.id,
           title: session.title || 'Untitled Conversation',
           preview: session.title || 'Conversation',
           lastMessage: '',
           timestamp: session.last_message_at || session.created_at,
-          messages: [] // Messages will be loaded separately when needed
+          messages: []
         }));
-
-        // Sort by timestamp (most recent first)
-        formattedConversations.sort((a, b) => 
-          new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
-        );
 
         setConversations(formattedConversations);
         setHasLoaded(true);
-        console.log(`✅ Loaded ${formattedConversations.length} conversations from API`);
+        console.log(`✅ Loaded ${formattedConversations.length} conversations from Supabase`);
       } else {
-        console.warn('No sessions found in API response');
+        console.log('📭 No conversations found');
         setConversations([]);
         setHasLoaded(true);
       }
     } catch (error) {
-      console.error('Failed to load conversations from API:', error);
+      console.error('❌ Failed to load conversations from Supabase:', error);
       setConversations([]);
+      setHasLoaded(true);
     } finally {
       setLoading(false);
     }
   };
 
-  // Load messages for a specific conversation
+  // Load messages for a specific conversation from Supabase
   const loadConversationMessages = async (conversationId: string): Promise<Message[]> => {
     try {
-      const response = await apiFetch<{
-        session: ApiSession;
-        messages: ApiMessage[];
-      }>(`/chat/sessions/${conversationId}`);
+      console.log(`🔍 Loading messages for conversation: ${conversationId}`);
+      
+      const { data: messages, error } = await supabase
+        .from('conversation_messages')
+        .select('*')
+        .eq('session_id', conversationId)
+        .eq('user_id', user?.id)
+        .order('created_at', { ascending: true });
 
-      if (response?.messages) {
-        return response.messages.map(msg => ({
+      if (error) {
+        console.error(`❌ Supabase error loading messages for ${conversationId}:`, error);
+        throw error;
+      }
+
+      if (messages) {
+        const formattedMessages: Message[] = messages.map(msg => ({
           id: msg.id,
-          role: msg.role,
+          role: msg.role as 'user' | 'assistant',
           content: msg.content,
           timestamp: msg.message_timestamp || msg.created_at
         }));
+
+        console.log(`✅ Loaded ${formattedMessages.length} messages for conversation ${conversationId}`);
+        return formattedMessages;
       }
+      
       return [];
     } catch (error) {
-      console.error(`Failed to load messages for conversation ${conversationId}:`, error);
+      console.error(`❌ Failed to load messages for conversation ${conversationId}:`, error);
       return [];
     }
   };
@@ -116,52 +121,130 @@ export function useConversations() {
     return conversations.find(conv => conv.id === id);
   };
 
-  const createConversation = (firstMessage: string): Conversation => {
-    // This will be created by the API, so we just return a placeholder
-    const newConversation: Conversation = {
-      id: `temp_${Date.now()}`,
-      title: firstMessage.slice(0, 50) + (firstMessage.length > 50 ? '...' : ''),
-      preview: firstMessage,
-      lastMessage: '',
-      timestamp: new Date().toISOString(),
-      messages: [
-        {
-          id: `msg_${Date.now()}_1`,
+  const createConversation = async (firstMessage: string): Promise<Conversation> => {
+    if (!user?.id) {
+      throw new Error('User not authenticated');
+    }
+
+    try {
+      console.log('🆕 Creating new conversation in Supabase...');
+      
+      // Create session in Supabase
+      const { data: session, error: sessionError } = await supabase
+        .from('conversation_sessions')
+        .insert({
+          user_id: user.id,
+          title: firstMessage.slice(0, 50) + (firstMessage.length > 50 ? '...' : ''),
+          last_message_at: new Date().toISOString(),
+          is_active: true,
+          message_count: 1
+        })
+        .select()
+        .single();
+
+      if (sessionError) throw sessionError;
+
+      // Create first message in Supabase
+      const { data: message, error: messageError } = await supabase
+        .from('conversation_messages')
+        .insert({
+          session_id: session.id,
+          user_id: user.id,
           role: 'user',
           content: firstMessage,
-          timestamp: new Date().toISOString()
-        }
-      ]
-    };
+          created_at: new Date().toISOString(),
+          message_timestamp: new Date().toISOString()
+        })
+        .select()
+        .single();
 
-    setConversations(prev => [newConversation, ...prev]);
-    return newConversation;
+      if (messageError) throw messageError;
+
+      const newConversation: Conversation = {
+        id: session.id,
+        title: session.title,
+        preview: firstMessage,
+        lastMessage: '',
+        timestamp: session.last_message_at,
+        messages: [
+          {
+            id: message.id,
+            role: 'user',
+            content: firstMessage,
+            timestamp: message.message_timestamp
+          }
+        ]
+      };
+
+      // Add to local state
+      setConversations(prev => [newConversation, ...prev]);
+      console.log(`✅ Created new conversation: ${session.id}`);
+      
+      return newConversation;
+    } catch (error) {
+      console.error('❌ Failed to create conversation:', error);
+      throw error;
+    }
   };
 
-  const addMessageToConversation = (
+  const addMessageToConversation = async (
     conversationId: string, 
     message: Omit<Message, 'id' | 'timestamp'>
-  ): void => {
-    const newMessage: Message = {
-      ...message,
-      id: `msg_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-      timestamp: new Date().toISOString()
-    };
+  ): Promise<Message> => {
+    if (!user?.id) {
+      throw new Error('User not authenticated');
+    }
 
-    setConversations(prev => prev.map(conv => {
-      if (conv.id === conversationId) {
-        const updatedConv = {
-          ...conv,
-          messages: [...conv.messages, newMessage],
-          lastMessage: message.role === 'assistant' ? message.content : conv.lastMessage,
-          timestamp: new Date().toISOString()
-        };
-        return updatedConv;
-      }
-      return conv;
-    }).sort((a, b) => 
-      new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
-    ));
+    try {
+      console.log(`💬 Adding message to conversation ${conversationId}`);
+      
+      const timestamp = new Date().toISOString();
+      
+      // Insert message into Supabase
+      const { data: newMessage, error } = await supabase
+        .from('conversation_messages')
+        .insert({
+          session_id: conversationId,
+          user_id: user.id,
+          role: message.role,
+          content: message.content,
+          created_at: timestamp,
+          message_timestamp: timestamp
+        })
+        .select()
+        .single();
+
+      if (error) throw error;
+
+      const formattedMessage: Message = {
+        id: newMessage.id,
+        role: message.role,
+        content: message.content,
+        timestamp: newMessage.message_timestamp
+      };
+
+      // Update local state
+      setConversations(prev => prev.map(conv => {
+        if (conv.id === conversationId) {
+          const updatedConv = {
+            ...conv,
+            messages: [...conv.messages, formattedMessage],
+            lastMessage: message.role === 'assistant' ? message.content : conv.lastMessage,
+            timestamp: timestamp
+          };
+          return updatedConv;
+        }
+        return conv;
+      }).sort((a, b) => 
+        new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
+      ));
+
+      console.log(`✅ Message added to conversation ${conversationId}`);
+      return formattedMessage;
+    } catch (error) {
+      console.error(`❌ Failed to add message to conversation ${conversationId}:`, error);
+      throw error;
+    }
   };
 
   const updateConversationTitle = (conversationId: string, title: string): void => {
@@ -193,16 +276,19 @@ export function useConversations() {
     console.log(`✨ Instant rename: ${conversationId} to "${newTitle}"`);
 
     try {
-      // 2. Sync with backend
-      const response = await apiFetch(`/chat/sessions/${conversationId}`, {
-        method: 'PATCH',
-        body: JSON.stringify({ title: newTitle.trim() })
-      });
+      // 2. Sync with Supabase
+      const { error } = await supabase
+        .from('conversation_sessions')
+        .update({ title: newTitle.trim() })
+        .eq('id', conversationId)
+        .eq('user_id', user?.id);
 
-      console.log(`✅ Backend sync successful for rename: ${conversationId}`);
+      if (error) throw error;
+
+      console.log(`✅ Supabase sync successful for rename: ${conversationId}`);
       return true;
     } catch (error) {
-      console.error(`❌ Backend sync failed for rename: ${conversationId}`, error);
+      console.error(`❌ Supabase sync failed for rename: ${conversationId}`, error);
       
       // 3. Rollback on failure
       updateConversationTitle(conversationId, originalConversation.title);
@@ -230,17 +316,20 @@ export function useConversations() {
     console.log(`✨ Frontend: Instant delete UI update completed for ${conversationId}`);
 
     try {
-      // 2. Sync with backend
-      console.log(`🔄 Frontend: Calling backend DELETE for ${conversationId}`);
-      const response = await apiFetch(`/chat/sessions/${conversationId}`, {
-        method: 'DELETE'
-      });
+      // 2. Sync with Supabase
+      console.log(`🔄 Frontend: Calling Supabase DELETE for ${conversationId}`);
+      const { error } = await supabase
+        .from('conversation_sessions')
+        .delete()
+        .eq('id', conversationId)
+        .eq('user_id', user?.id);
 
-      console.log(`✅ Frontend: Backend DELETE response:`, response);
-      console.log(`✅ Backend sync successful for delete: ${conversationId}`);
+      if (error) throw error;
+
+      console.log(`✅ Supabase sync successful for delete: ${conversationId}`);
       return true;
     } catch (error) {
-      console.error(`❌ Frontend: Backend sync failed for delete: ${conversationId}`, error);
+      console.error(`❌ Frontend: Supabase sync failed for delete: ${conversationId}`, error);
       console.error(`❌ Frontend: Error details:`, {
         message: error instanceof Error ? error.message : 'Unknown error',
         stack: error instanceof Error ? error.stack : 'No stack'

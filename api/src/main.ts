@@ -62,11 +62,12 @@ async function bootstrap() {
   app.setGlobalPrefix('api/v1');
 
   const port = process.env.PORT || 3000;
-  await app.listen(port);
+  await app.listen(port, '0.0.0.0'); // Bind to all interfaces for device access
   
   console.log(`🚀 Corporate Influence Coach API running on port ${port}`);
   console.log(`📚 API Documentation: http://localhost:${port}/api/docs`);
   console.log(`🔗 Chat endpoint available at: http://localhost:${port}/api/v1/chat`);
+  console.log(`📱 Device access: http://192.168.177.61:${port}/api/v1/chat`);
 }
 
 // Handle serverless environments
