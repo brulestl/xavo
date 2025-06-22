@@ -32,10 +32,18 @@ export const Pill: React.FC<PillProps> = ({
       elevation: 1,
     };
 
-    // Size variations
+    // Size variations - Remove fixed minHeight to allow vertical expansion
     const sizeStyles = {
-      small: { paddingVertical: 8, paddingHorizontal: 16, minHeight: 32 },
-      medium: { paddingVertical: 12, paddingHorizontal: 20, minHeight: 40 },
+      small: { 
+        paddingVertical: 10, 
+        paddingHorizontal: 16,
+        // Removed minHeight to allow content to determine height
+      },
+      medium: { 
+        paddingVertical: 12, 
+        paddingHorizontal: 20,
+        // Removed minHeight to allow content to determine height
+      },
     };
 
     // Variant styles
@@ -61,6 +69,7 @@ export const Pill: React.FC<PillProps> = ({
     const baseStyle: TextStyle = {
       fontWeight: '500',
       textAlign: 'center',
+      lineHeight: 18, // Proper line height for multiline text
     };
 
     // Size-based font sizes
@@ -93,7 +102,11 @@ export const Pill: React.FC<PillProps> = ({
       activeOpacity={0.7}
       {...props}
     >
-      <Text style={getTextStyle()} numberOfLines={1}>
+      <Text 
+        style={getTextStyle()} 
+        numberOfLines={2}
+        ellipsizeMode="tail"
+      >
         {title}
       </Text>
     </TouchableOpacity>

@@ -9,13 +9,15 @@ import {
   Dimensions,
   PanResponder,
   Animated,
+  ScrollView,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../providers/ThemeProvider';
 import { useAuth } from '../providers/AuthProvider';
 import { TierBadge } from './ui/TierBadge';
 
-const { width: screenWidth } = Dimensions.get('window');
+// USE SCREEN DIMENSIONS FOR ABSOLUTE STABILITY - NEVER AFFECTED BY KEYBOARD
+const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('screen');
 
 interface SettingsDrawerProps {
   isVisible: boolean;
@@ -38,7 +40,7 @@ export const SettingsDrawer: React.FC<SettingsDrawerProps> = ({
   const [tempDisplayName, setTempDisplayName] = useState(displayName);
   const [saving, setSaving] = useState(false);
 
-  // Animation setup
+  // Animation setup with NATIVE DRIVER
   const slideAnim = useRef(new Animated.Value(0)).current;
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const [shouldRender, setShouldRender] = useState(isVisible);
@@ -50,12 +52,12 @@ export const SettingsDrawer: React.FC<SettingsDrawerProps> = ({
         Animated.timing(slideAnim, {
           toValue: 1,
           duration: 250,
-          useNativeDriver: false,
+          useNativeDriver: true, // NATIVE DRIVER - UNAFFECTED BY LAYOUT CHANGES
         }),
         Animated.timing(fadeAnim, {
           toValue: 1,
           duration: 250,
-          useNativeDriver: false,
+          useNativeDriver: true, // NATIVE DRIVER - UNAFFECTED BY LAYOUT CHANGES
         }),
       ]).start();
     } else {
@@ -63,12 +65,12 @@ export const SettingsDrawer: React.FC<SettingsDrawerProps> = ({
         Animated.timing(slideAnim, {
           toValue: 0,
           duration: 250,
-          useNativeDriver: false,
+          useNativeDriver: true, // NATIVE DRIVER - UNAFFECTED BY LAYOUT CHANGES
         }),
         Animated.timing(fadeAnim, {
           toValue: 0,
           duration: 250,
-          useNativeDriver: false,
+          useNativeDriver: true, // NATIVE DRIVER - UNAFFECTED BY LAYOUT CHANGES
         }),
       ]).start(() => {
         setShouldRender(false);
@@ -81,7 +83,7 @@ export const SettingsDrawer: React.FC<SettingsDrawerProps> = ({
     setTempDisplayName(displayName);
   }, [displayName]);
 
-  // Swipe to close gesture
+  // Swipe to close gesture with NATIVE DRIVER ANIMATIONS
   const panResponder = PanResponder.create({
     onMoveShouldSetPanResponder: (evt, gestureState) => {
       return gestureState.dx < -20 && Math.abs(gestureState.dy) < 100;
@@ -97,17 +99,17 @@ export const SettingsDrawer: React.FC<SettingsDrawerProps> = ({
       if (gestureState.dx < -50) {
         onClose();
       } else {
-        // Snap back
+        // Snap back with NATIVE DRIVER
         Animated.parallel([
           Animated.timing(slideAnim, {
             toValue: 1,
             duration: 150,
-            useNativeDriver: false,
+            useNativeDriver: true, // NATIVE DRIVER - UNAFFECTED BY LAYOUT CHANGES
           }),
           Animated.timing(fadeAnim, {
             toValue: 1,
             duration: 150,
-            useNativeDriver: false,
+            useNativeDriver: true, // NATIVE DRIVER - UNAFFECTED BY LAYOUT CHANGES
           }),
         ]).start();
       }
@@ -143,9 +145,10 @@ export const SettingsDrawer: React.FC<SettingsDrawerProps> = ({
     }
   };
 
+  // FIXED TRANSLATION CALCULATION
   const translateX = slideAnim.interpolate({
     inputRange: [0, 1],
-    outputRange: [screenWidth * 0.75, 0],
+    outputRange: [SCREEN_WIDTH * 0.75, 0], // FIXED CALCULATION
   });
 
   if (!shouldRender) return null;
@@ -158,6 +161,7 @@ export const SettingsDrawer: React.FC<SettingsDrawerProps> = ({
           opacity: fadeAnim,
         },
       ]}
+      pointerEvents="auto"
     >
       <TouchableOpacity
         style={styles.backdrop}
@@ -175,6 +179,7 @@ export const SettingsDrawer: React.FC<SettingsDrawerProps> = ({
           },
         ]}
         {...panResponder.panHandlers}
+        pointerEvents="auto"
       >
         {/* Header */}
         <View style={[styles.header, { borderBottomColor: theme.semanticColors.border }]}>
@@ -191,77 +196,81 @@ export const SettingsDrawer: React.FC<SettingsDrawerProps> = ({
           </TouchableOpacity>
         </View>
 
-        {/* Content */}
-        <View style={styles.content}>
-          {/* Account Section */}
-          <View style={styles.section}>
-            <Text style={[styles.sectionTitle, { color: theme.semanticColors.textPrimary }]}>
-              Account
+        {/* STICKY ACCOUNT SECTION - NEVER SCROLLS */}
+        <View style={styles.stickySection}>
+          <Text style={[styles.sectionTitle, { color: theme.semanticColors.textPrimary }]}>
+            Account
+          </Text>
+          
+          {/* Display Name */}
+          <View style={styles.settingItem}>
+            <Text style={[styles.settingLabel, { color: theme.semanticColors.textSecondary }]}>
+              Display Name
             </Text>
-            
-            {/* Display Name */}
-            <View style={styles.settingItem}>
-              <Text style={[styles.settingLabel, { color: theme.semanticColors.textSecondary }]}>
-                Display Name
-              </Text>
-              {editingName ? (
-                <View style={styles.editContainer}>
-                  <TextInput
-                    style={[
-                      styles.textInput,
-                      {
-                        color: theme.semanticColors.textPrimary,
-                        borderColor: theme.semanticColors.border,
-                        backgroundColor: theme.semanticColors.cardBackground,
-                      },
-                    ]}
-                    value={tempDisplayName}
-                    onChangeText={setTempDisplayName}
-                    onBlur={handleSaveDisplayName}
-                    autoFocus
-                    returnKeyType="done"
-                    onSubmitEditing={handleSaveDisplayName}
-                    editable={!saving}
-                  />
-                  {saving && (
-                    <Text style={[styles.savingText, { color: theme.semanticColors.textSecondary }]}>
-                      Saving...
-                    </Text>
-                  )}
-                </View>
-              ) : (
-                <TouchableOpacity
-                  onPress={() => {
-                    setEditingName(true);
-                    setTempDisplayName(displayName);
-                  }}
-                >
-                  <Text style={[styles.settingValue, { color: theme.semanticColors.textPrimary }]}>
-                    {displayName}
+            {editingName ? (
+              <View style={styles.editContainer}>
+                <TextInput
+                  style={[
+                    styles.textInput,
+                    {
+                      color: theme.semanticColors.textPrimary,
+                      borderColor: theme.semanticColors.border,
+                      backgroundColor: theme.semanticColors.cardBackground,
+                    },
+                  ]}
+                  value={tempDisplayName}
+                  onChangeText={setTempDisplayName}
+                  onBlur={handleSaveDisplayName}
+                  autoFocus
+                  returnKeyType="done"
+                  onSubmitEditing={handleSaveDisplayName}
+                  editable={!saving}
+                />
+                {saving && (
+                  <Text style={[styles.savingText, { color: theme.semanticColors.textSecondary }]}>
+                    Saving...
                   </Text>
-                </TouchableOpacity>
-              )}
-            </View>
-
-            {/* Email */}
-            <View style={styles.settingItem}>
-              <Text style={[styles.settingLabel, { color: theme.semanticColors.textSecondary }]}>
-                Email
-              </Text>
-              <Text style={[styles.settingValue, { color: theme.semanticColors.textSecondary }]}>
-                {user?.email}
-              </Text>
-            </View>
-
-            {/* Tier */}
-            <View style={styles.settingItem}>
-              <Text style={[styles.settingLabel, { color: theme.semanticColors.textSecondary }]}>
-                Plan
-              </Text>
-              <TierBadge tier={tier} size="small" />
-            </View>
+                )}
+              </View>
+            ) : (
+              <TouchableOpacity
+                onPress={() => {
+                  setEditingName(true);
+                  setTempDisplayName(displayName);
+                }}
+              >
+                <Text style={[styles.settingValue, { color: theme.semanticColors.textPrimary }]}>
+                  {displayName}
+                </Text>
+              </TouchableOpacity>
+            )}
           </View>
 
+          {/* Email */}
+          <View style={styles.settingItem}>
+            <Text style={[styles.settingLabel, { color: theme.semanticColors.textSecondary }]}>
+              Email
+            </Text>
+            <Text style={[styles.settingValue, { color: theme.semanticColors.textSecondary }]}>
+              {user?.email}
+            </Text>
+          </View>
+
+          {/* Tier */}
+          <View style={styles.settingItem}>
+            <Text style={[styles.settingLabel, { color: theme.semanticColors.textSecondary }]}>
+              Plan
+            </Text>
+            <TierBadge tier={tier} size="small" />
+          </View>
+        </View>
+
+        {/* SCROLLABLE CONTENT with KEYBOARD PERSISTENCE */}
+        <ScrollView 
+          style={styles.content}
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="always"
+        >
           {/* Personalization Section */}
           <View style={styles.section}>
             <Text style={[styles.sectionTitle, { color: theme.semanticColors.textPrimary }]}>
@@ -323,7 +332,7 @@ export const SettingsDrawer: React.FC<SettingsDrawerProps> = ({
               </Text>
             </TouchableOpacity>
           </View>
-        </View>
+        </ScrollView>
       </Animated.View>
     </Animated.View>
   );
@@ -331,25 +340,32 @@ export const SettingsDrawer: React.FC<SettingsDrawerProps> = ({
 
 const styles = StyleSheet.create({
   overlay: {
+    // ABSOLUTE FULL-SCREEN POSITIONING - NEVER MOVES
     position: 'absolute',
     top: 0,
     left: 0,
     right: 0,
     bottom: 0,
-    zIndex: 1000,
+    width: SCREEN_WIDTH,  // FIXED SCREEN WIDTH
+    height: SCREEN_HEIGHT, // FIXED SCREEN HEIGHT
+    zIndex: 50000, // EXTREMELY HIGH Z-INDEX TO PREVENT ANY INTERFERENCE
   },
   backdrop: {
     flex: 1,
+    width: '100%',
+    height: '100%',
     backgroundColor: 'rgba(0,0,0,0.5)',
   },
   drawer: {
+    // ABSOLUTE POSITIONING FOR DRAWER PANEL
     position: 'absolute',
     top: 0,
     right: 0,
     bottom: 0,
     width: '75%',
+    height: SCREEN_HEIGHT, // FIXED SCREEN HEIGHT
     borderLeftWidth: StyleSheet.hairlineWidth,
-    elevation: 4,
+    elevation: 50, // EXTREMELY HIGH ELEVATION FOR ANDROID
     shadowColor: '#000',
     shadowOffset: {
       width: -2,
@@ -357,6 +373,10 @@ const styles = StyleSheet.create({
     },
     shadowOpacity: 0.25,
     shadowRadius: 4,
+    // PREVENT ANY TRANSFORMATIONS OR LAYOUT CHANGES
+    transform: [],
+    // FORCE LAYOUT ISOLATION
+    isolation: 'isolate',
   },
   header: {
     flexDirection: 'row',
@@ -366,23 +386,45 @@ const styles = StyleSheet.create({
     paddingVertical: 16,
     borderBottomWidth: StyleSheet.hairlineWidth,
     position: 'relative',
+    backgroundColor: 'inherit', // Inherit drawer background
+    zIndex: 1, // Ensure header stays above content
+    // PREVENT LAYOUT SHIFTS
+    minHeight: 56, // Fixed minimum height
   },
   headerTitle: {
     fontSize: 18,
     fontWeight: '600',
+    // PREVENT TEXT SHIFTS
+    textAlign: 'center',
+    flex: 1,
   },
   closeButton: {
     position: 'absolute',
     right: 16,
     padding: 4,
+    // FIXED POSITIONING
+    top: '50%',
+    marginTop: -12, // Center vertically
   },
   closeArrow: {
     fontSize: 20,
     fontWeight: '600',
   },
+  stickySection: {
+    paddingHorizontal: 16,
+    paddingVertical: 16,
+    backgroundColor: 'inherit', // Inherit drawer background
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: 'rgba(0,0,0,0.05)',
+    zIndex: 1, // Ensure sticky section stays above scrollable content
+    // PREVENT LAYOUT SHIFTS
+    minHeight: 200, // Fixed minimum height for account section
+  },
   content: {
     flex: 1,
-    paddingTop: 24,
+    paddingTop: 16,
+    // PREVENT CONTENT INTERFERENCE
+    zIndex: 0,
   },
   section: {
     marginBottom: 32,

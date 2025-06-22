@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { View, Text, TextInput, StyleSheet, ScrollView, Alert, ActivityIndicator } from 'react-native';
+import React, { useState, useEffect, useRef } from 'react';
+import { View, Text, TextInput, StyleSheet, ScrollView, Alert, ActivityIndicator, Animated, Image } from 'react-native';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { Container } from '../components/Container';
 import { Button } from '../components/Button';
@@ -15,6 +15,7 @@ export const LoginSignupScreen: React.FC = () => {
   const route = useRoute();
   const { theme } = useTheme();
   const { login, signup, signInWithOAuth } = useAuth();
+  const logoFadeAnim = useRef(new Animated.Value(0)).current;
   
   const params = route.params as RouteParams;
   const mode = params?.mode || 'login';
@@ -23,6 +24,15 @@ export const LoginSignupScreen: React.FC = () => {
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [oauthLoading, setOauthLoading] = useState<'google' | 'linkedin' | null>(null);
+
+  useEffect(() => {
+    // Start logo fade in animation
+    Animated.timing(logoFadeAnim, {
+      toValue: 1,
+      duration: 600,
+      useNativeDriver: false,
+    }).start();
+  }, [logoFadeAnim]);
 
   const handleSubmit = async () => {
     if (!email.trim() || !password.trim()) {
@@ -168,10 +178,19 @@ export const LoginSignupScreen: React.FC = () => {
     <Container variant="screen">
       <ScrollView contentContainerStyle={styles.container}>
         <View style={styles.content}>
-          <Text style={[styles.title, { color: theme.textPrimary }]}>
+          {/* Logo Image with fade in */}
+          <Animated.View style={[styles.logoImageContainer, { opacity: logoFadeAnim }]}>
+            <Image 
+              source={require('../../media/logo/xavo_mainLogoWhite.png')} 
+              style={styles.logoImage}
+              resizeMode="contain"
+            />
+          </Animated.View>
+          
+          <Text style={[styles.title, { color: theme.semanticColors.textPrimary }]}>
             {mode === 'login' ? 'Welcome Back' : 'Create Account'}
           </Text>
-          <Text style={[styles.subtitle, { color: theme.textSecondary }]}>
+          <Text style={[styles.subtitle, { color: theme.semanticColors.textSecondary }]}>
             {mode === 'login' 
               ? 'Sign in to your account' 
               : 'Join thousands improving their relationships'
@@ -180,16 +199,16 @@ export const LoginSignupScreen: React.FC = () => {
 
           <View style={styles.form}>
             <View style={styles.inputContainer}>
-              <Text style={[styles.label, { color: theme.textPrimary }]}>Email</Text>
+              <Text style={[styles.label, { color: theme.semanticColors.textPrimary }]}>Email</Text>
               <TextInput
                 style={[styles.input, { 
-                  borderColor: theme.border, 
-                  backgroundColor: theme.surface,
-                  color: theme.textPrimary,
+                  borderColor: theme.semanticColors.border, 
+                  backgroundColor: theme.semanticColors.surface,
+                  color: theme.semanticColors.textPrimary,
                   opacity: isFormDisabled ? 0.6 : 1
                 }]}
                 placeholder="Enter your email"
-                placeholderTextColor={theme.textSecondary}
+                placeholderTextColor={theme.semanticColors.textSecondary}
                 value={email}
                 onChangeText={setEmail}
                 keyboardType="email-address"
@@ -200,16 +219,16 @@ export const LoginSignupScreen: React.FC = () => {
             </View>
 
             <View style={styles.inputContainer}>
-              <Text style={[styles.label, { color: theme.textPrimary }]}>Password</Text>
+              <Text style={[styles.label, { color: theme.semanticColors.textPrimary }]}>Password</Text>
               <TextInput
                 style={[styles.input, { 
-                  borderColor: theme.border, 
-                  backgroundColor: theme.surface,
-                  color: theme.textPrimary,
+                  borderColor: theme.semanticColors.border, 
+                  backgroundColor: theme.semanticColors.surface,
+                  color: theme.semanticColors.textPrimary,
                   opacity: isFormDisabled ? 0.6 : 1
                 }]}
                 placeholder="Enter your password"
-                placeholderTextColor={theme.textSecondary}
+                placeholderTextColor={theme.semanticColors.textSecondary}
                 value={password}
                 onChangeText={setPassword}
                 secureTextEntry
@@ -227,9 +246,9 @@ export const LoginSignupScreen: React.FC = () => {
             />
 
             <View style={styles.divider}>
-              <View style={[styles.dividerLine, { backgroundColor: theme.border }]} />
-              <Text style={[styles.dividerText, { color: theme.textSecondary }]}>OR</Text>
-              <View style={[styles.dividerLine, { backgroundColor: theme.border }]} />
+              <View style={[styles.dividerLine, { backgroundColor: theme.semanticColors.border }]} />
+              <Text style={[styles.dividerText, { color: theme.semanticColors.textSecondary }]}>OR</Text>
+              <View style={[styles.dividerLine, { backgroundColor: theme.semanticColors.border }]} />
             </View>
 
             <Button
@@ -312,5 +331,13 @@ const styles = StyleSheet.create({
   },
   oauthButton: {
     marginBottom: 12,
+  },
+  logoImageContainer: {
+    alignItems: 'center',
+    marginBottom: 24,
+  },
+  logoImage: {
+    width: 100,
+    height: 100,
   },
 }); 

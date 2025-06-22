@@ -62,12 +62,11 @@ serve(async (req) => {
             headers: { ...corsHeaders, 'Content-Type': 'application/json' }
           })
         } else {
-          // Get all sessions for user
+          // Get all active sessions for user (exclude deleted ones)
           const { data: sessions, error } = await supabaseClient
-            .from('conversation_sessions')
+            .from('active_conversation_sessions')
             .select('*')
             .eq('user_id', user.id)
-            .eq('is_active', true)
             .order('last_message_at', { ascending: false })
 
           if (error) throw error
@@ -123,18 +122,31 @@ serve(async (req) => {
       }
 
       case 'DELETE': {
-        // Delete session (soft delete by setting is_active = false)
+        // Soft delete session with 30-day scheduled deletion
         if (!sessionId) throw new Error('Session ID required')
         
-        const { error } = await supabaseClient
-          .from('conversation_sessions')
-          .update({ is_active: false })
-          .eq('id', sessionId)
-          .eq('user_id', user.id)
+        const { data, error } = await supabaseClient
+          .rpc('soft_delete_session', { 
+            p_session_id: sessionId, 
+            p_user_id: user.id 
+          })
 
         if (error) throw error
+        
+        if (!data) {
+          return new Response(JSON.stringify({ 
+            error: 'Session not found or already deleted' 
+          }), {
+            status: 404,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          })
+        }
 
-        return new Response(JSON.stringify({ message: 'Session deleted successfully' }), {
+        return new Response(JSON.stringify({ 
+          message: 'Session scheduled for deletion in 30 days',
+          deleted: true,
+          deletion_scheduled: true
+        }), {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' }
         })
       }

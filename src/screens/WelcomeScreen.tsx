@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { View, Text, StyleSheet, Animated, Alert } from 'react-native';
+import { View, Text, StyleSheet, Animated, Alert, Image } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { Button } from '../components/Button';
 import { useTheme } from '../providers/ThemeProvider';
@@ -11,23 +11,31 @@ export const WelcomeScreen: React.FC = () => {
   const { signInWithOAuth } = useAuth();
   const slideAnim = useRef(new Animated.Value(100)).current;
   const fadeAnim = useRef(new Animated.Value(0)).current;
+  const logoFadeAnim = useRef(new Animated.Value(0)).current;
   const [oauthLoading, setOauthLoading] = useState<'google' | 'linkedin' | null>(null);
 
   useEffect(() => {
-    // Animate buttons rising from bottom with fade in
-    Animated.parallel([
-      Animated.timing(slideAnim, {
-        toValue: 0,
-        duration: 800,
-        useNativeDriver: false,
-      }),
-      Animated.timing(fadeAnim, {
-        toValue: 1,
-        duration: 800,
-        useNativeDriver: false,
-      }),
-    ]).start();
-  }, [slideAnim, fadeAnim]);
+    // Start logo fade in first
+    Animated.timing(logoFadeAnim, {
+      toValue: 1,
+      duration: 600,
+      useNativeDriver: false,
+    }).start(() => {
+      // Then animate buttons rising from bottom with fade in
+      Animated.parallel([
+        Animated.timing(slideAnim, {
+          toValue: 0,
+          duration: 800,
+          useNativeDriver: false,
+        }),
+        Animated.timing(fadeAnim, {
+          toValue: 1,
+          duration: 800,
+          useNativeDriver: false,
+        }),
+      ]).start();
+    });
+  }, [slideAnim, fadeAnim, logoFadeAnim]);
 
   const handleLogin = () => {
     navigation.navigate('AuthChoice' as never);
@@ -127,10 +135,22 @@ export const WelcomeScreen: React.FC = () => {
     <View style={[styles.container, { backgroundColor: theme.semanticColors.background }]}>
       {/* Logo Area */}
       <View style={styles.logoContainer}>
-        <Text style={[styles.logoText, { color: theme.semanticColors.textPrimary }]}>
-          Xavo
-        </Text>
-        <View style={[styles.logoUnderline, { backgroundColor: theme.semanticColors.primary }]} />
+        {/* Logo Image with fade in */}
+        <Animated.View style={[styles.logoImageContainer, { opacity: logoFadeAnim }]}>
+          <Image 
+            source={require('../../media/logo/xavo_mainLogoWhite.png')} 
+            style={styles.logoImage}
+            resizeMode="contain"
+          />
+        </Animated.View>
+        
+        {/* Xavo Text */}
+        <Animated.View style={[{ opacity: logoFadeAnim }]}>
+          <Text style={[styles.logoText, { color: theme.semanticColors.textPrimary }]}>
+            Xavo
+          </Text>
+          <View style={[styles.logoUnderline, { backgroundColor: theme.semanticColors.primary }]} />
+        </Animated.View>
       </View>
 
       {/* Buttons Container */}
@@ -199,6 +219,13 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  logoImageContainer: {
+    marginBottom: 20,
+  },
+  logoImage: {
+    width: 80,
+    height: 80,
   },
   logoText: {
     fontSize: 48,

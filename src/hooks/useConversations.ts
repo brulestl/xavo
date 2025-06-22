@@ -35,10 +35,9 @@ export function useConversations() {
       console.log('🚀 Loading conversations directly from Supabase for user:', user.id);
       
       const { data: sessions, error } = await supabase
-        .from('conversation_sessions')
+        .from('active_conversation_sessions')
         .select('*')
         .eq('user_id', user.id)
-        .eq('is_active', true)
         .order('last_message_at', { ascending: false });
 
       if (error) {
@@ -302,45 +301,36 @@ export function useConversations() {
   const deleteConversationInstant = async (conversationId: string): Promise<boolean> => {
     console.log(`🚀 Frontend: Starting delete for conversation ${conversationId}`);
     
-    // Store original conversation for rollback
-    const originalConversation = conversations.find(conv => conv.id === conversationId);
-    if (!originalConversation) {
-      console.error(`❌ Frontend: Conversation ${conversationId} not found in local state`);
-      throw new Error('Conversation not found');
-    }
-
-    console.log(`📋 Frontend: Found conversation to delete: "${originalConversation.title}"`);
-
-    // 1. INSTANT UI update (optimistic)
-    deleteConversation(conversationId);
-    console.log(`✨ Frontend: Instant delete UI update completed for ${conversationId}`);
-
     try {
-      // 2. Sync with Supabase
-      console.log(`🔄 Frontend: Calling Supabase DELETE for ${conversationId}`);
-      const { error } = await supabase
-        .from('conversation_sessions')
-        .delete()
-        .eq('id', conversationId)
-        .eq('user_id', user?.id);
+      // 1. Call backend soft delete FIRST (no optimistic UI update)
+      console.log(`🔄 Frontend: Calling soft delete for ${conversationId}`);
+      const { data, error } = await supabase
+        .rpc('soft_delete_session', { 
+          p_session_id: conversationId, 
+          p_user_id: user?.id 
+        });
 
       if (error) throw error;
+      
+      if (!data) {
+        throw new Error('Session not found or already deleted');
+      }
 
-      console.log(`✅ Supabase sync successful for delete: ${conversationId}`);
+      console.log(`✅ Frontend: Session soft deleted successfully: ${conversationId}`);
+      
+      // 2. Force refresh conversations from database to get updated list
+      console.log(`🔄 Frontend: Refreshing conversations after soft delete`);
+      await loadConversations();
+      
+      console.log(`✨ Frontend: Delete completed for ${conversationId}`);
       return true;
     } catch (error) {
-      console.error(`❌ Frontend: Supabase sync failed for delete: ${conversationId}`, error);
-      console.error(`❌ Frontend: Error details:`, {
-        message: error instanceof Error ? error.message : 'Unknown error',
-        stack: error instanceof Error ? error.stack : 'No stack'
-      });
+      console.error(`❌ Frontend: Failed to delete conversation: ${conversationId}`, error);
       
-      // 3. Rollback on failure
-      console.log(`🔄 Frontend: Rolling back delete for: ${conversationId}`);
-      setConversations(prev => [originalConversation, ...prev].sort((a, b) => 
-        new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
-      ));
-      console.log(`🔄 Rolled back delete for: ${conversationId}`);
+      // Don't rollback since we didn't do optimistic updates
+      // Just refresh to make sure UI is in sync
+      console.log(`🔄 Frontend: Refreshing conversations after delete error`);
+      await loadConversations();
       
       throw error;
     }

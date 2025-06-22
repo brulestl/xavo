@@ -3,7 +3,6 @@ import {
   View,
   Text,
   StyleSheet,
-  SafeAreaView,
   FlatList,
   TouchableOpacity,
   Alert,
@@ -11,16 +10,18 @@ import {
   Platform,
   Modal,
   TextInput,
+  StatusBar,
 } from 'react-native';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { DrawerNavigationProp } from '@react-navigation/drawer';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '../providers/ThemeProvider';
 import { useAuth } from '../providers/AuthProvider';
 import { Composer } from '../components/Composer';
 import { ChatBubble } from '../components/ChatBubble';
 import { TypingDots } from '../components/TypingDots';
 import { ThinkingIndicator } from '../components/ThinkingIndicator';
-import { PillPrompt } from '../components/PillPrompt';
+
 import { Drawer } from '../components/Drawer';
 import { SettingsDrawer } from '../components/SettingsDrawer';
 import { useChat } from '../hooks/useChat';
@@ -30,13 +31,7 @@ import { Ionicons } from '@expo/vector-icons';
 
 type ChatScreenNavigationProp = DrawerNavigationProp<any>;
 
-const SUGGESTED_PROMPTS = [
-  'Handle credit grabber',
-  'Negotiate salary',
-  'Diffuse conflict',
-  'Manage difficult boss',
-  'Network authentically',
-];
+
 
 interface RouteParams {
   sessionId?: string;
@@ -47,8 +42,9 @@ export const ChatScreen: React.FC = () => {
   const navigation = useNavigation<ChatScreenNavigationProp>();
   const route = useRoute();
   const { sessionId, initialMessage } = (route.params as RouteParams) || {};
-  const { theme } = useTheme();
+  const { theme, isDark } = useTheme();
   const { user, tier, canMakeQuery } = useAuth();
+  const insets = useSafeAreaInsets();
   
   const [isDrawerVisible, setIsDrawerVisible] = useState(false);
   const [isSettingsDrawerVisible, setIsSettingsDrawerVisible] = useState(false);
@@ -71,10 +67,11 @@ export const ChatScreen: React.FC = () => {
     loadSession,
     deleteSession,
     renameSession,
+    clearMessages,
   } = useChat();
 
-  // 🔥 Use instant operations from useConversations for consistency with HomeScreen
-  const { renameConversationInstant, deleteConversationInstant } = useConversations();
+  // 🔥 Use instant operations from useConversations for rename functionality
+  const { renameConversationInstant } = useConversations();
 
   const flatListRef = useRef<FlatList>(null);
 
@@ -133,24 +130,7 @@ export const ChatScreen: React.FC = () => {
     }
   };
 
-  const handleSuggestedPress = async (prompt: string) => {
-    if (!canMakeQuery) {
-      Alert.alert(
-        'Query Limit Reached',
-        'You have reached your daily query limit. Upgrade to Power Strategist for unlimited queries.',
-        [{ text: 'OK' }]
-      );
-      return;
-    }
 
-    try {
-      console.log(`📝 Sending suggested prompt to current session: ${currentSession?.id}`);
-      await sendMessage(prompt, currentSession?.id, false); // Use non-streaming for better UX
-    } catch (error) {
-      Alert.alert('Error', 'Failed to send message. Please try again.');
-      console.error('Suggested prompt error:', error);
-    }
-  };
 
   const handleUpload = () => {
     console.log('Upload pressed');
@@ -227,97 +207,124 @@ export const ChatScreen: React.FC = () => {
   };
 
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor: theme.semanticColors.background }]}>
-      {/* Header - Same as HomeScreen */}
-      <View style={styles.header}>
-        {/* Hamburger Menu */}
-        <TouchableOpacity style={styles.menuButton} onPress={handleMenuPress}>
-          <View style={[styles.hamburger, { backgroundColor: theme.semanticColors.textPrimary }]} />
-          <View style={[styles.hamburger, { backgroundColor: theme.semanticColors.textPrimary }]} />
-          <View style={[styles.hamburger, { backgroundColor: theme.semanticColors.textPrimary }]} />
-        </TouchableOpacity>
+    <>
+      <SafeAreaView style={[styles.container, { backgroundColor: theme.semanticColors.background }]} edges={['top']}>
+        <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} backgroundColor={theme.semanticColors.background} />
+        
+        {/* Header - OUTSIDE KeyboardAvoidingView so it stays fixed */}
+        <View style={[styles.header, { paddingTop: 0 }]}>
+          {/* Hamburger Menu */}
+          <TouchableOpacity style={styles.menuButton} onPress={handleMenuPress}>
+            <View style={[styles.hamburger, { backgroundColor: theme.semanticColors.textPrimary }]} />
+            <View style={[styles.hamburger, { backgroundColor: theme.semanticColors.textPrimary }]} />
+            <View style={[styles.hamburger, { backgroundColor: theme.semanticColors.textPrimary }]} />
+          </TouchableOpacity>
 
-        {/* Settings Button */}
-        <TouchableOpacity 
-          style={styles.settingsButton} 
-          onPress={() => setIsSettingsDrawerVisible(true)}
+          {/* Settings Button */}
+          <TouchableOpacity 
+            style={styles.settingsButton} 
+            onPress={() => setIsSettingsDrawerVisible(true)}
+          >
+            <Ionicons name="settings-outline" size={24} color={theme.semanticColors.textPrimary} />
+          </TouchableOpacity>
+        </View>
+
+        <KeyboardAvoidingView 
+          style={styles.keyboardContainer} 
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 0}
         >
-          <Ionicons name="settings-outline" size={24} color={theme.semanticColors.textPrimary} />
-        </TouchableOpacity>
-      </View>
+          {/* Messages List */}
+          <FlatList
+            ref={flatListRef}
+            data={messages}
+            renderItem={renderMessage}
+            keyExtractor={(item) => item.id}
+            style={styles.messagesList}
+            contentContainerStyle={styles.messagesContent}
+            showsVerticalScrollIndicator={false}
+            ListFooterComponent={
+              isThinking ? (
+                <ThinkingIndicator visible={true} />
+              ) : isStreaming ? (
+                <TypingDots visible={true} />
+              ) : null
+            }
+            ListEmptyComponent={
+              <View style={{ padding: 20, alignItems: 'center' }}>
+                <Text style={{ color: '#666', fontSize: 16 }}>
+                  {isLoading ? 'Loading messages...' : 'Start your conversation'}
+                </Text>
+              </View>
+            }
+          />
 
-      <KeyboardAvoidingView 
-        style={styles.content} 
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-      >
-        {/* Messages List */}
-        <FlatList
-          ref={flatListRef}
-          data={messages}
-          renderItem={renderMessage}
-          keyExtractor={(item) => item.id}
-          style={styles.messagesList}
-          contentContainerStyle={styles.messagesContent}
-          showsVerticalScrollIndicator={false}
-          ListFooterComponent={
-            isThinking ? (
-              <ThinkingIndicator visible={true} />
-            ) : isStreaming ? (
-              <TypingDots visible={true} />
-            ) : null
-          }
-          ListEmptyComponent={
-            <View style={{ padding: 20, alignItems: 'center' }}>
-              <Text style={{ color: '#666', fontSize: 16 }}>
-                {isLoading ? 'Loading messages...' : 'Start your conversation'}
+
+
+          {/* Error Display */}
+          {error && (
+            <View style={[styles.errorContainer, { backgroundColor: '#FF6B6B' }]}>
+              <Text style={[styles.errorText, { color: '#FFFFFF' }]}>
+                {error || 'Something went wrong'}
               </Text>
             </View>
-          }
-        />
+          )}
 
-        {/* Suggested Prompts - Show ONLY when starting a completely new conversation */}
-        {messages.length === 0 && !isStreaming && !isThinking && !initialMessage && !sessionId && !isLoading && (
-          <View style={styles.promptChipsContainer}>
-            <Text style={[styles.promptChipsTitle, { color: theme.semanticColors.textSecondary }]}>
-              Try asking about:
-            </Text>
-            {SUGGESTED_PROMPTS.map((prompt, index) => (
-              <PillPrompt
-                key={prompt}
-                text={prompt}
-                onPress={() => handleSuggestedPress(prompt)}
-                delay={index * 100}
-              />
-            ))}
+          {/* Composer with proper keyboard handling */}
+          <View 
+            style={[
+              styles.composerContainer, 
+              { 
+                borderTopColor: theme.semanticColors.border,
+                zIndex: isDrawerVisible || isSettingsDrawerVisible ? -1 : 1,
+                opacity: isDrawerVisible || isSettingsDrawerVisible ? 0 : 1,
+                paddingBottom: Math.max(insets.bottom, 16),
+              }
+            ]}
+          >
+            <Composer
+              onSend={handleSendMessage}
+              onFileAttach={(fileUrl, fileName, fileType) => {
+                // Route file into conversation pipeline - NO EXCEPTIONS
+                const fileMessage = `📎 Attached file: ${fileName}\n\nFile URL: ${fileUrl}`;
+                handleSendMessage(fileMessage);
+              }}
+              onUpload={handleUpload}
+              onVoiceNote={handleVoiceNote}
+              placeholder={isLoading ? "Starting conversation..." : "What's on your mind?"}
+              disabled={!canMakeQuery || isLoading}
+              sessionId={currentSession?.id}
+            />
           </View>
-        )}
+        </KeyboardAvoidingView>
+      </SafeAreaView>
 
-        {/* Error Display */}
-        {error && (
-          <View style={[styles.errorContainer, { backgroundColor: '#FF6B6B' }]}>
-            <Text style={[styles.errorText, { color: '#FFFFFF' }]}>
-              {error || 'Something went wrong'}
-            </Text>
-          </View>
-        )}
-      </KeyboardAvoidingView>
-
-      {/* Composer - Same as HomeScreen */}
-      <View style={[styles.composerContainer, { borderTopColor: theme.semanticColors.border }]}>
-        <Composer
-          onSend={handleSendMessage}
-          onUpload={handleUpload}
-          onVoiceNote={handleVoiceNote}
-          placeholder={isLoading ? "Starting conversation..." : "What's on your mind?"}
-          disabled={!canMakeQuery || isLoading}
-        />
-      </View>
-
-      {/* Drawer - Same as HomeScreen */}
+      {/* DRAWERS MOVED OUTSIDE SafeAreaView - ALWAYS STATIC */}
       <Drawer
         isVisible={isDrawerVisible}
         onClose={() => setIsDrawerVisible(false)}
         title="Conversations"
+        stickyHeader={
+          /* NEW CONVERSATION BUTTON - ALWAYS VISIBLE */
+          <TouchableOpacity
+            style={[styles.newConversationButton, { backgroundColor: theme.semanticColors.surface, borderColor: theme.semanticColors.border }]}
+            onPress={() => {
+              setIsDrawerVisible(false);
+              console.log('🆕 ChatScreen: Starting new conversation');
+              
+              // Clear current session and messages for fresh start
+              clearMessages();
+              
+              // Navigate to HomeScreen for completely fresh start
+              navigation.navigate('Home' as never);
+            }}
+          >
+            <Ionicons name="add" size={20} color={theme.semanticColors.primary} />
+            <Text style={[styles.newConversationText, { color: theme.semanticColors.primary }]}>
+              New Conversation
+            </Text>
+          </TouchableOpacity>
+        }
       >
         <View style={styles.drawerContent}>
           {sessions.length === 0 ? (
@@ -398,11 +405,24 @@ export const ChatScreen: React.FC = () => {
                               style: 'destructive',
                               onPress: async () => {
                                 try {
-                                  // 🔥 Use instant delete for immediate UI feedback
-                                  await deleteConversationInstant(session.id);
-                                  // Close drawer after successful deletion
+                                  console.log(`🔥 ChatScreen: Deleting conversation ${session.id}`);
+                                  
+                                  // Close drawer first for better UX
                                   setIsDrawerVisible(false);
-                                  console.log(`✨ Instant delete completed in ChatScreen`);
+                                  
+                                  // Check if we're deleting the currently active session
+                                  const isDeletingActiveSession = currentSession?.id === session.id;
+                                  
+                                  // 🔥 Use deleteSession from useChat to update drawer
+                                  await deleteSession(session.id);
+                                  
+                                  console.log(`✨ Instant delete completed in ChatScreen for: ${session.id}`);
+                                  
+                                  // 🔥 Navigate back to HomeScreen if we deleted the active session
+                                  if (isDeletingActiveSession) {
+                                    console.log('🏠 Navigating to HomeScreen after deleting active session');
+                                    navigation.navigate('Home' as never);
+                                  }
                                 } catch (error) {
                                   console.error('Failed to delete conversation:', error);
                                   Alert.alert('Error', 'Failed to delete conversation. Please try again.');
@@ -425,7 +445,7 @@ export const ChatScreen: React.FC = () => {
         </View>
       </Drawer>
 
-      {/* Settings Drawer - Same as HomeScreen */}
+      {/* Settings Drawer - ALWAYS STATIC */}
       <SettingsDrawer
         isVisible={isSettingsDrawerVisible}
         onClose={() => setIsSettingsDrawerVisible(false)}
@@ -498,7 +518,7 @@ export const ChatScreen: React.FC = () => {
           </View>
         </View>
       </Modal>
-    </SafeAreaView>
+    </>
   );
 };
 
@@ -506,13 +526,17 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
   },
+  keyboardContainer: {
+    flex: 1,
+  },
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     paddingHorizontal: 20,
-    paddingTop: 60,
+    paddingTop: 20,
     paddingBottom: 20,
+    zIndex: 100,
   },
   menuButton: {
     padding: 8,
@@ -528,63 +552,68 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  content: {
-    flex: 1,
-  },
   messagesList: {
     flex: 1,
   },
   messagesContent: {
-    paddingVertical: 8,
-    paddingHorizontal: 16,
+    padding: 16,
+    paddingBottom: 0,
   },
-  promptChipsContainer: {
-    paddingHorizontal: 20,
-    paddingVertical: 16,
-  },
-  promptChipsTitle: {
-    fontSize: 16,
-    fontWeight: '500',
-    marginBottom: 12,
-    textAlign: 'center',
-  },
+
   errorContainer: {
-    margin: 16,
     padding: 12,
+    margin: 16,
     borderRadius: 8,
   },
   errorText: {
     fontSize: 14,
+    fontWeight: '500',
     textAlign: 'center',
   },
   composerContainer: {
     borderTopWidth: 1,
-    borderTopColor: 'rgba(0,0,0,0.05)',
+    paddingHorizontal: 0,
   },
   drawerContent: {
-    flex: 1,
-    paddingHorizontal: 20,
-  },
-  emptyState: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
+    paddingVertical: 20,
   },
   drawerText: {
     fontSize: 16,
     textAlign: 'center',
-    lineHeight: 24,
+    marginTop: 20,
+  },
+  newConversationButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 20,
+    borderWidth: 1,
+    marginBottom: 20,
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 1,
+  },
+  newConversationText: {
+    fontSize: 14,
+    fontWeight: '500',
+    marginLeft: 8,
+  },
+  emptyState: {
+    paddingVertical: 20,
   },
   sessionsList: {
-    flex: 1,
-    paddingTop: 8,
+    marginTop: 10,
   },
   sessionItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    padding: 16,
-    marginBottom: 8,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
     borderRadius: 8,
+    marginBottom: 8,
     borderWidth: 1,
   },
   sessionInfo: {
@@ -597,68 +626,55 @@ const styles = StyleSheet.create({
     marginBottom: 4,
   },
   sessionMeta: {
-    fontSize: 12,
+    fontSize: 14,
     marginBottom: 2,
   },
   sessionLastActivity: {
-    fontSize: 11,
+    fontSize: 12,
   },
   sessionActions: {
     flexDirection: 'row',
     alignItems: 'center',
+    gap: 12,
   },
   renameButton: {
-    padding: 8,
-    borderRadius: 6,
-    marginRight: 4,
-    minWidth: 32,
-    minHeight: 32,
-    alignItems: 'center',
-    justifyContent: 'center',
+    padding: 4,
   },
   deleteButton: {
-    padding: 8,
-    borderRadius: 6,
-    minWidth: 32,
-    minHeight: 32,
-    alignItems: 'center',
-    justifyContent: 'center',
+    padding: 4,
   },
   deleteActionButton: {
-    backgroundColor: 'rgba(255, 107, 107, 0.1)',
+    // Additional styles for delete button if needed
   },
   modalOverlay: {
     flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
   },
   modalContent: {
-    padding: 24,
+    width: '80%',
     borderRadius: 12,
-    width: '85%',
-    maxWidth: 400,
+    padding: 20,
     shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
+    shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.25,
-    shadowRadius: 3.84,
-    elevation: 5,
+    shadowRadius: 8,
+    elevation: 8,
   },
   modalTitle: {
     fontSize: 18,
-    fontWeight: 'bold',
+    fontWeight: '600',
     marginBottom: 16,
     textAlign: 'center',
   },
   modalInput: {
     borderWidth: 1,
     borderRadius: 8,
-    padding: 12,
-    marginBottom: 20,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
     fontSize: 16,
+    marginBottom: 20,
   },
   modalButtons: {
     flexDirection: 'row',
@@ -667,17 +683,18 @@ const styles = StyleSheet.create({
   },
   modalButton: {
     flex: 1,
-    padding: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
     borderRadius: 8,
     alignItems: 'center',
   },
   cancelButton: {
     backgroundColor: 'transparent',
     borderWidth: 1,
-    borderColor: '#E0E0E0',
+    borderColor: '#ccc',
   },
   saveButton: {
-    // backgroundColor set dynamically with theme
+    // backgroundColor set dynamically
   },
   buttonText: {
     fontSize: 16,

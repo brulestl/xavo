@@ -1,5 +1,5 @@
-import React from 'react';
-import { View, Text, StyleSheet } from 'react-native';
+import React, { useEffect, useRef } from 'react';
+import { View, Text, StyleSheet, Animated, Image } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { Container } from '../components/Container';
 import { Button } from '../components/Button';
@@ -8,6 +8,16 @@ import { useTheme } from '../providers/ThemeProvider';
 export const AuthChoiceScreen: React.FC = () => {
   const navigation = useNavigation();
   const { theme } = useTheme();
+  const logoFadeAnim = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    // Start logo fade in animation
+    Animated.timing(logoFadeAnim, {
+      toValue: 1,
+      duration: 600,
+      useNativeDriver: false,
+    }).start();
+  }, [logoFadeAnim]);
 
   const handleLogin = () => {
     navigation.navigate('LoginSignup', { mode: 'login' });
@@ -21,10 +31,19 @@ export const AuthChoiceScreen: React.FC = () => {
     <Container variant="screen">
       <View style={styles.container}>
         <View style={styles.content}>
-          <Text style={[styles.title, { color: theme.textPrimary }]}>
+          {/* Logo Image with fade in */}
+          <Animated.View style={[styles.logoImageContainer, { opacity: logoFadeAnim }]}>
+            <Image 
+              source={require('../../media/logo/xavo_mainLogoWhite.png')} 
+              style={styles.logoImage}
+              resizeMode="contain"
+            />
+          </Animated.View>
+          
+          <Text style={[styles.title, { color: theme.semanticColors.textPrimary }]}>
             Welcome Back
           </Text>
-          <Text style={[styles.subtitle, { color: theme.textSecondary }]}>
+          <Text style={[styles.subtitle, { color: theme.semanticColors.textSecondary }]}>
             Choose how you'd like to continue
           </Text>
         </View>
@@ -63,6 +82,13 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     paddingHorizontal: 32,
+  },
+  logoImageContainer: {
+    marginBottom: 24,
+  },
+  logoImage: {
+    width: 80,
+    height: 80,
   },
   title: {
     fontSize: 32,

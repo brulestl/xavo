@@ -342,40 +342,43 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     try {
       console.log('🔐 Starting OAuth flow for provider:', provider);
       
-      // For Expo Go development, use the correct redirect URI format
-      const redirectTo = Platform.OS === 'web' 
-        ? makeRedirectUri({
-            scheme: 'xavo',
-            path: '/auth/callback',
-          })
-        : makeRedirectUri({
-            scheme: 'exp',
-            path: '/auth/callback',
-          });
+      // Create dynamic redirect URI for current environment
+      const redirectUri = makeRedirectUri({
+        scheme: 'xavo',
+        path: 'auth/callback'
+      });
       
-      console.log('🔗 OAuth redirect URI:', redirectTo);
-
+      console.log('🔗 Using redirect URI:', redirectUri);
+      
       const { data, error } = await supabase.auth.signInWithOAuth({
         provider,
         options: {
-          redirectTo,
-          skipBrowserRedirect: false, // Always open browser for OAuth
+          redirectTo: redirectUri,
+          skipBrowserRedirect: true, // We'll handle opening the browser manually
         },
       });
 
       console.log('📱 OAuth response:', { data: !!data, error: !!error });
       
+      if (error) {
+        console.error('❌ OAuth error:', error);
+        return { error };
+      }
+
       if (data?.url) {
         console.log('🌐 Opening OAuth URL:', data.url);
-        // For Expo Go, we need to manually open the browser
+        
+        // Open the OAuth URL in browser
         const result = await WebBrowser.openAuthSessionAsync(
           data.url,
-          redirectTo
+          redirectUri
         );
         
         console.log('📱 WebBrowser result:', result);
         
         if (result.type === 'success' && result.url) {
+          console.log('🔗 Processing OAuth callback URL:', result.url);
+          
           // Extract the session from the redirect URL
           const url = new URL(result.url);
           
@@ -389,6 +392,8 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
             accessToken = hashParams.get('access_token');
             refreshToken = hashParams.get('refresh_token');
           }
+          
+          console.log('🔍 Token extraction - Access token exists:', !!accessToken, 'Refresh token exists:', !!refreshToken);
           
           if (accessToken) {
             console.log('✅ OAuth tokens received, setting session');
@@ -406,18 +411,21 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
             return { error: null };
           } else {
             console.error('❌ No access token in redirect URL');
+            console.log('🔍 Full URL for debugging:', result.url);
             return { error: { message: 'No access token received' } as AuthError };
           }
         } else if (result.type === 'cancel') {
           console.log('❌ OAuth cancelled by user');
-          return { error: { message: 'OAuth cancelled by user' } as AuthError };
+          return { error: { message: 'Authentication was cancelled' } as AuthError };
         } else {
           console.error('❌ OAuth failed:', result);
-          return { error: { message: 'OAuth failed' } as AuthError };
+          return { error: { message: 'Authentication failed' } as AuthError };
         }
+      } else {
+        console.error('❌ No OAuth URL received');
+        return { error: { message: 'No authentication URL received' } as AuthError };
       }
-
-      return { error };
+      
     } catch (error) {
       console.error('❌ OAuth error:', error);
       return { error: error as AuthError };

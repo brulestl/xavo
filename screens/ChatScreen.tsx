@@ -1,27 +1,21 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { View, StyleSheet, FlatList, Text, KeyboardAvoidingView, Platform, TouchableOpacity, Animated } from 'react-native';
+import { View, StyleSheet, FlatList, Text, KeyboardAvoidingView, Platform, TouchableOpacity, Animated, StatusBar } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { toast } from 'sonner-native';
 import ChatComposer from '../components/ChatComposer';
 import PaywallBottomSheet from '../components/PaywallBottomSheet';
 import { ChatBubble } from '../src/components/ChatBubble';
-import { PillPrompt } from '../src/components/PillPrompt';
+
 import { Drawer } from '../src/components/Drawer';
 import { SettingsDrawer } from '../src/components/SettingsDrawer';
 import { useAuth } from '../contexts/AuthContext';
-import { useConversations, Message } from '../hooks/useConversations';
+import { useConversations, Message } from '../src/hooks/useConversations';
 import { useTheme } from '../src/providers/ThemeProvider';
 import { apiFetch } from '../src/lib/api';
 
-const SUGGESTED_PROMPTS = [
-  'Handle credit grabber',
-  'Negotiate salary',
-  'Diffuse conflict',
-  'Manage difficult boss',
-  'Network authentically',
-];
+
 
 interface ChatResponse {
   id: string;
@@ -57,7 +51,7 @@ export default function ChatScreen() {
   const route = useRoute();
   const insets = useSafeAreaInsets();
   const flatListRef = useRef<FlatList>(null);
-  const { theme } = useTheme();
+  const { theme, isDark } = useTheme();
 
   const { tier, dailyCounter, canAsk, decrementCounter } = useAuth();
   const { conversations, getConversation, createConversation, addMessageToConversation } = useConversations();
@@ -190,9 +184,7 @@ export default function ChatScreen() {
     }
   }, [canAsk, tier, decrementCounter, currentSessionId, navigation]);
 
-  const handleSuggestedPress = useCallback((prompt: string) => {
-    sendMessage(prompt);
-  }, [sendMessage]);
+
 
   const handleMic = useCallback(() => {
     if (tier !== 'shark') {
@@ -244,9 +236,10 @@ export default function ChatScreen() {
 
   if (isLoadingSession) {
     return (
-      <View style={[styles.container, { backgroundColor: theme.semanticColors.background }]}>
-        {/* Header - Same as HomeScreen */}
-        <View style={styles.header}>
+      <SafeAreaView style={[styles.container, { backgroundColor: theme.semanticColors.background }]} edges={['top']}>
+        <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} backgroundColor={theme.semanticColors.background} />
+        {/* Header */}
+        <View style={[styles.header, { paddingTop: 0 }]}>
           {/* Hamburger Menu */}
           <TouchableOpacity style={styles.menuButton} onPress={handleMenuPress}>
             <View style={[styles.hamburger, { backgroundColor: theme.semanticColors.textPrimary }]} />
@@ -267,72 +260,100 @@ export default function ChatScreen() {
             Loading conversation...
           </Text>
         </View>
-      </View>
+      </SafeAreaView>
     );
   }
 
   return (
-    <KeyboardAvoidingView 
-      style={[styles.container, { backgroundColor: theme.semanticColors.background }]} 
-      keyboardVerticalOffset={insets.top + 70} 
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-    >
-      {/* Header - Exact same as HomeScreen */}
-      <View style={styles.header}>
-        {/* Hamburger Menu */}
-        <TouchableOpacity style={styles.menuButton} onPress={handleMenuPress}>
-          <View style={[styles.hamburger, { backgroundColor: theme.semanticColors.textPrimary }]} />
-          <View style={[styles.hamburger, { backgroundColor: theme.semanticColors.textPrimary }]} />
-          <View style={[styles.hamburger, { backgroundColor: theme.semanticColors.textPrimary }]} />
-        </TouchableOpacity>
+    <>
+      <SafeAreaView style={[styles.container, { backgroundColor: theme.semanticColors.background }]} edges={['top']}>
+        <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} backgroundColor={theme.semanticColors.background} />
+        
+        {/* Header - OUTSIDE KeyboardAvoidingView so it stays fixed */}
+        <View style={[styles.header, { paddingTop: 0 }]}>
+          {/* Hamburger Menu */}
+          <TouchableOpacity style={styles.menuButton} onPress={handleMenuPress}>
+            <View style={[styles.hamburger, { backgroundColor: theme.semanticColors.textPrimary }]} />
+            <View style={[styles.hamburger, { backgroundColor: theme.semanticColors.textPrimary }]} />
+            <View style={[styles.hamburger, { backgroundColor: theme.semanticColors.textPrimary }]} />
+          </TouchableOpacity>
 
-        {/* Settings Button */}
-        <TouchableOpacity 
-          style={styles.settingsButton} 
-          onPress={() => setIsSettingsDrawerVisible(true)}
-        >
-          <Ionicons name="settings-outline" size={24} color={theme.semanticColors.textPrimary} />
-        </TouchableOpacity>
-      </View>
-
-      <FlatList
-        ref={flatListRef}
-        data={messages}
-        keyExtractor={(item) => item.id}
-        renderItem={renderMessage}
-        contentContainerStyle={styles.list}
-        showsVerticalScrollIndicator={false}
-      />
-
-      {messages.length === 0 && !isSending && (
-        <View style={styles.promptChipsContainer}>
-          <Text style={[styles.promptChipsTitle, { color: theme.semanticColors.textSecondary }]}>
-            Try asking about:
-          </Text>
-          {SUGGESTED_PROMPTS.map((prompt, index) => (
-            <PillPrompt
-              key={prompt}
-              text={prompt}
-              onPress={() => handleSuggestedPress(prompt)}
-              delay={index * 100} // Staggered animation
-            />
-          ))}
+          {/* Settings Button */}
+          <TouchableOpacity 
+            style={styles.settingsButton} 
+            onPress={() => setIsSettingsDrawerVisible(true)}
+          >
+            <Ionicons name="settings-outline" size={24} color={theme.semanticColors.textPrimary} />
+          </TouchableOpacity>
         </View>
-      )}
 
-      <ChatComposer
-        onSend={sendMessage}
-        voiceEnabled={voiceEnabled}
-        disabled={isSending}
-        accentColor={theme.semanticColors.primary}
-        onMicPress={handleMic}
-      />
+        <KeyboardAvoidingView 
+          style={styles.keyboardContainer}
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 0}
+        >
+          <FlatList
+            ref={flatListRef}
+            data={messages}
+            keyExtractor={(item) => item.id}
+            renderItem={renderMessage}
+            contentContainerStyle={styles.list}
+            showsVerticalScrollIndicator={false}
+          />
 
-      {/* Drawer - Same as HomeScreen */}
+
+
+          {/* Composer Container with proper keyboard handling */}
+          <View 
+            style={[
+              styles.composerContainer, 
+              { 
+                backgroundColor: theme.semanticColors.background,
+                zIndex: isDrawerVisible || isSettingsDrawerVisible ? -1 : 1,
+                opacity: isDrawerVisible || isSettingsDrawerVisible ? 0 : 1,
+                paddingBottom: Math.max(insets.bottom, 16),
+              }
+            ]}
+          >
+            <ChatComposer
+              onSend={sendMessage}
+              voiceEnabled={voiceEnabled}
+              disabled={isSending}
+              accentColor={theme.semanticColors.primary}
+              onMicPress={handleMic}
+              onFileAttach={(fileUrl, fileName, fileType) => {
+                // Create a file attachment message and route into conversation
+                const fileMessage = `📎 Attached file: ${fileName}\n\nFile URL: ${fileUrl}`;
+                sendMessage(fileMessage);
+              }}
+              sessionId={currentSessionId || undefined}
+            />
+          </View>
+        </KeyboardAvoidingView>
+      </SafeAreaView>
+
+      {/* DRAWERS MOVED OUTSIDE SafeAreaView - ALWAYS STATIC */}
       <Drawer
         isVisible={isDrawerVisible}
         onClose={() => setIsDrawerVisible(false)}
         title="Conversations"
+        stickyHeader={
+          /* NEW CONVERSATION BUTTON - ALWAYS VISIBLE */
+          <TouchableOpacity
+            style={[styles.newConversationButton, { backgroundColor: theme.semanticColors.surface, borderColor: theme.semanticColors.border }]}
+            onPress={() => {
+              setIsDrawerVisible(false);
+              console.log('🆕 Old ChatScreen: Starting new conversation');
+              // Navigate to HomeScreen for fresh start
+              navigation.navigate('Home' as never);
+            }}
+          >
+            <Ionicons name="add" size={20} color={theme.semanticColors.primary} />
+            <Text style={[styles.newConversationText, { color: theme.semanticColors.primary }]}>
+              New Conversation
+            </Text>
+          </TouchableOpacity>
+        }
       >
         <View style={styles.drawerContent}>
           <Text style={[styles.drawerText, { color: theme.semanticColors.textSecondary }]}>
@@ -341,7 +362,7 @@ export default function ChatScreen() {
         </View>
       </Drawer>
 
-      {/* Settings Drawer - Same as HomeScreen */}
+      {/* Settings Drawer - ALWAYS STATIC */}
       <SettingsDrawer
         isVisible={isSettingsDrawerVisible}
         onClose={() => setIsSettingsDrawerVisible(false)}
@@ -353,7 +374,7 @@ export default function ChatScreen() {
         visible={showPaywall}
         onClose={() => setShowPaywall(false)}
       />
-    </KeyboardAvoidingView>
+    </>
   );
 }
 
@@ -361,13 +382,17 @@ const styles = StyleSheet.create({
   container: { 
     flex: 1,
   },
+  keyboardContainer: {
+    flex: 1,
+  },
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     paddingHorizontal: 20,
-    paddingTop: 60,
+    paddingTop: 20,
     paddingBottom: 20,
+    zIndex: 100, // Ensure header stays above content
   },
   menuButton: {
     padding: 8,
@@ -387,15 +412,7 @@ const styles = StyleSheet.create({
     padding: 16, 
     paddingBottom: 0,
   },
-  promptChipsContainer: { 
-    padding: 16,
-    paddingTop: 8,
-  },
-  promptChipsTitle: {
-    fontSize: 16,
-    fontWeight: '500',
-    marginBottom: 12,
-  },
+
   loadingContainer: {
     flex: 1,
     justifyContent: 'center',
@@ -405,11 +422,37 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '500',
   },
+  composerContainer: {
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(0,0,0,0.05)',
+    paddingHorizontal: 16,
+    paddingTop: 8,
+  },
   drawerContent: {
     paddingVertical: 20,
   },
   drawerText: {
     fontSize: 16,
     textAlign: 'center',
+    marginTop: 20,
+  },
+  newConversationButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 20,
+    borderWidth: 1,
+    marginBottom: 20,
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 1,
+  },
+  newConversationText: {
+    fontSize: 14,
+    fontWeight: '500',
+    marginLeft: 8,
   },
 });

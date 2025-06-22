@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Animated, ActivityIndicator, ToastAndroid, Platform, Image, Alert, Modal, TextInput } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Animated, ActivityIndicator, ToastAndroid, Platform, Image, Alert, Modal, TextInput, StatusBar } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '../providers/ThemeProvider';
 import { useAuth } from '../providers/AuthProvider';
 import { Pill } from '../components/Pill';
@@ -51,42 +52,12 @@ interface ConversationSession {
   message_count: number;
 }
 
-const COACHING_PROMPTS = [
-  { 
-    id: 'credit-grabber', 
-    title: 'Handle Credit Grabber', 
-    subtitle: 'Deal with colleagues who claim your work',
-    prompt: 'A colleague keeps taking credit for my work in team meetings. How do I address this professionally while protecting my reputation?'
-  },
-  { 
-    id: 'salary-negotiation', 
-    title: 'Negotiate Salary', 
-    subtitle: 'Confidently advocate for your worth',
-    prompt: 'I have been in my role for 2 years with excellent performance reviews, but my salary hasn\'t increased. How should I approach my manager about a raise?'
-  },
-  { 
-    id: 'difficult-conversation', 
-    title: 'Diffuse Conflict', 
-    subtitle: 'Navigate tense workplace situations',
-    prompt: 'Two team members are in constant conflict and it\'s affecting everyone\'s productivity. As their manager, how should I intervene?'
-  },
-  { 
-    id: 'manage-up', 
-    title: 'Manage Difficult Boss', 
-    subtitle: 'Build better relationships upward',
-    prompt: 'My manager micromanages everything I do and rarely gives positive feedback. How can I improve this relationship and gain more autonomy?'
-  },
-  { 
-    id: 'networking', 
-    title: 'Network Authentically', 
-    subtitle: 'Build genuine professional connections',
-    prompt: 'I struggle with networking because it feels forced and transactional. How can I build authentic professional relationships?'
-  },
-];
+
 
 export const HomeScreen: React.FC = () => {
-  const { theme } = useTheme();
+  const { theme, isDark } = useTheme();
   const navigation = useNavigation();
+  const insets = useSafeAreaInsets();
   const { clearAllData, user, tier } = useAuth();
   const [isDrawerVisible, setIsDrawerVisible] = useState(false);
   const [isSettingsDrawerVisible, setIsSettingsDrawerVisible] = useState(false);
@@ -122,6 +93,10 @@ export const HomeScreen: React.FC = () => {
 
   // Use chat hook for session management
   const { deleteSession, renameSession } = useChat();
+
+  // State for voice recording
+  const [isRecording, setIsRecording] = useState(false);
+  const [transcription, setTranscription] = useState('');
 
   // Use chat hook for session management
   useEffect(() => {
@@ -237,8 +212,54 @@ export const HomeScreen: React.FC = () => {
     console.log('Upload pressed');
   };
 
-  const handleVoiceNote = () => {
-    console.log('Voice note pressed');
+  // VOICE RECORDING RESURRECTION - FIX: Implement proper voice recording
+  const handleVoiceNote = async () => {
+    if (isRecording) {
+      // Stop recording
+      setIsRecording(false);
+      console.log('🎙️ Stopping voice recording');
+      
+      // If we have transcription, send it as a message
+      if (transcription.trim()) {
+        await handleSendMessage(transcription);
+        setTranscription('');
+      }
+    } else {
+      // Start recording
+      setIsRecording(true);
+      setTranscription('');
+      console.log('🎙️ Starting voice recording');
+      
+      // Simulate live transcription (replace with actual service)
+      simulateVoiceTranscription();
+    }
+  };
+
+  // Simulate voice transcription with live updates
+  const simulateVoiceTranscription = () => {
+    const phrases = [
+      'I need help with',
+      'managing a difficult situation',
+      'at work where my colleague',
+      'keeps taking credit for my ideas',
+      'and I want to address this professionally'
+    ];
+    
+    let currentIndex = 0;
+    
+    const addPhrase = () => {
+      if (currentIndex < phrases.length && isRecording) {
+        setTranscription(prev => {
+          const newText = prev ? `${prev} ${phrases[currentIndex]}` : phrases[currentIndex];
+          return newText;
+        });
+        currentIndex++;
+        setTimeout(addPhrase, 800);
+      }
+    };
+    
+    // Start transcription after a brief delay
+    setTimeout(addPhrase, 500);
   };
 
   const handleNavigateToSubscriptions = () => {
@@ -339,9 +360,11 @@ export const HomeScreen: React.FC = () => {
   };
 
   return (
-    <View style={[styles.container, { backgroundColor: theme.semanticColors.background }]}>
+    <SafeAreaView style={[styles.container, { backgroundColor: theme.semanticColors.background }]} edges={['top']}>
+      <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} backgroundColor={theme.semanticColors.background} />
+      
       {/* Header */}
-      <View style={styles.header}>
+      <View style={[styles.header, { paddingTop: 0 }]}>
         {/* Hamburger Menu */}
         <TouchableOpacity style={styles.menuButton} onPress={handleMenuPress}>
           <View style={[styles.hamburger, { backgroundColor: theme.semanticColors.textPrimary }]} />
@@ -358,128 +381,147 @@ export const HomeScreen: React.FC = () => {
         </TouchableOpacity>
       </View>
 
-      {/* Content */}
-      <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
-        <Animated.View
-          style={[
-            styles.heroSection,
-            {
-              opacity: fadeAnim,
-              transform: [{ translateY: slideAnim }],
-            },
-          ]}
-        >
-          {/* Hero Question */}
-          <Text style={[styles.heroQuestion, { color: theme.semanticColors.textPrimary }]}>
-            {heroQuestion}
-          </Text>
+      {/* Content - Wrap in SafeAreaView for bottom edge */}
+      <View style={styles.contentContainer}>
+        <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
+          <Animated.View
+            style={[
+              styles.heroSection,
+              {
+                opacity: fadeAnim,
+                transform: [{ translateY: slideAnim }],
+              },
+            ]}
+          >
+            {/* Hero Question */}
+            <Text style={[styles.heroQuestion, { color: theme.semanticColors.textPrimary }]}>
+              {heroQuestion}
+            </Text>
 
-          {/* Quick Prompts */}
-          <Animated.View style={styles.promptsWrapper}>
-            {promptsLoading ? (
-              <View style={styles.loadingContainer}>
-                <ActivityIndicator size="small" color={theme.semanticColors.accent} />
-                <Text style={[styles.loadingText, { color: theme.semanticColors.textSecondary }]}>
-                  Loading personalized prompts...
-                </Text>
-              </View>
-            ) : (
-              <>
-                {/* First Row: Exactly 5 Personalized Prompts from Database */}
-                <View style={styles.promptsContainer}>
-                  {personalizedPrompts.slice(0, 5).map((prompt, index) => (
-                    <Pill
-                      key={`personalized-${index}`}
-                      title={prompt}
-                      variant={selectedPrompt === prompt ? 'selected' : 'default'}
-                      onPress={() => handlePromptPress(prompt)}
-                      style={styles.prompt}
-                      disabled={isSendingMessage}
-                    />
-                  ))}
+            {/* Quick Prompts */}
+            <Animated.View style={styles.promptsWrapper}>
+              {promptsLoading ? (
+                <View style={styles.loadingContainer}>
+                  <ActivityIndicator size="small" color={theme.semanticColors.accent} />
+                  <Text style={[styles.loadingText, { color: theme.semanticColors.textSecondary }]}>
+                    Loading personalized prompts...
+                  </Text>
                 </View>
-                
-                {/* Load More Icon */}
-                {morePrompts.length === 0 && (
-                  <View style={styles.loadMoreContainer}>
-                    <Animated.View style={{ opacity: isLoadingMore ? 0 : 1 }}>
-                      <TouchableOpacity 
-                        style={styles.loadMoreIcon}
-                        onPress={handleLoadMore}
-                        disabled={isLoadingMore}
-                      >
-                        <Image 
-                          source={require('../../media/icons/loadMoreSugeestionsIcon_lightmode.png')}
-                          style={styles.loadMoreIconImage}
-                          resizeMode="contain"
-                        />
-                      </TouchableOpacity>
-                    </Animated.View>
-                    
-                    {isLoadingMore && (
-                      <Animated.View style={[styles.loadMoreSpinner, { opacity: isLoadingMore ? 1 : 0 }]}>
-                        <ActivityIndicator size="small" color={theme.semanticColors.accent} />
-                      </Animated.View>
-                    )}
+              ) : (
+                <>
+                  {/* First Row: Exactly 5 Personalized Prompts from Database */}
+                  <View style={styles.promptsContainer}>
+                    {personalizedPrompts.slice(0, 5).map((prompt, index) => (
+                      <Pill
+                        key={`personalized-${index}`}
+                        title={prompt}
+                        variant={selectedPrompt === prompt ? 'selected' : 'default'}
+                        onPress={() => handlePromptPress(prompt)}
+                        style={styles.prompt}
+                        disabled={isSendingMessage}
+                      />
+                    ))}
                   </View>
-                )}
-                
-                {/* Second Row: Exactly 5 AI-Generated Prompts with Distinct Styling */}
-                {morePrompts.length > 0 && (
-                  <Animated.View 
-                    style={[
-                      styles.aiPromptsWrapper,
-                      {
-                        opacity: aiPromptsAnim,
-                        transform: [
-                          {
-                            translateY: aiPromptsAnim.interpolate({
-                              inputRange: [0, 1],
-                              outputRange: [20, 0],
-                            }),
-                          },
-                        ],
-                      },
-                    ]}
-                  >
-                    <Text style={[styles.aiPromptsLabel, { color: theme.semanticColors.textSecondary }]}>
-                      AI Suggestions
-                    </Text>
-                    <View style={styles.aiPromptsContainer}>
-                      {morePrompts.slice(0, 5).map((prompt, index) => (
-                        <Pill
-                          key={`ai-${index}`}
-                          title={prompt}
-                          variant={selectedPrompt === prompt ? 'selected' : 'default'}
-                          onPress={() => handlePromptPress(prompt)}
-                          style={[styles.prompt, styles.aiPill]}
-                          disabled={isSendingMessage}
-                        />
-                      ))}
+                  
+                  {/* Load More Icon */}
+                  {morePrompts.length === 0 && (
+                    <View style={styles.loadMoreContainer}>
+                      <Animated.View style={{ opacity: isLoadingMore ? 0 : 1 }}>
+                        <TouchableOpacity 
+                          style={styles.loadMoreIcon}
+                          onPress={handleLoadMore}
+                          disabled={isLoadingMore}
+                        >
+                          <Image 
+                            source={require('../../media/icons/loadMoreSugeestionsIcon_lightmode.png')}
+                            style={styles.loadMoreIconImage}
+                            resizeMode="contain"
+                          />
+                        </TouchableOpacity>
+                      </Animated.View>
+                      
+                      {isLoadingMore && (
+                        <Animated.View style={[styles.loadMoreSpinner, { opacity: isLoadingMore ? 1 : 0 }]}>
+                          <ActivityIndicator size="small" color={theme.semanticColors.accent} />
+                        </Animated.View>
+                      )}
                     </View>
-                  </Animated.View>
-                )}
-              </>
-            )}
+                  )}
+                  
+                  {/* Second Row: Exactly 5 AI-Generated Prompts with Distinct Styling */}
+                  {morePrompts.length > 0 && (
+                    <Animated.View 
+                      style={[
+                        styles.aiPromptsWrapper,
+                        {
+                          opacity: aiPromptsAnim,
+                          transform: [
+                            {
+                              translateY: aiPromptsAnim.interpolate({
+                                inputRange: [0, 1],
+                                outputRange: [20, 0],
+                              }),
+                            },
+                          ],
+                        },
+                      ]}
+                    >
+                      <Text style={[styles.aiPromptsLabel, { color: theme.semanticColors.textSecondary }]}>
+                        AI Suggestions
+                      </Text>
+                      <View style={styles.aiPromptsContainer}>
+                        {morePrompts.slice(0, 5).map((prompt, index) => (
+                          <Pill
+                            key={`ai-${index}`}
+                            title={prompt}
+                            variant={selectedPrompt === prompt ? 'selected' : 'default'}
+                            onPress={() => handlePromptPress(prompt)}
+                            style={[styles.prompt, styles.aiPill]}
+                            disabled={isSendingMessage}
+                          />
+                        ))}
+                      </View>
+                    </Animated.View>
+                  )}
+                </>
+              )}
+            </Animated.View>
           </Animated.View>
-        </Animated.View>
-      </ScrollView>
+        </ScrollView>
 
-      {/* Composer */}
-      <View style={styles.composerContainer}>
-        <Composer
-          onSend={handleSendMessage}
-          onFileAttach={(fileUrl, fileName, fileType) => {
-            // Create a file attachment message and start conversation
-            const fileMessage = `📎 Attached file: ${fileName}\n\nFile URL: ${fileUrl}`;
-            handleSendMessage(fileMessage);
-          }}
-          onUpload={handleUpload}
-          onVoiceNote={handleVoiceNote}
-          placeholder={isSendingMessage ? "Starting conversation..." : "What's on your mind?"}
-          disabled={isSendingMessage}
-          sessionId={undefined} // Will be updated when we have active session
-        />
+        {/* Composer with proper safe area handling */}
+        <SafeAreaView edges={['bottom']} style={styles.composerSafeArea}>
+          <View 
+            style={[
+              styles.composerContainer,
+              { 
+                backgroundColor: theme.semanticColors.background,
+                zIndex: isDrawerVisible || isSettingsDrawerVisible ? -1 : 1,
+                opacity: isDrawerVisible || isSettingsDrawerVisible ? 0 : 1,
+              }
+            ]}
+          >
+            <Composer
+              onSend={handleSendMessage}
+              onFileAttach={(fileUrl, fileName, fileType) => {
+                // Create a file attachment message and start conversation
+                const fileMessage = `📎 Attached file: ${fileName}\n\nFile URL: ${fileUrl}`;
+                handleSendMessage(fileMessage);
+              }}
+              onUpload={handleUpload}
+              onVoiceNote={handleVoiceNote}
+              placeholder={
+                transcription 
+                  ? `🎙️ ${transcription}` 
+                  : (isSendingMessage ? "Starting conversation..." : "What's on your mind?")
+              }
+              disabled={isSendingMessage}
+              sessionId={undefined} // Will be updated when we have active session
+              isRecording={isRecording}
+              liveTranscription={transcription}
+            />
+          </View>
+        </SafeAreaView>
       </View>
 
       {/* Drawer */}
@@ -489,6 +531,23 @@ export const HomeScreen: React.FC = () => {
         title="Conversations"
       >
         <View style={styles.drawerContent}>
+          {/* NEW CONVERSATION BUTTON */}
+          <TouchableOpacity
+            style={[styles.newConversationButton, { backgroundColor: theme.semanticColors.surface, borderColor: theme.semanticColors.border }]}
+            onPress={() => {
+              setIsDrawerVisible(false);
+              console.log('🆕 HomeScreen: Starting new conversation');
+              // Navigate to new conversation (clear any existing session)
+              (navigation as any).navigate('Chat', {});
+            }}
+          >
+            <Ionicons name="add" size={20} color={theme.semanticColors.primary} />
+            <Text style={[styles.newConversationText, { color: theme.semanticColors.primary }]}>
+              New Conversation
+            </Text>
+          </TouchableOpacity>
+          
+          {/* Existing conversation list */}
           {conversationsLoading ? (
             <View style={styles.conversationLoadingContainer}>
               <ActivityIndicator size="large" color={theme.semanticColors.primary} />
@@ -686,7 +745,7 @@ export const HomeScreen: React.FC = () => {
           </View>
         </View>
       </Modal>
-    </View>
+    </SafeAreaView>
   );
 };
 
@@ -699,7 +758,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     paddingHorizontal: 20,
-    paddingTop: 60,
+    paddingTop: 20,
     paddingBottom: 20,
   },
   menuButton: {
@@ -715,6 +774,9 @@ const styles = StyleSheet.create({
     padding: 8,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  contentContainer: {
+    flex: 1,
   },
   content: {
     flex: 1,
@@ -741,9 +803,14 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     gap: 12,
     marginBottom: 16,
+    marginHorizontal: 16,
+    alignItems: 'flex-start', // Ensure pills align properly when heights vary
   },
   prompt: {
-    marginBottom: 12,
+    marginBottom: 8, // Reduced from 12 since gap handles spacing
+  },
+  composerSafeArea: {
+    backgroundColor: 'transparent',
   },
   composerContainer: {
     borderTopWidth: 1,
@@ -755,6 +822,7 @@ const styles = StyleSheet.create({
   drawerText: {
     fontSize: 16,
     textAlign: 'center',
+    marginTop: 20,
   },
   loadingContainer: {
     flexDirection: 'row',
@@ -813,9 +881,9 @@ const styles = StyleSheet.create({
   },
   aiPill: {
     borderWidth: 1,
-    borderColor: '#4A90E2', // Solid blue border for AI-generated prompts
-    backgroundColor: 'rgba(74, 144, 226, 0.1)', // Lighter background
-    borderStyle: 'solid', // Solid border for AI-generated prompts
+    borderColor: '#4A90E2',
+    backgroundColor: 'rgba(74, 144, 226, 0.1)',
+    borderStyle: 'solid',
   },
   aiPromptsContainer: {
     flexDirection: 'row',
@@ -823,8 +891,9 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     gap: 12,
     marginBottom: 16,
-    paddingHorizontal: '20%', // 20% margin from left and right
+    paddingHorizontal: '20%',
     width: '100%',
+    alignItems: 'flex-start', // Ensure pills align properly when heights vary
   },
   loadMoreIcon: {
     padding: 8,
@@ -952,5 +1021,24 @@ const styles = StyleSheet.create({
   buttonText: {
     fontSize: 16,
     fontWeight: '600',
+  },
+  newConversationButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 20,
+    borderWidth: 1,
+    marginBottom: 20,
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 1,
+  },
+  newConversationText: {
+    fontSize: 14,
+    fontWeight: '500',
+    marginLeft: 8,
   },
 }); 

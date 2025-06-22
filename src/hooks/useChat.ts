@@ -574,37 +574,49 @@ export const useChat = (): UseChatReturn => {
     }
   };
 
-  // Delete chat session
+  // Delete chat session (using soft delete)
   const deleteSession = async (sessionId: string) => {
+    console.log(`🗑️ useChat: Starting soft deletion for session ${sessionId}`);
+    
+    // Store whether this is the active session before deletion
+    const isDeletingActiveSession = currentSession?.id === sessionId;
+    
     setIsLoading(true);
     setError(null);
 
     try {
-      // Call backend to delete session and all its messages
+      // Call backend to soft delete session (30-day scheduled deletion)
       await apiFetch(`/sessions/${sessionId}`, {
         method: 'DELETE'
       });
 
-      console.log(`🗑️ Deleted session: ${sessionId}`);
+      console.log(`✅ useChat: Backend soft deletion successful for session: ${sessionId}`);
 
-      // Remove from local state
-      setSessions(prev => prev.filter(session => session.id !== sessionId));
+      // 🔥 REFRESH sessions from server to get updated list (no local filtering)
+      console.log(`🔄 useChat: Refreshing sessions after soft deletion`);
+      await loadSessions();
       
-      // 🔥 FIX: Clear current session and messages if the deleted session was active
-      if (currentSession?.id === sessionId) {
+      // 🔥 Clear current session and messages if the deleted session was active
+      if (isDeletingActiveSession) {
         setCurrentSession(null);
         setMessages([]);
-        console.log('🔄 Cleared active session state after deletion');
+        console.log('🔄 useChat: Cleared active session state after soft deletion');
       }
 
-      // Refresh sessions list to ensure consistency
-      await loadSessions();
-
     } catch (err) {
+      console.error(`❌ useChat: Soft delete session error for ${sessionId}:`, err);
+      
+      // Refresh sessions even on error to ensure UI is in sync
+      console.log(`🔄 useChat: Refreshing sessions after delete error`);
+      await loadSessions();
+      
+      // Don't show alert here if this is being called from instant delete
+      // to avoid duplicate error handling
       const errorMessage = err instanceof Error ? err.message : 'Failed to delete session';
       setError(errorMessage);
-      Alert.alert('Error', errorMessage);
-      console.error('Delete session error:', err);
+      
+      // Re-throw so the calling code can handle the error appropriately
+      throw err;
     } finally {
       setIsLoading(false);
     }

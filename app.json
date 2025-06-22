@@ -9,7 +9,7 @@
     "newArchEnabled": true,
     "scheme": "xavo",
     "updates": {
-      "fallbackToCacheTimeout": 0
+      "enabled": false
     },
     "runtimeVersion": {
       "policy": "appVersion"

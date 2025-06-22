@@ -132,10 +132,9 @@ export class EnhancedChatService {
     const offset = (page - 1) * limit;
 
     const { data, error, count } = await this.supabase
-      .from('conversation_sessions')
+      .from('active_conversation_sessions')
       .select('*', { count: 'exact' })
       .eq('user_id', userId)
-      .eq('is_active', true)
       .order('last_message_at', { ascending: false, nullsFirst: false })
       .order('created_at', { ascending: false })
       .range(offset, offset + limit - 1);
@@ -425,7 +424,7 @@ export class EnhancedChatService {
   async getChatSessions(userId: string): Promise<ChatSessionDto[]> {
     try {
       const { data, error } = await this.supabase
-        .from('conversation_sessions')
+        .from('active_conversation_sessions')
         .select(`
           id,
           title,
@@ -564,23 +563,28 @@ export class EnhancedChatService {
   }
 
   async deleteChatSession(userId: string, sessionId: string): Promise<void> {
-    console.log(`🔄 Backend: Deleting session ${sessionId} for user ${userId}`);
+    console.log(`🔄 Backend: Soft deleting session ${sessionId} for user ${userId}`);
     
     try {
-      // Delete the session - CASCADE constraint will automatically delete messages
-      console.log(`🔄 Backend: Deleting session record ${sessionId} (messages will be auto-deleted via CASCADE)`);
-      const { error: sessionError } = await this.supabase
-        .from('conversation_sessions')
-        .delete()
-        .eq('id', sessionId)
-        .eq('user_id', userId);
+      // Soft delete the session with 30-day scheduled deletion
+      console.log(`🔄 Backend: Scheduling session ${sessionId} for deletion in 30 days`);
+      const { data, error: deleteError } = await this.supabase
+        .rpc('soft_delete_session', { 
+          p_session_id: sessionId, 
+          p_user_id: userId 
+        });
 
-      if (sessionError) {
-        console.error(`❌ Backend: Failed to delete session ${sessionId}:`, sessionError.message);
-        throw new Error(`Failed to delete session: ${sessionError.message}`);
+      if (deleteError) {
+        console.error(`❌ Backend: Failed to soft delete session ${sessionId}:`, deleteError.message);
+        throw new Error(`Failed to delete session: ${deleteError.message}`);
       }
 
-      console.log(`✅ Backend: Session and associated messages deleted successfully: ${sessionId}`);
+      if (!data) {
+        console.error(`❌ Backend: Session ${sessionId} not found or already deleted`);
+        throw new Error('Session not found or already deleted');
+      }
+
+      console.log(`✅ Backend: Session ${sessionId} scheduled for deletion in 30 days`);
     } catch (error) {
       console.error(`❌ Backend: Error in deleteChatSession for ${sessionId}:`, error);
       throw error;

@@ -1,5 +1,5 @@
 import React, { useEffect, useRef } from 'react';
-import { View, Text, StyleSheet, Animated } from 'react-native';
+import { View, Text, StyleSheet, Animated, Image } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { useAuth } from '../providers/AuthProvider';
 import { useTheme } from '../providers/ThemeProvider';
@@ -9,16 +9,24 @@ export const SplashScreen: React.FC = () => {
   const { session, loading } = useAuth();
   const { theme } = useTheme();
   const fadeAnim = useRef(new Animated.Value(0)).current;
+  const logoFadeAnim = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
-    // Start fade in animation
-    Animated.timing(fadeAnim, {
+    // Start logo fade in animation first
+    Animated.timing(logoFadeAnim, {
       toValue: 1,
-      duration: 1000,
+      duration: 600,
       useNativeDriver: false,
-    }).start();
+    }).start(() => {
+      // Then start text fade in animation
+      Animated.timing(fadeAnim, {
+        toValue: 1,
+        duration: 800,
+        useNativeDriver: false,
+      }).start();
+    });
 
-    // Navigate after 2 seconds
+    // Navigate after 2.5 seconds to allow for animations
     const timer = setTimeout(() => {
       if (!loading) {
         if (session) {
@@ -27,20 +35,31 @@ export const SplashScreen: React.FC = () => {
           navigation.navigate('Welcome' as never);
         }
       }
-    }, 2000);
+    }, 2500);
 
     return () => clearTimeout(timer);
-  }, [navigation, session, loading, fadeAnim]);
+  }, [navigation, session, loading, fadeAnim, logoFadeAnim]);
 
   return (
     <View style={[styles.container, { backgroundColor: theme.semanticColors.background }]}>
-      <Animated.View style={[styles.logoContainer, { opacity: fadeAnim }]}>
-        {/* Xavo Logo - Using text for now, replace with actual logo */}
-        <Text style={[styles.logoText, { color: theme.semanticColors.textPrimary }]}>
-          Xavo
-        </Text>
-        <View style={[styles.logoUnderline, { backgroundColor: theme.semanticColors.primary }]} />
-      </Animated.View>
+      <View style={styles.logoContainer}>
+        {/* Logo Image with fade in */}
+        <Animated.View style={[styles.logoImageContainer, { opacity: logoFadeAnim }]}>
+          <Image 
+            source={require('../../media/logo/xavo_mainLogoWhite.png')} 
+            style={styles.logoImage}
+            resizeMode="contain"
+          />
+        </Animated.View>
+        
+        {/* Xavo Text with fade in */}
+        <Animated.View style={[{ opacity: fadeAnim }]}>
+          <Text style={[styles.logoText, { color: theme.semanticColors.textPrimary }]}>
+            Xavo
+          </Text>
+          <View style={[styles.logoUnderline, { backgroundColor: theme.semanticColors.primary }]} />
+        </Animated.View>
+      </View>
     </View>
   );
 };
@@ -54,6 +73,13 @@ const styles = StyleSheet.create({
   logoContainer: {
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  logoImageContainer: {
+    marginBottom: 20,
+  },
+  logoImage: {
+    width: 80,
+    height: 80,
   },
   logoText: {
     fontSize: 48,

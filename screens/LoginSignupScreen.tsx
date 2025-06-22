@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { View, Text, StyleSheet, TextInput, TouchableOpacity, Alert, KeyboardAvoidingView, Platform } from 'react-native';
+import React, { useState, useEffect, useRef } from 'react';
+import { View, Text, StyleSheet, TextInput, TouchableOpacity, Alert, KeyboardAvoidingView, Platform, Animated, Image } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -9,12 +9,22 @@ export default function LoginSignupScreen() {
   const navigation = useNavigation();
   const insets = useSafeAreaInsets();
   const { login, signup, signInWithOAuth } = useAuth();
+  const logoFadeAnim = useRef(new Animated.Value(0)).current;
   
   const [isLogin, setIsLogin] = useState(true);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [oauthLoading, setOauthLoading] = useState<'google' | 'linkedin' | null>(null);
+
+  useEffect(() => {
+    // Start logo fade in animation
+    Animated.timing(logoFadeAnim, {
+      toValue: 1,
+      duration: 600,
+      useNativeDriver: false,
+    }).start();
+  }, [logoFadeAnim]);
 
   const handleSubmit = async () => {
     if (!email.trim() || !password.trim()) {
@@ -137,6 +147,15 @@ export default function LoginSignupScreen() {
           <Ionicons name="arrow-back" size={24} color="#333" />
         </TouchableOpacity>
 
+        {/* Logo Image with fade in */}
+        <Animated.View style={[styles.logoImageContainer, { opacity: logoFadeAnim }]}>
+          <Image 
+            source={require('../media/logo/xavo_mainLogoWhite.png')} 
+            style={styles.logoImage}
+            resizeMode="contain"
+          />
+        </Animated.View>
+
         <Text style={styles.title}>
           {isLogin ? 'Welcome Back' : 'Create Account'}
         </Text>
@@ -236,6 +255,14 @@ const styles = StyleSheet.create({
   backButton: {
     alignSelf: 'flex-start',
     marginBottom: 20,
+  },
+  logoImageContainer: {
+    alignItems: 'center',
+    marginBottom: 20,
+  },
+  logoImage: {
+    width: 100,
+    height: 100,
   },
   title: {
     fontSize: 28,

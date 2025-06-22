@@ -1,0 +1,217 @@
+name: Daily Conversation Cleanup
+
+on:
+  schedule:
+    # Run daily at 2:00 AM UTC (adjust timezone as needed)
+    - cron: '0 2 * * *'
+  
+  workflow_dispatch: # Allow manual trigger from GitHub Actions UI
+    inputs:
+      dry_run:
+        description: 'Run in dry-run mode (no actual deletions)'
+        required: false
+        default: 'false'
+        type: choice
+        options:
+          - 'true'
+          - 'false'
+      days_old:
+        description: 'Delete sessions older than X days'
+        required: false
+        default: '30'
+        type: string
+      batch_size:
+        description: 'Batch size for processing'
+        required: false
+        default: '100'
+        type: string
+      verbose:
+        description: 'Enable verbose logging'
+        required: false
+        default: 'true'
+        type: choice
+        options:
+          - 'true'
+          - 'false'
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    name: Cleanup Deleted Conversations
+    
+    steps:
+      - name: Prepare cleanup parameters
+        id: params
+        run: |
+          # Set parameters for scheduled run vs manual run
+          if [ "${{ github.event_name }}" = "schedule" ]; then
+            # Scheduled run - use production defaults
+            DRY_RUN="false"
+            DAYS_OLD="30"
+            BATCH_SIZE="100"
+            VERBOSE="true"
+          else
+            # Manual run - use user inputs
+            DRY_RUN="${{ github.event.inputs.dry_run || 'false' }}"
+            DAYS_OLD="${{ github.event.inputs.days_old || '30' }}"
+            BATCH_SIZE="${{ github.event.inputs.batch_size || '100' }}"
+            VERBOSE="${{ github.event.inputs.verbose || 'true' }}"
+          fi
+          
+          echo "dry_run=$DRY_RUN" >> $GITHUB_OUTPUT
+          echo "days_old=$DAYS_OLD" >> $GITHUB_OUTPUT
+          echo "batch_size=$BATCH_SIZE" >> $GITHUB_OUTPUT
+          echo "verbose=$VERBOSE" >> $GITHUB_OUTPUT
+          
+          echo "🧹 Cleanup Configuration:"
+          echo "  - Dry Run: $DRY_RUN"
+          echo "  - Days Old: $DAYS_OLD"
+          echo "  - Batch Size: $BATCH_SIZE"
+          echo "  - Verbose: $VERBOSE"
+          echo "  - Trigger: ${{ github.event_name }}"
+
+      - name: Call Cleanup Edge Function
+        id: cleanup
+        run: |
+          # Build the request body
+          REQUEST_BODY=$(cat <<EOF
+          {
+            "days_old": ${{ steps.params.outputs.days_old }},
+            "batch_size": ${{ steps.params.outputs.batch_size }},
+            "dry_run": ${{ steps.params.outputs.dry_run }},
+            "verbose": ${{ steps.params.outputs.verbose }}
+          }
+          EOF
+          )
+          
+          echo "📡 Calling Supabase Edge Function..."
+          echo "Request body: $REQUEST_BODY"
+          
+          # Call the Edge Function
+          RESPONSE=$(curl -s -w "\n%{http_code}" \
+            -X POST "https://${{ secrets.SUPABASE_PROJECT_REF }}.supabase.co/functions/v1/cleanup-conversations" \
+            -H "Authorization: Bearer ${{ secrets.SUPABASE_ANON_KEY }}" \
+            -H "Content-Type: application/json" \
+            -d "$REQUEST_BODY")
+          
+          # Extract HTTP status code (last line) and response body (everything else)
+          HTTP_CODE=$(echo "$RESPONSE" | tail -n1)
+          RESPONSE_BODY=$(echo "$RESPONSE" | head -n -1)
+          
+          echo "HTTP Status: $HTTP_CODE"
+          echo "Response Body:"
+          echo "$RESPONSE_BODY" | jq '.' 2>/dev/null || echo "$RESPONSE_BODY"
+          
+          # Save response for next step
+          echo "$RESPONSE_BODY" > cleanup_result.json
+          echo "http_code=$HTTP_CODE" >> $GITHUB_OUTPUT
+          
+          # Check if request was successful
+          if [ "$HTTP_CODE" -eq 200 ]; then
+            echo "✅ Cleanup function executed successfully"
+          else
+            echo "❌ Cleanup function failed with HTTP $HTTP_CODE"
+            exit 1
+          fi
+
+      - name: Parse and Display Results
+        if: always()
+        run: |
+          if [ -f cleanup_result.json ]; then
+            echo "📊 Cleanup Results:"
+            
+            # Extract key information using jq
+            if command -v jq >/dev/null 2>&1; then
+              SUCCESS=$(jq -r '.success // "unknown"' cleanup_result.json)
+              TIMESTAMP=$(jq -r '.timestamp // "unknown"' cleanup_result.json)
+              SESSIONS_DELETED=$(jq -r '.result.sessions_deleted // 0' cleanup_result.json)
+              MESSAGES_DELETED=$(jq -r '.result.messages_deleted // 0' cleanup_result.json)
+              CONTEXTS_DELETED=$(jq -r '.result.contexts_deleted // 0' cleanup_result.json)
+              SCHEDULED_FOUND=$(jq -r '.scheduled_sessions_found // 0' cleanup_result.json)
+              
+              echo "  - Success: $SUCCESS"
+              echo "  - Timestamp: $TIMESTAMP"
+              echo "  - Sessions deleted: $SESSIONS_DELETED"
+              echo "  - Messages deleted: $MESSAGES_DELETED"
+              echo "  - Contexts deleted: $CONTEXTS_DELETED"
+              echo "  - Sessions scheduled for deletion: $SCHEDULED_FOUND"
+              
+              # Check if it was a dry run
+              DRY_RUN_MODE=$(jq -r '.result.cleanup_details.message // ""' cleanup_result.json | grep -i "dry run" || echo "")
+              if [ -n "$DRY_RUN_MODE" ]; then
+                echo "🧪 DRY RUN MODE - No actual deletions were performed"
+              fi
+              
+              # Display full result if verbose
+              if [ "${{ steps.params.outputs.verbose }}" = "true" ]; then
+                echo ""
+                echo "📋 Full Response:"
+                jq '.' cleanup_result.json
+              fi
+            else
+              echo "Raw response (jq not available):"
+              cat cleanup_result.json
+            fi
+          else
+            echo "❌ No cleanup result file found"
+          fi
+
+      - name: Check Cleanup Status
+        if: always()
+        run: |
+          if [ "${{ steps.cleanup.outputs.http_code }}" = "200" ]; then
+            echo "🎉 Conversation cleanup completed successfully!"
+            
+            # Set a summary for the GitHub Actions summary
+            cat >> $GITHUB_STEP_SUMMARY << 'EOF'
+          ## 🧹 Conversation Cleanup Results
+          
+          ✅ **Status**: Success  
+          📅 **Run Time**: $(date -u)  
+          🔧 **Trigger**: ${{ github.event_name }}  
+          
+          ### Configuration
+          - **Days Old**: ${{ steps.params.outputs.days_old }}
+          - **Batch Size**: ${{ steps.params.outputs.batch_size }}
+          - **Dry Run**: ${{ steps.params.outputs.dry_run }}
+          - **Verbose**: ${{ steps.params.outputs.verbose }}
+          
+          EOF
+            
+            if [ -f cleanup_result.json ] && command -v jq >/dev/null 2>&1; then
+              SESSIONS_DELETED=$(jq -r '.result.sessions_deleted // 0' cleanup_result.json)
+              MESSAGES_DELETED=$(jq -r '.result.messages_deleted // 0' cleanup_result.json)
+              SCHEDULED_FOUND=$(jq -r '.scheduled_sessions_found // 0' cleanup_result.json)
+              
+              cat >> $GITHUB_STEP_SUMMARY << EOF
+          ### Results
+          - **Sessions Deleted**: $SESSIONS_DELETED
+          - **Messages Deleted**: $MESSAGES_DELETED
+          - **Sessions Scheduled for Deletion**: $SCHEDULED_FOUND
+          
+          EOF
+            fi
+          else
+            echo "❌ Conversation cleanup failed!"
+            echo "::error::Cleanup function returned HTTP ${{ steps.cleanup.outputs.http_code }}"
+            
+            cat >> $GITHUB_STEP_SUMMARY << 'EOF'
+          ## ❌ Conversation Cleanup Failed
+          
+          The cleanup function returned an error. Check the logs above for details.
+          
+          EOF
+            
+            exit 1
+          fi
+
+# Workflow security note:
+# This workflow requires the following secrets to be set in your GitHub repository:
+# - SUPABASE_PROJECT_REF: Your Supabase project reference ID
+# - SUPABASE_ANON_KEY: Your Supabase anonymous key
+#
+# To set these secrets:
+# 1. Go to your GitHub repository
+# 2. Click Settings → Secrets and variables → Actions
+# 3. Click "New repository secret"
+# 4. Add both secrets with their respective values 

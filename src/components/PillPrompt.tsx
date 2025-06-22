@@ -104,7 +104,13 @@ export const PillPrompt: React.FC<PillPromptProps> = ({
         disabled={disabled}
         activeOpacity={0.8}
       >
-        <Text style={textStyle}>{text}</Text>
+        <Text 
+          style={textStyle}
+          numberOfLines={2}
+          ellipsizeMode="tail"
+        >
+          {text}
+        </Text>
       </TouchableOpacity>
     </Animated.View>
   );
@@ -113,20 +119,26 @@ export const PillPrompt: React.FC<PillPromptProps> = ({
 const styles = StyleSheet.create({
   container: {
     marginBottom: 8,
-    alignSelf: 'flex-start',
+    alignSelf: 'stretch',
+    marginHorizontal: 16,
   },
   pill: {
     paddingHorizontal: 16,
-    paddingVertical: 10,
+    paddingVertical: 12,
     borderRadius: 20,
     borderWidth: 1,
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.05,
     shadowRadius: 2,
     elevation: 1,
+    minHeight: 44,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   text: {
     fontSize: 14,
     fontWeight: '500',
+    textAlign: 'center',
+    lineHeight: 18,
   },
 });
