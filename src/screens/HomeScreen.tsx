@@ -78,6 +78,7 @@ export const HomeScreen: React.FC = () => {
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(30)).current;
   const aiPromptsAnim = useRef(new Animated.Value(0)).current;
+  const spinAnim = useRef(new Animated.Value(0)).current;
 
   // Rename modal state
   const [isRenameModalVisible, setIsRenameModalVisible] = useState(false);
@@ -183,6 +184,17 @@ export const HomeScreen: React.FC = () => {
     if (isLoadingMore) return;
     
     setIsLoadingMore(true);
+    
+    // Start spinning animation
+    const spinLoop = Animated.loop(
+      Animated.timing(spinAnim, {
+        toValue: 1,
+        duration: 1000,
+        useNativeDriver: true,
+      })
+    );
+    spinLoop.start();
+    
     try {
       if (!user?.id || !personalizationData) {
         console.log('❌ Missing user ID or personalization data for AI prompts');
@@ -208,6 +220,9 @@ export const HomeScreen: React.FC = () => {
       }
     } finally {
       setIsLoadingMore(false);
+      // Stop spinning animation and reset
+      spinLoop.stop();
+      spinAnim.setValue(0);
     }
   };
 
@@ -394,25 +409,29 @@ export const HomeScreen: React.FC = () => {
                   {/* Load More Icon */}
                   {morePrompts.length === 0 && (
                     <View style={styles.loadMoreContainer}>
-                      <Animated.View style={{ opacity: isLoadingMore ? 0 : 1 }}>
-                        <TouchableOpacity 
-                          style={styles.loadMoreIcon}
-                          onPress={handleLoadMore}
-                          disabled={isLoadingMore}
-                        >
+                      <TouchableOpacity 
+                        style={styles.loadMoreIcon}
+                        onPress={handleLoadMore}
+                        disabled={isLoadingMore}
+                      >
+                        <Animated.View style={{
+                          transform: [{
+                            rotate: spinAnim.interpolate({
+                              inputRange: [0, 1],
+                              outputRange: ['0deg', '360deg']
+                            })
+                          }]
+                        }}>
                           <Image 
                             source={require('../../media/icons/loadMoreSugeestionsIcon_lightmode.png')}
-                            style={styles.loadMoreIconImage}
+                            style={[
+                              styles.loadMoreIconImage,
+                              { opacity: isLoadingMore ? 0.7 : 1 }
+                            ]}
                             resizeMode="contain"
                           />
-                        </TouchableOpacity>
-                      </Animated.View>
-                      
-                      {isLoadingMore && (
-                        <Animated.View style={[styles.loadMoreSpinner, { opacity: isLoadingMore ? 1 : 0 }]}>
-                          <ActivityIndicator size="small" color={theme.semanticColors.accent} />
                         </Animated.View>
-                      )}
+                      </TouchableOpacity>
                     </View>
                   )}
                   

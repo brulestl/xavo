@@ -14,7 +14,7 @@ export default function OnboardingLoginChoice() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
-  const [oauthLoading, setOauthLoading] = useState<'google' | 'linkedin' | null>(null);
+  const [oauthLoading, setOauthLoading] = useState<'google' | null>(null);
 
   const handleContinue = async () => {
     if (!email.trim() || !password.trim()) {
@@ -88,48 +88,6 @@ export default function OnboardingLoginChoice() {
     }
   };
 
-  const handleLinkedInAuth = async () => {
-    console.log('Starting LinkedIn OAuth from OnboardingLoginChoice screen...');
-    setOauthLoading('linkedin');
-    
-    try {
-      const { error } = await signInWithOAuth('linkedin');
-      if (error) {
-        console.error('LinkedIn OAuth error details:', {
-          message: error.message,
-          status: error.status,
-          name: error.name
-        });
-        
-        // Handle specific OAuth errors
-        let errorMessage = error.message;
-        if (error.message.includes('popup_closed_by_user') || error.message.includes('cancelled')) {
-          errorMessage = 'Sign-in was cancelled. Please try again.';
-        } else if (error.message.includes('access_denied')) {
-          errorMessage = 'Access was denied. Please grant permission to continue.';
-        } else if (error.message.includes('network') || error.message.includes('fetch')) {
-          errorMessage = 'Network error. Please check your internet connection and try again.';
-        } else if (error.message.includes('Invalid login credentials')) {
-          errorMessage = 'LinkedIn authentication failed. Please check your LinkedIn account settings.';
-        }
-        
-        Alert.alert('LinkedIn Sign-In Error', `${errorMessage}\n\nDebug info: ${error.message}`);
-      } else {
-        // Success - let AuthProvider/App.tsx handle navigation based on auth state
-        console.log('LinkedIn OAuth successful from OnboardingLoginChoice screen - auth state will trigger navigation');
-      }
-    } catch (error) {
-      console.error('LinkedIn OAuth error:', error);
-      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-      Alert.alert(
-        'LinkedIn Sign-In Failed', 
-        `Unable to sign in with LinkedIn. Please try again or use email/password.\n\nError: ${errorMessage}`
-      );
-    } finally {
-      setOauthLoading(null);
-    }
-  };
-
   const isFormDisabled = loading || oauthLoading !== null;
 
   return (
@@ -190,15 +148,6 @@ export default function OnboardingLoginChoice() {
       >
         <Text style={styles.socialText}>
           {oauthLoading === 'google' ? 'Signing in with Google...' : 'Continue with Google'}
-        </Text>
-      </TouchableOpacity>
-      <TouchableOpacity 
-        style={[styles.social, { opacity: isFormDisabled ? 0.6 : 1 }]} 
-        onPress={handleLinkedInAuth}
-        disabled={isFormDisabled}
-      >
-        <Text style={styles.socialText}>
-          {oauthLoading === 'linkedin' ? 'Signing in with LinkedIn...' : 'Continue with LinkedIn'}
         </Text>
       </TouchableOpacity>
     </View>
