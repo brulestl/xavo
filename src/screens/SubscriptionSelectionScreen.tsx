@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   View,
   Text,
@@ -6,12 +6,16 @@ import {
   ScrollView,
   TouchableOpacity,
   Dimensions,
+  ActivityIndicator,
+  Alert,
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../providers/ThemeProvider';
+import { useAuth } from '../providers/AuthProvider';
 import { Container } from '../components/Container';
 import { Button } from '../components/Button';
+import usePurchases from '../hooks/usePurchases';
 
 const { width } = Dimensions.get('window');
 
@@ -29,52 +33,111 @@ interface SubscriptionPlan {
   features: PlanFeature[];
   recommended?: boolean;
   buttonText: string;
+  packageId?: string;
 }
 
-const subscriptionPlans: SubscriptionPlan[] = [
-  {
-    id: 'strategist',
-    name: 'Strategist',
-    price: '$29',
-    period: '/month',
-    description: 'Perfect for emerging leaders',
-    features: [
-      { text: 'Unlimited coaching conversations', included: true },
-      { text: 'Personalized leadership insights', included: true },
-      { text: 'Weekly progress reports', included: true },
-      { text: 'Email support', included: true },
-      { text: 'Advanced analytics', included: false },
-      { text: 'Priority support', included: false },
-    ],
-    buttonText: 'Start Free Trial',
-  },
-  {
-    id: 'shark',
-    name: 'Shark',
-    price: '$79',
-    period: '/month',
-    description: 'For executive-level professionals',
-    features: [
-      { text: 'Everything in Strategist', included: true },
-      { text: 'Advanced analytics & insights', included: true },
-      { text: 'Priority support', included: true },
-      { text: 'Custom coaching scenarios', included: true },
-      { text: 'Executive-level strategies', included: true },
-      { text: '1-on-1 coaching sessions', included: true },
-    ],
-    recommended: true,
-    buttonText: 'Start Free Trial',
-  },
-];
+const getSubscriptionPlans = (packages: any[]): SubscriptionPlan[] => {
+  const monthlyPackage = packages.find(pkg => 
+    pkg.product.identifier.includes('monthly')
+  );
+  const yearlyPackage = packages.find(pkg => 
+    pkg.product.identifier.includes('yearly')
+  );
+
+  return [
+    {
+      id: 'strategist_monthly',
+      name: 'Power Strategist',
+      price: monthlyPackage?.product.priceString || '$29',
+      period: '/month',
+      description: 'Perfect for emerging leaders',
+      features: [
+        { text: 'Unlimited coaching conversations', included: true },
+        { text: 'Personalized leadership insights', included: true },
+        { text: 'Advanced AI coaching', included: true },
+        { text: 'Progress tracking', included: true },
+        { text: 'Voice message support', included: true },
+        { text: 'Priority support', included: true },
+      ],
+      buttonText: 'Start Free Trial',
+      packageId: monthlyPackage?.identifier,
+    },
+    {
+      id: 'strategist_yearly',
+      name: 'Power Strategist',
+      price: yearlyPackage?.product.priceString || '$299',
+      period: '/year',
+      description: 'Best value - Save 33%',
+      features: [
+        { text: 'Everything in monthly plan', included: true },
+        { text: 'Save 33% compared to monthly', included: true },
+        { text: 'Advanced analytics & insights', included: true },
+        { text: 'Custom coaching scenarios', included: true },
+        { text: 'Executive-level strategies', included: true },
+        { text: '1-on-1 coaching sessions', included: true },
+      ],
+      recommended: true,
+      buttonText: 'Start Free Trial',
+      packageId: yearlyPackage?.identifier,
+    },
+  ];
+};
 
 export const SubscriptionSelectionScreen: React.FC = () => {
   const navigation = useNavigation();
   const { theme } = useTheme();
+  const { user, markOnboardingComplete } = useAuth();
+  const [subscriptionPlans, setSubscriptionPlans] = useState<SubscriptionPlan[]>([]);
+  
+  const {
+    isLoading,
+    isPurchasing,
+    isRestoring,
+    packages,
+    isSubscribed,
+    purchasePackage,
+    restorePurchases,
+    getPackage,
+  } = usePurchases(user?.id);
 
-  const handlePlanSelect = (planId: string) => {
-    // Mock subscription selection - for now just navigate to dashboard
-    console.log('Selected plan:', planId);
-    (navigation as any).navigate('Main');
+  useEffect(() => {
+    if (packages.length > 0) {
+      const plans = getSubscriptionPlans(packages);
+      setSubscriptionPlans(plans);
+    }
+  }, [packages]);
+
+  const handlePlanSelect = async (plan: SubscriptionPlan) => {
+    if (!plan.packageId) {
+      Alert.alert(
+        'Package Not Available',
+        'This subscription package is currently not available. Please try again later.',
+        [{ text: 'OK' }]
+      );
+      return;
+    }
+
+    const packageToBuy = getPackage(plan.packageId);
+    if (!packageToBuy) {
+      Alert.alert(
+        'Package Not Found',
+        'Could not find the selected subscription package. Please try again.',
+        [{ text: 'OK' }]
+      );
+      return;
+    }
+
+    try {
+      const result = await purchasePackage(packageToBuy);
+      if (result) {
+        // Purchase successful, mark onboarding as complete and navigate
+        await markOnboardingComplete();
+        (navigation as any).navigate('Main');
+      }
+    } catch (error) {
+      // Error handling is done in the usePurchases hook
+      console.error('Purchase error:', error);
+    }
   };
 
   const handleSkip = () => {
@@ -143,10 +206,11 @@ export const SubscriptionSelectionScreen: React.FC = () => {
       </View>
 
       <Button
-        title={plan.buttonText}
-        onPress={() => handlePlanSelect(plan.id)}
+        title={isPurchasing ? 'Processing...' : plan.buttonText}
+        onPress={() => handlePlanSelect(plan)}
         variant={plan.recommended ? 'cta' : 'outline'}
         style={styles.planButton}
+        disabled={isPurchasing || isLoading}
       />
     </View>
   );

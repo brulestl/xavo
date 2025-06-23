@@ -212,54 +212,13 @@ export const HomeScreen: React.FC = () => {
     console.log('Upload pressed');
   };
 
-  // VOICE RECORDING RESURRECTION - FIX: Implement proper voice recording
+  // VOICE RECORDING DISABLED - Remove permission issues  
   const handleVoiceNote = async () => {
-    if (isRecording) {
-      // Stop recording
-      setIsRecording(false);
-      console.log('🎙️ Stopping voice recording');
-      
-      // If we have transcription, send it as a message
-      if (transcription.trim()) {
-        await handleSendMessage(transcription);
-        setTranscription('');
-      }
-    } else {
-      // Start recording
-      setIsRecording(true);
-      setTranscription('');
-      console.log('🎙️ Starting voice recording');
-      
-      // Simulate live transcription (replace with actual service)
-      simulateVoiceTranscription();
-    }
-  };
-
-  // Simulate voice transcription with live updates
-  const simulateVoiceTranscription = () => {
-    const phrases = [
-      'I need help with',
-      'managing a difficult situation',
-      'at work where my colleague',
-      'keeps taking credit for my ideas',
-      'and I want to address this professionally'
-    ];
-    
-    let currentIndex = 0;
-    
-    const addPhrase = () => {
-      if (currentIndex < phrases.length && isRecording) {
-        setTranscription(prev => {
-          const newText = prev ? `${prev} ${phrases[currentIndex]}` : phrases[currentIndex];
-          return newText;
-        });
-        currentIndex++;
-        setTimeout(addPhrase, 800);
-      }
-    };
-    
-    // Start transcription after a brief delay
-    setTimeout(addPhrase, 500);
+    Alert.alert(
+      'Voice Recording', 
+      'Voice recording feature will be available in the next update.',
+      [{ text: 'OK' }]
+    );
   };
 
   const handleNavigateToSubscriptions = () => {

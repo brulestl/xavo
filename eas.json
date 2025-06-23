@@ -10,8 +10,7 @@
         "resourceClass": "m-medium"
       },
       "android": {
-        "buildType": "developmentBuild",
-        "gradleCommand": ":app:assembleDevelopmentDebug"
+        "buildType": "apk"
       }
     },
     "preview": {
@@ -44,14 +43,6 @@
         "serviceAccountKeyPath": "../path/to/api-key.json",
         "track": "internal"
       }
-    }
-  },
-  "update": {
-    "ui-preview": {
-      "channel": "ui-preview"
-    },
-    "production": {
-      "channel": "production"
     }
   }
 } 

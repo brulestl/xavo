@@ -1,7 +1,7 @@
 {
-  "name": "corporate-influence-coach-api",
+  "name": "xavo-api",
   "version": "1.0.0",
-  "description": "API Gateway for Corporate Influence Coach - handles chat routing and authentication",
+  "description": "API Gateway for Xavo - handles chat routing and authentication",
   "main": "dist/main.js",
   "scripts": {
     "build": "tsc",

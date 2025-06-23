@@ -6,6 +6,7 @@ import { useTheme } from '../providers/ThemeProvider';
 import { useAuth } from '../providers/AuthProvider';
 import { supabase } from '../lib/supabase';
 import { Audio } from 'expo-av';
+import Constants from 'expo-constants';
 
 interface ComposerProps {
   onSend: (message: string) => void;
@@ -18,6 +19,9 @@ interface ComposerProps {
   isRecording?: boolean;
   liveTranscription?: string;
 }
+
+// Add this constant at the top after imports
+const IS_EXPO_GO = __DEV__ && !Constants.appOwnership;
 
 export const Composer: React.FC<ComposerProps> = ({
   onSend,
@@ -80,102 +84,15 @@ export const Composer: React.FC<ComposerProps> = ({
     }
   };
 
-  // RESTORE VOICE TRANSCRIPTION - REAL IMPLEMENTATION
-  const startRecording = async () => {
-    try {
-      // Request permissions
-      if (Platform.OS === 'android') {
-        const granted = await PermissionsAndroid.request(
-          PermissionsAndroid.PERMISSIONS.RECORD_AUDIO,
-          {
-            title: 'Audio Recording Permission',
-            message: 'This app needs access to your microphone to record voice messages.',
-            buttonNeutral: 'Ask Me Later',
-            buttonNegative: 'Cancel',
-            buttonPositive: 'OK',
-          }
-        );
-        if (granted !== PermissionsAndroid.RESULTS.GRANTED) {
-          Alert.alert('Permission Denied', 'Microphone permission is required for voice recording.');
-          return;
-        }
-      } else {
-        const permission = await Audio.requestPermissionsAsync();
-        if (permission.status !== 'granted') {
-          Alert.alert('Permission Denied', 'Microphone permission is required for voice recording.');
-          return;
-        }
-      }
-
-      await Audio.setAudioModeAsync({
-        allowsRecordingIOS: true,
-        playsInSilentModeIOS: true,
-      });
-
-      const { recording } = await Audio.Recording.createAsync(
-        Audio.RecordingOptionsPresets.HIGH_QUALITY
-      );
-      
-      setLocalRecording(recording);
-      setLocalIsRecording(true);
-      setLocalLiveTranscription('');
-      
-      // Start live transcription
-      startLiveTranscription();
-
-    } catch (err) {
-      console.error('Failed to start recording', err);
-      Alert.alert('Recording Failed', 'Failed to start voice recording.');
-    }
-  };
-
-  const stopRecording = async () => {
-    try {
-      if (!localRecording) return;
-      
-      setLocalIsRecording(false);
-      await localRecording.stopAndUnloadAsync();
-      
-      const uri = localRecording.getURI();
-      setLocalRecording(null);
-      
-      // If we have transcription, add it to input
-      if (localLiveTranscription.trim()) {
-        const newText = message ? `${message} ${localLiveTranscription}` : localLiveTranscription;
-        setMessage(newText);
-        setLocalLiveTranscription('');
-      }
-      
-      console.log('Recording saved to', uri);
-    } catch (error) {
-      console.error('Failed to stop recording', error);
-    }
-  };
-
-  // Live transcription simulation - replace with real service
-  const startLiveTranscription = () => {
-    const words = ['Let me', 'think about', 'this situation', 'carefully', 'and provide', 'a thoughtful', 'response'];
-    let currentIndex = 0;
-    
-    const addWord = () => {
-      if (currentIndex < words.length && localIsRecording) {
-        setLocalLiveTranscription(prev => prev ? `${prev} ${words[currentIndex]}` : words[currentIndex]);
-        currentIndex++;
-        setTimeout(addWord, 500);
-      }
-    };
-    
-    setTimeout(addWord, 300);
-  };
-
+  // VOICE RECORDING DISABLED - Remove permission issues
   const handleVoiceRecording = async () => {
     if (disabled) return;
-
-    if (!localIsRecording) {
-      await startRecording();
-    } else {
-      await stopRecording();
-    }
+    
+    Alert.alert(
+      'Voice Recording', 
+      'Voice recording feature will be available in the next update.',
+      [{ text: 'OK' }]
+    );
   };
 
   const handleFileUpload = async () => {

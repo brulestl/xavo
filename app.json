@@ -1,7 +1,7 @@
 {
   "expo": {
-    "name": "Corporate Influence Coach",
-    "slug": "influence",
+    "name": "Xavo",
+    "slug": "xavo",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
@@ -21,14 +21,16 @@
     },
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.xavo.influence",
+      "bundleIdentifier": "com.xavo.app",
       "infoPlist": {
         "CFBundleURLTypes": [
           {
             "CFBundleURLName": "xavo-auth",
             "CFBundleURLSchemes": ["xavo"]
           }
-        ]
+        ],
+        "NSMicrophoneUsageDescription": "Xavo uses your microphone to record voice messages for AI coaching conversations.",
+        "NSCameraUsageDescription": "Xavo uses your camera to capture photos for sharing context with your AI coach."
       }
     },
     "android": {
@@ -36,11 +38,13 @@
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#ffffff"
       },
-      "package": "com.xavo.influence",
+      "package": "com.xavo.app",
       "versionCode": 1,
       "permissions": [
         "READ_EXTERNAL_STORAGE",
-        "WRITE_EXTERNAL_STORAGE"
+        "WRITE_EXTERNAL_STORAGE",
+        "RECORD_AUDIO",
+        "CAMERA"
       ],
       "intentFilters": [
         {
@@ -60,11 +64,12 @@
     "web": {
       "favicon": "./assets/favicon.png"
     },
-    "description": "AI-powered corporate influence coaching app",
+    "description": "AI-powered coaching app",
     "plugins": [
       "expo-secure-store",
       "expo-web-browser",
-      "expo-document-picker"
+      "expo-document-picker",
+      "expo-camera"
     ],
     "extra": {
       "eas": {

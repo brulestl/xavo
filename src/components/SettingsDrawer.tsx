@@ -40,43 +40,50 @@ export const SettingsDrawer: React.FC<SettingsDrawerProps> = ({
   const [tempDisplayName, setTempDisplayName] = useState(displayName);
   const [saving, setSaving] = useState(false);
 
-  // Animation setup with NATIVE DRIVER
-  const slideAnim = useRef(new Animated.Value(0)).current;
-  const fadeAnim = useRef(new Animated.Value(0)).current;
-  const [shouldRender, setShouldRender] = useState(isVisible);
+  // Animation setup with NATIVE DRIVER - Initialize based on isVisible
+  const slideAnim = useRef(new Animated.Value(isVisible ? 1 : 0)).current;
+  const fadeAnim = useRef(new Animated.Value(isVisible ? 1 : 0)).current;
 
   React.useEffect(() => {
+    console.log('🔧 SettingsDrawer useEffect triggered - isVisible:', isVisible);
+    
     if (isVisible) {
-      setShouldRender(true);
+      // Reset animation values and start show animation
+      slideAnim.setValue(0);
+      fadeAnim.setValue(0);
+      
       Animated.parallel([
         Animated.timing(slideAnim, {
           toValue: 1,
           duration: 250,
-          useNativeDriver: true, // NATIVE DRIVER - UNAFFECTED BY LAYOUT CHANGES
+          useNativeDriver: true,
         }),
         Animated.timing(fadeAnim, {
           toValue: 1,
           duration: 250,
-          useNativeDriver: true, // NATIVE DRIVER - UNAFFECTED BY LAYOUT CHANGES
-        }),
-      ]).start();
-    } else {
-      Animated.parallel([
-        Animated.timing(slideAnim, {
-          toValue: 0,
-          duration: 250,
-          useNativeDriver: true, // NATIVE DRIVER - UNAFFECTED BY LAYOUT CHANGES
-        }),
-        Animated.timing(fadeAnim, {
-          toValue: 0,
-          duration: 250,
-          useNativeDriver: true, // NATIVE DRIVER - UNAFFECTED BY LAYOUT CHANGES
+          useNativeDriver: true,
         }),
       ]).start(() => {
-        setShouldRender(false);
+        console.log('🔧 SettingsDrawer show animation completed');
+      });
+    } else {
+      // Start hide animation
+      Animated.parallel([
+        Animated.timing(slideAnim, {
+          toValue: 0,
+          duration: 250,
+          useNativeDriver: true,
+        }),
+        Animated.timing(fadeAnim, {
+          toValue: 0,
+          duration: 250,
+          useNativeDriver: true,
+        }),
+      ]).start(() => {
+        console.log('🔧 SettingsDrawer hide animation completed');
       });
     }
-  }, [isVisible]);
+  }, [isVisible, slideAnim, fadeAnim]);
 
   // Sync tempDisplayName with displayName from auth
   React.useEffect(() => {
@@ -104,12 +111,12 @@ export const SettingsDrawer: React.FC<SettingsDrawerProps> = ({
           Animated.timing(slideAnim, {
             toValue: 1,
             duration: 150,
-            useNativeDriver: true, // NATIVE DRIVER - UNAFFECTED BY LAYOUT CHANGES
+            useNativeDriver: true,
           }),
           Animated.timing(fadeAnim, {
             toValue: 1,
             duration: 150,
-            useNativeDriver: true, // NATIVE DRIVER - UNAFFECTED BY LAYOUT CHANGES
+            useNativeDriver: true,
           }),
         ]).start();
       }
@@ -148,10 +155,11 @@ export const SettingsDrawer: React.FC<SettingsDrawerProps> = ({
   // FIXED TRANSLATION CALCULATION
   const translateX = slideAnim.interpolate({
     inputRange: [0, 1],
-    outputRange: [SCREEN_WIDTH * 0.75, 0], // FIXED CALCULATION
+    outputRange: [SCREEN_WIDTH * 0.75, 0], // Slide in from right
   });
 
-  if (!shouldRender) return null;
+  // Don't render if not visible - simplified logic
+  if (!isVisible) return null;
 
   return (
     <Animated.View

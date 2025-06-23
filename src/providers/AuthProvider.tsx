@@ -6,6 +6,7 @@ import * as WebBrowser from 'expo-web-browser';
 import { Platform } from 'react-native';
 import 'react-native-url-polyfill/auto';
 import { supabase } from '../lib/supabase';
+import purchasesService from '../services/purchasesService';
 
 // Complete the auth session for web browsers
 WebBrowser.maybeCompleteAuthSession();
@@ -146,6 +147,15 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         return;
       }
 
+      // Initialize RevenueCat for authenticated users
+      try {
+        await purchasesService.initialize(userId);
+        console.log('✅ RevenueCat initialized for user:', userId);
+      } catch (error) {
+        console.error('❌ Failed to initialize RevenueCat:', error);
+        // Don't block user experience if RevenueCat fails
+      }
+
       // Load cached onboarding status immediately for better UX
       const cachedOnboardingStatus = await loadCachedOnboardingStatus(userId);
       setHasCompletedOnboarding(cachedOnboardingStatus);
@@ -158,7 +168,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
                           'User';
       setDisplayName(fallbackName);
       
-      // Set tier immediately (non-blocking)
+      // Set tier immediately (now includes subscription check)
       const userTier = await getTierForUser(userId);
       setTier(userTier);
 
@@ -235,16 +245,34 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     } catch (error) {
       console.error('❌ Error initializing user data:', error);
       // Keep cached status if available, otherwise set to false
-      const cachedStatus = await loadCachedOnboardingStatus(userId).catch(() => false);
-      setHasCompletedOnboarding(cachedStatus);
+      try {
+        const cachedStatus = await loadCachedOnboardingStatus(userId);
+        setHasCompletedOnboarding(cachedStatus);
+      } catch (error) {
+        console.error('Error loading cached onboarding status:', error);
+        setHasCompletedOnboarding(false);
+      }
     }
   };
 
   const getTierForUser = async (userId: string): Promise<Tier> => {
+    // Check for admin users first
     if (user?.email?.includes('shark')) {
       return 'shark';
     }
-    return 'strategist';
+
+    // Check RevenueCat subscription status
+    try {
+      const hasSubscription = await purchasesService.hasPowerStrategistSubscription();
+      if (hasSubscription) {
+        return 'shark'; // Power Strategist tier
+      }
+    } catch (error) {
+      console.error('❌ Failed to check subscription status:', error);
+      // Fall back to default tier if RevenueCat check fails
+    }
+
+    return 'strategist'; // Default tier
   };
 
   useEffect(() => {
