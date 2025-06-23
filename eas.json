@@ -37,11 +37,13 @@
       "ios": {
         "appleId": "your-apple-id@example.com",
         "ascAppId": "1234567890",
-        "appleTeamId": "ABCDE12345"
+        "appleTeamId": "ABCDE12345",
+        "metadataPath": "./store.json"
       },
       "android": {
         "serviceAccountKeyPath": "../path/to/api-key.json",
-        "track": "internal"
+        "track": "internal",
+        "metadataPath": "./store.json"
       }
     }
   }

@@ -10,6 +10,7 @@ import {
   PanResponder,
   Animated,
   ScrollView,
+  Linking,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../providers/ThemeProvider';
@@ -149,6 +150,15 @@ export const SettingsDrawer: React.FC<SettingsDrawerProps> = ({
     } catch (error) {
       console.error('❌ Error during sign out:', error);
       Alert.alert('Error', 'Failed to sign out. Please try again.');
+    }
+  };
+
+  const handlePrivacyPolicy = async () => {
+    try {
+      await Linking.openURL('https://xavo.app/privacy');
+    } catch (error) {
+      console.error('❌ Error opening privacy policy:', error);
+      Alert.alert('Error', 'Unable to open privacy policy. Please try again.');
     }
   };
 
@@ -321,6 +331,32 @@ export const SettingsDrawer: React.FC<SettingsDrawerProps> = ({
               </Text>
               <Ionicons
                 name="chevron-forward"
+                size={16}
+                color={theme.semanticColors.textSecondary}
+              />
+            </TouchableOpacity>
+          </View>
+
+          {/* Legal */}
+          <View style={styles.section}>
+            <Text style={[styles.sectionTitle, { color: theme.semanticColors.textPrimary }]}>
+              Legal
+            </Text>
+            
+            <TouchableOpacity
+              style={[styles.actionButton, { borderColor: theme.semanticColors.border }]}
+              onPress={handlePrivacyPolicy}
+            >
+              <Ionicons
+                name="shield-outline"
+                size={20}
+                color={theme.semanticColors.textPrimary}
+              />
+              <Text style={[styles.actionButtonText, { color: theme.semanticColors.textPrimary }]}>
+                Privacy Policy
+              </Text>
+              <Ionicons
+                name="open-outline"
                 size={16}
                 color={theme.semanticColors.textSecondary}
               />

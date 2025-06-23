@@ -18,7 +18,9 @@
     "deploy:chat": "supabase functions deploy chat",
     "deploy:sessions": "supabase functions deploy sessions",
     "functions:logs": "supabase functions logs --follow",
-    "functions:setup": "supabase link --project-ref wdhmlynmbrhunizbdhdt"
+    "functions:setup": "supabase link --project-ref wdhmlynmbrhunizbdhdt",
+    "metadata:validate": "node scripts/validate-metadata.js",
+    "metadata:release-notes": "node scripts/generate-release-notes.js"
   },
   "dependencies": {
     "@amplitude/analytics-react-native": "^1.4.13",

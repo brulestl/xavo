@@ -105,7 +105,7 @@ export const AttachmentMenu: React.FC<AttachmentMenuProps> = ({
                 borderColor: theme.semanticColors.border,
                 transform: [{ scale: scaleAnim }],
                 opacity: opacityAnim,
-                bottom: 120, // Position above the composer
+                bottom: 110, // Position above the composer
                 right: 20,
               },
             ]}
@@ -144,13 +144,7 @@ export const AttachmentMenu: React.FC<AttachmentMenuProps> = ({
               ))}
             </View>
 
-            {/* Arrow pointing down to the attach button */}
-            <View
-              style={[
-                styles.arrow,
-                { borderTopColor: theme.semanticColors.surface },
-              ]}
-            />
+
           </Animated.View>
         </View>
       </TouchableWithoutFeedback>
@@ -172,7 +166,6 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.15,
     shadowRadius: 8,
     elevation: 8,
-    overflow: 'visible',
   },
   menuContent: {
     borderRadius: 12,
@@ -198,16 +191,5 @@ const styles = StyleSheet.create({
     fontWeight: '500',
     flex: 1,
   },
-  arrow: {
-    position: 'absolute',
-    bottom: -8,
-    right: 24,
-    width: 0,
-    height: 0,
-    borderLeftWidth: 8,
-    borderRightWidth: 8,
-    borderTopWidth: 8,
-    borderLeftColor: 'transparent',
-    borderRightColor: 'transparent',
-  },
+
 }); 

@@ -1,0 +1,52 @@
+{
+  "configVersion": 0,
+  "apple": {
+    "info": {
+      "en-US": {
+        "title": "Xavo - AI Corporate Coach",
+        "subtitle": "AI-powered corporate coach",
+        "description": "Xavo is your AI-powered corporate coach, designed to help you navigate complex workplace dynamics and advance your career. Get personalized guidance on office politics, strategic communication, and professional development.\n\nKey Features:\n• AI-powered coaching conversations\n• Personalized career guidance\n• Workplace strategy insights\n• Professional development tools\n• Confidential and secure\n\nWhether you're dealing with difficult colleagues, preparing for a promotion, or navigating organizational changes, Xavo provides expert guidance tailored to your specific situation. Our AI coach learns from your interactions to provide increasingly personalized advice.\n\nPerfect for ambitious professionals who want to:\n- Excel in corporate environments\n- Build stronger workplace relationships\n- Develop strategic thinking skills\n- Advance their careers faster\n- Handle challenging workplace situations\n\nYour conversations are completely private and secure. Start your journey to corporate success with Xavo today.",
+        "keywords": [
+          "corporate coaching",
+          "career development",
+          "office politics",
+          "AI coach",
+          "leadership"
+        ],
+        "releaseNotes": "✨ New Features:\n• Make OpenAI temperature configurable via OPENAI_TEMPERATURE environment variable - Updated all OpenAI API calls to use configurable temperature (default 0.7) instead of hardcoded values for increased creative flexibility\n• Complete ChatGPT-style streaming chat with persistent conversations - Real-time streaming, session management, conversation history drawer, platform-aware APIs, comprehensive error handling, and database persistence ready\n• Complete onboarding data integration to Supabase - Fixed PersonalityQuizScreen question mapping to use correct question_code column - Updated all components to use centralized Supabase client - Implemented proper fallback logic for web environments - Added runtime guards for missing credentials - Replaced legacy API calls with direct Supabase RPC functions - Enhanced error handling and loading states throughout onboarding flow\n\n🔧 Improvements:\n• Remove sensitive API keys and update .gitignore\n\n🐛 Bug Fixes:\n• 🔧 Fix monitoring services and module resolution issues\n• 🚀 Major refactor: Rebrand to Xavo, fix audio permissions, implement RevenueCat IAP\n• Fix OAuth authentication and Expo updates configuration\n• Fix file upload icons, Android OAuth, navigation errors, and polyfills\n\n📋 Other Changes:\n• 🚀 Implement comprehensive file upload system with AI analysis\n• Save current progress before rebuilding Android config",
+        "marketingUrl": "https://xavo.app",
+        "supportUrl": "https://xavo.app/support",
+        "privacyPolicyUrl": "https://xavo.app/privacy"
+      }
+    },
+    "categories": {
+      "primary": "BUSINESS",
+      "secondary": "PRODUCTIVITY"
+    },
+    "contentRights": {
+      "containsThirdPartyContent": false,
+      "usesEncryption": true
+    }
+  },
+  "googlePlay": {
+    "info": {
+      "en-US": {
+        "title": "Xavo - AI Corporate Coach",
+        "shortDescription": "AI-powered corporate coaching for career advancement and success.",
+        "fullDescription": "🚀 Advance Your Corporate Career with AI-Powered Coaching\n\nXavo is your personal AI corporate coach, designed to help ambitious professionals navigate complex workplace dynamics and accelerate their career growth.\n\n✨ KEY FEATURES:\n• Personalized AI coaching conversations\n• Strategic workplace guidance\n• Office politics navigation\n• Career development insights\n• Professional communication tips\n• Confidential and secure platform\n\n🎯 PERFECT FOR:\n• Mid-level professionals seeking advancement\n• New managers learning leadership\n• Anyone facing workplace challenges\n• Professionals in competitive environments\n• Career-focused individuals\n\n💼 WHAT YOU'LL GET:\n• Expert guidance on difficult situations\n• Strategies for building workplace relationships\n• Communication techniques that work\n• Leadership development advice\n• Career planning assistance\n\n🔒 PRIVACY & SECURITY:\nYour conversations are completely private and encrypted. We prioritize your confidentiality above all else.\n\n🌟 WHY CHOOSE XAVO:\n• AI learns and adapts to your specific needs\n• Available 24/7 whenever you need guidance\n• Evidence-based coaching methodologies\n• No judgment, just practical advice\n• Affordable compared to traditional coaching\n\nTransform your career trajectory today. Download Xavo and start your journey to corporate success!\n\n📧 Support: support@xavo.app\n🌐 Website: https://xavo.app",
+        "releaseNotes": "✨ New Features:\n• Make OpenAI temperature configurable via OPENAI_TEMPERATURE environment variable - Updated all OpenAI API calls to use configurable temperature (default 0.7) instead of hardcoded values for increased creative flexibility\n• Complete ChatGPT-style streaming chat with persistent conversations - Real-time streaming, session management, conversation history drawer, platform-aware APIs, comprehensive error handling, and database persistence ready\n• Complete onboarding data integra..."
+      }
+    },
+    "categories": {
+      "primary": "BUSINESS",
+      "tags": [
+        "productivity",
+        "career",
+        "business",
+        "coaching",
+        "professional development"
+      ]
+    },
+    "contentRating": "EVERYONE"
+  }
+}
