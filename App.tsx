@@ -8,6 +8,9 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { ThemeProvider } from './src/providers/ThemeProvider';
 import { AuthProvider, useAuth } from './src/providers/AuthProvider';
 
+// Monitoring
+import { monitoring } from './src/services/monitoring';
+
 // Screens
 import { SplashScreen } from './src/screens/SplashScreen';
 import { WelcomeScreen } from './src/screens/WelcomeScreen';
@@ -94,6 +97,18 @@ const AppNavigator: React.FC = () => {
 };
 
 export default function App() {
+  // Initialize monitoring services when app starts
+  React.useEffect(() => {
+    console.log('🚀 App starting - initializing monitoring services...');
+    
+    monitoring.initialize().then(() => {
+      console.log('✅ Monitoring services ready');
+    }).catch((error) => {
+      console.error('❌ Failed to initialize monitoring:', error);
+      // App should continue even if monitoring fails
+    });
+  }, []);
+
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <SafeAreaProvider>

@@ -1,6 +1,6 @@
 import Constants from 'expo-constants';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { createClient } from '@supabase/supabase-js';
+import { secureStorage } from './secureStorage';
 
 const extra = (Constants.expoConfig as any)?.extra || {};
 const supabaseUrl = extra.supabaseUrl ?? process.env.EXPO_PUBLIC_SUPABASE_URL;
@@ -10,6 +10,13 @@ if (!supabaseUrl || !supabaseAnonKey) {
   throw new Error('Missing Supabase credentials—please set them in app.json extra block or as EXPO_PUBLIC_ env vars');
 }
 
+console.log('🔐 Configuring Supabase with secure storage for JWT tokens');
+
 export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
-  auth: { storage: AsyncStorage },
+  auth: { 
+    storage: secureStorage,
+    autoRefreshToken: true,
+    persistSession: true,
+    detectSessionInUrl: false
+  },
 }); 

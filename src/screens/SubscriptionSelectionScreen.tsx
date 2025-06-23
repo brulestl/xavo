@@ -15,6 +15,7 @@ import { useTheme } from '../providers/ThemeProvider';
 import { useAuth } from '../providers/AuthProvider';
 import { Container } from '../components/Container';
 import { Button } from '../components/Button';
+import { monitoring } from '../services/monitoring';
 import usePurchases from '../hooks/usePurchases';
 
 const { width } = Dimensions.get('window');
@@ -107,6 +108,15 @@ export const SubscriptionSelectionScreen: React.FC = () => {
     }
   }, [packages]);
 
+  // Track paywall view when screen mounts
+  useEffect(() => {
+    monitoring.trackPaywallViewed('onboarding_flow', user?.tier || 'trial');
+    monitoring.trackScreenView('SubscriptionSelection', {
+      source: 'onboarding',
+      packages_loaded: packages.length > 0,
+    });
+  }, [user?.tier, packages.length]);
+
   const handlePlanSelect = async (plan: SubscriptionPlan) => {
     if (!plan.packageId) {
       Alert.alert(
@@ -130,11 +140,21 @@ export const SubscriptionSelectionScreen: React.FC = () => {
     try {
       const result = await purchasePackage(packageToBuy);
       if (result) {
+        // Track successful purchase
+        const price = parseFloat(packageToBuy.product.price.toString());
+        monitoring.trackPurchaseCompleted(plan.packageId!, price, user?.id || '');
+        
         // Purchase successful, mark onboarding as complete and navigate
         await markOnboardingComplete();
         (navigation as any).navigate('Main');
       }
     } catch (error) {
+      // Track purchase failure
+      monitoring.trackError(error as Error, 'purchase_failed', {
+        plan_id: plan.packageId,
+        user_id: user?.id,
+      });
+      
       // Error handling is done in the usePurchases hook
       console.error('Purchase error:', error);
     }

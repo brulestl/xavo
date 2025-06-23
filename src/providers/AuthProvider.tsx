@@ -6,6 +6,9 @@ import * as WebBrowser from 'expo-web-browser';
 import { Platform } from 'react-native';
 import 'react-native-url-polyfill/auto';
 import { supabase } from '../lib/supabase';
+import { secureStorage, secureStorageUtils } from '../lib/secureStorage';
+import { secureStorageDebug } from '../utils/secureStorageDebug';
+import { monitoring } from '../services/monitoring';
 import purchasesService from '../services/purchasesService';
 
 // Complete the auth session for web browsers
@@ -242,6 +245,28 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       
       console.log('✅ User data initialization completed');
       
+      // Set user context in monitoring services
+      monitoring.setUser({
+        id: userId,
+        email: userObject?.email,
+        tier: userTier,
+        displayName: fallbackName,
+        hasCompletedOnboarding: cachedOnboardingStatus,
+        subscriptionStatus: userTier === 'shark' ? 'active' : 'trial',
+      });
+
+      // Run security check in development mode to verify JWT tokens are secure
+      if (__DEV__) {
+        setTimeout(() => {
+          console.log('🔍 Running security check for JWT tokens...');
+          secureStorageDebug.runSecurityCheck().then(result => {
+            console.log('🔐 Security check completed:', result);
+          }).catch(error => {
+            console.error('❌ Security check failed:', error);
+          });
+        }, 1000); // Delay to allow tokens to be stored
+      }
+      
     } catch (error) {
       console.error('❌ Error initializing user data:', error);
       // Keep cached status if available, otherwise set to false
@@ -436,6 +461,19 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
             }
             
             console.log('✅ OAuth session set successfully');
+            
+            // Track successful OAuth sign-in
+            if (sessionData?.user) {
+              const isNewUser = sessionData.user.created_at === sessionData.user.updated_at;
+              const method = provider === 'google' ? 'google' : 'apple';
+              
+              if (isNewUser) {
+                monitoring.trackSignUp(method, sessionData.user.id, true);
+              } else {
+                monitoring.trackSignIn(method, sessionData.user.id, true);
+              }
+            }
+            
             return { error: null };
           } else {
             console.error('❌ No access token in redirect URL');
@@ -465,7 +503,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       console.log('🔐 AuthProvider: Starting logout process...');
       console.log('🔐 Current auth state before logout - Session:', !!session, 'User:', !!user, 'Tier:', tier);
       
-      // Sign out from Supabase
+      // Sign out from Supabase (this will clear secure token storage automatically)
       const { error } = await supabase.auth.signOut();
       
       if (error) {
@@ -500,6 +538,20 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       
       console.log('🔐 AuthProvider: Clearing AsyncStorage keys:', keysToRemove);
       await AsyncStorage.multiRemove(keysToRemove);
+      
+      // Ensure all secure tokens are cleared (redundant safety measure)
+      console.log('🔒 AuthProvider: Ensuring secure storage is cleared...');
+      try {
+        await secureStorageUtils.removeSecure('supabase.auth.token');
+        await secureStorageUtils.removeSecure('access_token');
+        await secureStorageUtils.removeSecure('refresh_token');
+        console.log('✅ AuthProvider: Secure storage cleared');
+      } catch (secureError) {
+        console.warn('⚠️ AuthProvider: Error clearing secure storage (may not exist):', secureError);
+      }
+      
+      // Clear user context from monitoring services
+      monitoring.clearUser();
       
       console.log('✅ AuthProvider: All user data cleared');
       console.log('✅ AuthProvider: Logout completed successfully');
@@ -609,9 +661,17 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
   const clearAllData = async () => {
     try {
+      console.log('🔐 AuthProvider: Clearing all app data...');
+      
+      // Sign out from Supabase (clears secure tokens automatically)
       await supabase.auth.signOut();
+      
+      // Clear all AsyncStorage
       await AsyncStorage.clear();
       
+      // Clear all secure storage using our adapter
+      await secureStorage.clear();
+      
       setSession(null);
       setUser(null);
       setTier('trial');
@@ -619,15 +679,25 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       setDisplayName('');
       setHasCompletedOnboarding(false);
       
-      console.log('All user data and cookies cleared');
+      console.log('✅ All user data, tokens, and secure storage cleared');
     } catch (error) {
-      console.error('Error clearing data:', error);
+      console.error('❌ Error clearing data:', error);
+      
+      // Ensure state is cleared even if storage clearing fails
       setSession(null);
       setUser(null);
       setTier('trial');
       setDailyQueryCount(0);
       setDisplayName('');
       setHasCompletedOnboarding(false);
+      
+      // Try to clear storages individually in case of partial failure
+      try {
+        await AsyncStorage.clear();
+      } catch {}
+      try {
+        await secureStorage.clear();
+      } catch {}
     }
   };
 
@@ -635,6 +705,10 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     setHasCompletedOnboarding(true);
     if (user?.id) {
       await saveCachedOnboardingStatus(user.id, true);
+      
+      // Track onboarding completion
+      monitoring.trackOnboardingCompleted(user.id);
+      
       console.log('✅ Onboarding marked as complete and cached');
     }
   };

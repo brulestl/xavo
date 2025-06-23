@@ -77,6 +77,8 @@
       },
       "supabaseUrl": "https://wdhmlynmbrhunizbdhdt.supabase.co",
       "supabaseAnonKey": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6IndkaG1seW5tYnJodW5pemJkaGR0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDkzMDQ2NjgsImV4cCI6MjA2NDg4MDY2OH0.ORKN6Ryiz4Yo_BFhE_CS2yHMGPJDncKtYWKTwwI98N4",
+      "amplitudeApiKey": "YOUR_AMPLITUDE_API_KEY_HERE",
+      "sentryDsn": "YOUR_SENTRY_DSN_HERE",
       "apiUrl": {
         "development": {
           "web": "https://wdhmlynmbrhunizbdhdt.supabase.co/functions/v1",

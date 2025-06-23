@@ -5,6 +5,7 @@ import { useNavigation } from '@react-navigation/native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '../providers/ThemeProvider';
 import { useAuth } from '../providers/AuthProvider';
+import { monitoring } from '../services/monitoring';
 import { Pill } from '../components/Pill';
 import { Composer } from '../components/Composer';
 import { Drawer } from '../components/Drawer';
@@ -60,6 +61,14 @@ export const HomeScreen: React.FC = () => {
   const insets = useSafeAreaInsets();
   const { clearAllData, user, tier } = useAuth();
   const [isDrawerVisible, setIsDrawerVisible] = useState(false);
+
+  // Track screen view
+  React.useEffect(() => {
+    monitoring.trackScreenView('Home', {
+      user_tier: tier,
+      user_id: user?.id,
+    });
+  }, [tier, user?.id]);
   const [isSettingsDrawerVisible, setIsSettingsDrawerVisible] = useState(false);
   const [selectedPrompt, setSelectedPrompt] = useState<string | null>(null);
   const [heroQuestion] = useState(HERO_QUESTIONS[0]); // TODO: Make this contextual
