@@ -3,6 +3,7 @@ import { Alert } from 'react-native';
 import { apiFetch, buildApiUrl } from '../lib/api';
 import { useAuth } from '../providers/AuthProvider';
 import { supabase } from '../lib/supabase';
+import { appReviewService } from '../services/appReviewService';
 
 export interface ChatMessage {
   id: string;
@@ -123,11 +124,14 @@ export const useChat = (): UseChatReturn => {
         id: `temp-user-${Date.now()}`,
         content,
         role: 'user',
-        session_id: targetSessionId,
+        session_id: targetSessionId || 'temp-session',
         created_at: new Date().toISOString()
       };
       
       setMessages(prev => [...prev, userMessage]);
+
+      // Track message count for review system
+      await appReviewService.incrementMessageCount();
 
       // Ensure targetSessionId is never undefined at this point
       if (!targetSessionId) {
@@ -205,6 +209,11 @@ export const useChat = (): UseChatReturn => {
       };
       
       setMessages(prev => [...prev, assistantMessage]);
+
+      // Track message count and session completion for review system
+      await appReviewService.incrementMessageCount();
+      await appReviewService.incrementSessionCount();
+      
       return response;
       
     } catch (chatError) {
@@ -445,6 +454,10 @@ export const useChat = (): UseChatReturn => {
                     if (data.sessionId && !currentSession) {
                       loadSession(data.sessionId, true); // Preserve current messages
                     }
+
+                    // Track message completion and session for review system
+                    await appReviewService.incrementMessageCount();
+                    await appReviewService.incrementSessionCount();
 
                     return {
                       id: data.messageId,

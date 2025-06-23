@@ -59,7 +59,16 @@
             "DEFAULT"
           ]
         }
-      ]
+      ],
+      "manifest": {
+        "application": {},
+        "activity": [
+          {
+            "android:name": ".MainActivity",
+            "android:windowSoftInputMode": "adjustResize"
+          }
+        ]
+      }
     },
     "web": {
       "favicon": "./assets/favicon.png"

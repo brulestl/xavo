@@ -11,6 +11,7 @@ import {
   Platform,
   FlatList,
   ActivityIndicator,
+  Keyboard,
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { DrawerNavigationProp } from '@react-navigation/drawer';
@@ -178,7 +179,10 @@ export const DashboardScreen: React.FC = () => {
       {/* Header - Same as HomeScreen */}
       <View style={styles.header}>
         {/* Hamburger Menu */}
-        <TouchableOpacity style={styles.menuButton} onPress={() => navigation.openDrawer()}>
+        <TouchableOpacity style={styles.menuButton} onPress={() => {
+          Keyboard.dismiss(); // Dismiss keyboard before opening drawer
+          navigation.openDrawer();
+        }}>
           <View style={[styles.hamburger, { backgroundColor: theme.semanticColors.textPrimary }]} />
           <View style={[styles.hamburger, { backgroundColor: theme.semanticColors.textPrimary }]} />
           <View style={[styles.hamburger, { backgroundColor: theme.semanticColors.textPrimary }]} />

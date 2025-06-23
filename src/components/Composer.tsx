@@ -102,6 +102,8 @@ export const Composer: React.FC<ComposerProps> = ({
   const handleTakePhoto = async () => {
     if (disabled) return;
 
+    Keyboard.dismiss(); // Dismiss keyboard before opening camera
+
     try {
       const permission = await ImagePicker.requestCameraPermissionsAsync();
       if (!permission.granted) {
@@ -129,6 +131,8 @@ export const Composer: React.FC<ComposerProps> = ({
   const handleChoosePhoto = async () => {
     if (disabled) return;
 
+    Keyboard.dismiss(); // Dismiss keyboard before opening photo library
+
     try {
       const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
       if (!permission.granted) {
@@ -155,6 +159,8 @@ export const Composer: React.FC<ComposerProps> = ({
   // Document picker
   const handleChooseFile = async () => {
     if (disabled) return;
+
+    Keyboard.dismiss(); // Dismiss keyboard before opening file picker
 
     try {
       const result = await DocumentPicker.getDocumentAsync({

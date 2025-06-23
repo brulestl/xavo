@@ -16,6 +16,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../providers/ThemeProvider';
 import { useAuth } from '../providers/AuthProvider';
 import { TierBadge } from './ui/TierBadge';
+import { ReviewDebugPanel } from './ReviewDebugPanel';
 
 // USE SCREEN DIMENSIONS FOR ABSOLUTE STABILITY - NEVER AFFECTED BY KEYBOARD
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('screen');
@@ -40,6 +41,7 @@ export const SettingsDrawer: React.FC<SettingsDrawerProps> = ({
   const [editingName, setEditingName] = useState(false);
   const [tempDisplayName, setTempDisplayName] = useState(displayName);
   const [saving, setSaving] = useState(false);
+  const [showReviewDebug, setShowReviewDebug] = useState(false);
 
   // Animation setup with NATIVE DRIVER - Initialize based on isVisible
   const slideAnim = useRef(new Animated.Value(isVisible ? 1 : 0)).current;
@@ -337,6 +339,34 @@ export const SettingsDrawer: React.FC<SettingsDrawerProps> = ({
             </TouchableOpacity>
           </View>
 
+          {/* Development Tools - Only show in DEV mode */}
+          {__DEV__ && (
+            <View style={styles.section}>
+              <Text style={[styles.sectionTitle, { color: theme.semanticColors.textPrimary }]}>
+                Development Tools
+              </Text>
+              
+              <TouchableOpacity
+                style={[styles.actionButton, { borderColor: theme.semanticColors.border }]}
+                onPress={() => setShowReviewDebug(true)}
+              >
+                <Ionicons
+                  name="bug-outline"
+                  size={20}
+                  color={theme.semanticColors.textPrimary}
+                />
+                <Text style={[styles.actionButtonText, { color: theme.semanticColors.textPrimary }]}>
+                  Review System Debug
+                </Text>
+                <Ionicons
+                  name="chevron-forward"
+                  size={16}
+                  color={theme.semanticColors.textSecondary}
+                />
+              </TouchableOpacity>
+            </View>
+          )}
+
           {/* Legal */}
           <View style={styles.section}>
             <Text style={[styles.sectionTitle, { color: theme.semanticColors.textPrimary }]}>
@@ -378,6 +408,12 @@ export const SettingsDrawer: React.FC<SettingsDrawerProps> = ({
           </View>
         </ScrollView>
       </Animated.View>
+
+      {/* Review Debug Panel */}
+      <ReviewDebugPanel
+        visible={showReviewDebug}
+        onClose={() => setShowReviewDebug(false)}
+      />
     </Animated.View>
   );
 };

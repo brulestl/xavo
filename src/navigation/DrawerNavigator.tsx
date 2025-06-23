@@ -216,6 +216,8 @@ export const DrawerNavigator: React.FC = () => {
           backgroundColor: theme.semanticColors.background,
         },
         drawerType: 'slide',
+        keyboardDismissMode: 'on-drag',
+        swipeEnabled: true,
         overlayColor: 'rgba(0,0,0,0.5)',
         sceneContainerStyle: {
           backgroundColor: theme.semanticColors.background,

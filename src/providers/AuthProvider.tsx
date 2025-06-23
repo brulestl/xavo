@@ -10,6 +10,7 @@ import { secureStorage, secureStorageUtils } from '../lib/secureStorage';
 import { secureStorageDebug } from '../utils/secureStorageDebug';
 import { monitoring } from '../services/monitoring';
 import purchasesService from '../services/purchasesService';
+import { appReviewService } from '../services/appReviewService';
 
 // Complete the auth session for web browsers
 WebBrowser.maybeCompleteAuthSession();
@@ -229,17 +230,17 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
             }
             
             // Try to update display name from OAuth (non-blocking)
-            supabase.rpc('fn_update_display_name_from_oauth', {
+            Promise.resolve(supabase.rpc('fn_update_display_name_from_oauth', {
               p_user_id: userId,
               p_display_name: null
-            }).then(({ data, error }) => {
+            })).then(({ data, error }) => {
               if (!error && data?.display_name) {
                 setDisplayName(data.display_name);
               }
             }).catch(console.error);
           }
         })
-        .catch(error => {
+        .catch((error: any) => {
           console.error('❌ Background personalization fetch failed:', error);
         });
       
@@ -259,9 +260,9 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       if (__DEV__) {
         setTimeout(() => {
           console.log('🔍 Running security check for JWT tokens...');
-          secureStorageDebug.runSecurityCheck().then(result => {
+          Promise.resolve(secureStorageDebug.runSecurityCheck()).then(result => {
             console.log('🔐 Security check completed:', result);
-          }).catch(error => {
+          }).catch((error: any) => {
             console.error('❌ Security check failed:', error);
           });
         }, 1000); // Delay to allow tokens to be stored
@@ -319,6 +320,22 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
           setTier('trial');
           setHasCompletedOnboarding(false);
           await loadTrialQueryCount();
+        }
+
+        // Initialize app review service for usage tracking
+        try {
+          await appReviewService.initialize();
+          
+          // Check for review eligibility on app launch (after initialization)
+          setTimeout(async () => {
+            try {
+              await appReviewService.checkAndPromptReview('app_launch');
+            } catch (error) {
+              console.error('❌ Failed to check review eligibility on app launch:', error);
+            }
+          }, 3000); // Wait 3 seconds after app launch for better UX
+        } catch (error) {
+          console.error('❌ Failed to initialize app review service:', error);
         }
       } catch (error) {
         console.error('❌ Error during auth initialization:', error);

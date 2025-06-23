@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Animated, ActivityIndicator, ToastAndroid, Platform, Image, Alert, Modal, TextInput, StatusBar } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Animated, ActivityIndicator, ToastAndroid, Platform, Image, Alert, Modal, TextInput, StatusBar, KeyboardAvoidingView, Keyboard } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -227,6 +227,7 @@ export const HomeScreen: React.FC = () => {
   };
 
   const handleMenuPress = () => {
+    Keyboard.dismiss(); // Dismiss keyboard before opening drawer
     setIsDrawerVisible(true);
     // Note: We no longer fetch conversations here since they're loaded once at app start
     // and refreshed when new conversations are created
@@ -346,7 +347,12 @@ export const HomeScreen: React.FC = () => {
     <SafeAreaView style={[styles.container, { backgroundColor: theme.semanticColors.background }]} edges={['top']}>
       <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} backgroundColor={theme.semanticColors.background} />
       
-      {/* Header */}
+      <KeyboardAvoidingView 
+        behavior={Platform.select({ ios: 'padding', android: 'height' })}
+        keyboardVerticalOffset={Platform.select({ ios: 0, android: 24 })}
+        style={{ flex: 1 }}
+      >
+        {/* Header */}
       <View style={[styles.header, { paddingTop: 0 }]}>
         {/* Hamburger Menu */}
         <TouchableOpacity style={styles.menuButton} onPress={handleMenuPress}>
@@ -358,7 +364,10 @@ export const HomeScreen: React.FC = () => {
         {/* Settings Button */}
         <TouchableOpacity 
           style={styles.settingsButton} 
-          onPress={() => setIsSettingsDrawerVisible(true)}
+          onPress={() => {
+            Keyboard.dismiss(); // Dismiss keyboard before opening settings drawer
+            setIsSettingsDrawerVisible(true);
+          }}
         >
           <Ionicons name="settings-outline" size={24} color={theme.semanticColors.textPrimary} />
         </TouchableOpacity>
@@ -476,40 +485,33 @@ export const HomeScreen: React.FC = () => {
           </Animated.View>
         </ScrollView>
 
-        {/* Composer with proper safe area handling */}
-        <SafeAreaView edges={['bottom']} style={styles.composerSafeArea}>
-          <View 
-            style={[
-              styles.composerContainer,
-              { 
-                backgroundColor: theme.semanticColors.background,
-                zIndex: isDrawerVisible || isSettingsDrawerVisible ? -1 : 1,
-                opacity: isDrawerVisible || isSettingsDrawerVisible ? 0 : 1,
-              }
-            ]}
-          >
-            <Composer
-              onSend={handleSendMessage}
-              onFileAttach={(fileUrl, fileName, fileType) => {
-                // Create a file attachment message and start conversation
-                const fileMessage = `📎 Attached file: ${fileName}\n\nFile URL: ${fileUrl}`;
-                handleSendMessage(fileMessage);
-              }}
-              onUpload={handleUpload}
-              onVoiceNote={handleVoiceNote}
-              placeholder={
-                transcription 
-                  ? `🎙️ ${transcription}` 
-                  : (isSendingMessage ? "Starting conversation..." : "What's on your mind?")
-              }
-              disabled={isSendingMessage}
-              sessionId={undefined} // Will be updated when we have active session
-              isRecording={isRecording}
-              liveTranscription={transcription}
-            />
-          </View>
-        </SafeAreaView>
+        {/* Composer with minimal bottom spacing */}
+        <View 
+          style={[
+            styles.composerContainer,
+            { 
+              backgroundColor: theme.semanticColors.background,
+              zIndex: isDrawerVisible || isSettingsDrawerVisible ? -1 : 1,
+              opacity: isDrawerVisible || isSettingsDrawerVisible ? 0 : 1,
+              paddingBottom: insets.bottom > 0 ? insets.bottom : 8, // Use safe area insets or minimal padding
+            }
+          ]}
+        >
+          <Composer
+            onSend={handleSendMessage}
+            placeholder={
+              transcription 
+                ? `🎙️ ${transcription}` 
+                : (isSendingMessage ? "Starting conversation..." : "What's on your mind?")
+            }
+            disabled={isSendingMessage}
+            sessionId={undefined} // Will be updated when we have active session
+            isRecording={isRecording}
+            liveTranscription={transcription}
+          />
+        </View>
       </View>
+      </KeyboardAvoidingView>
 
       {/* Drawer */}
       <Drawer
@@ -796,12 +798,10 @@ const styles = StyleSheet.create({
   prompt: {
     marginBottom: 8, // Reduced from 12 since gap handles spacing
   },
-  composerSafeArea: {
-    backgroundColor: 'transparent',
-  },
   composerContainer: {
     borderTopWidth: 1,
     borderTopColor: 'rgba(0,0,0,0.05)',
+    paddingTop: 8, // Add some top padding for visual separation
   },
   drawerContent: {
     paddingVertical: 20,

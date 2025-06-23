@@ -9,6 +9,7 @@ import {
   Alert,
   Text,
   PermissionsAndroid,
+  Keyboard,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as DocumentPicker from 'expo-document-picker';
@@ -69,6 +70,8 @@ export default function ChatComposer({
   // ATTACH FILE, NO EXCUSES - FIX: Remove all guards, work in any chat
   const handleFileAttach = async () => {
     if (disabled || isUploading) return;
+    
+    Keyboard.dismiss(); // Dismiss keyboard before opening file picker
     
     try {
       setIsUploading(true);
