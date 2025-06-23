@@ -21,6 +21,7 @@ import { Composer } from '../components/Composer';
 import { ChatBubble } from '../components/ChatBubble';
 import { TypingDots } from '../components/TypingDots';
 import { ThinkingIndicator } from '../components/ThinkingIndicator';
+import { AnalyzedFile } from '../services/fileAnalysisService';
 
 import { Drawer } from '../components/Drawer';
 import { SettingsDrawer } from '../components/SettingsDrawer';
@@ -111,7 +112,7 @@ export const ChatScreen: React.FC = () => {
     initializeChat();
   }, [sessionId, initialMessage]);
 
-  const handleSendMessage = async (message: string) => {
+  const handleSendMessage = async (message: string, attachments?: AnalyzedFile[]) => {
     if (!canMakeQuery) {
       Alert.alert(
         'Query Limit Reached',
@@ -122,8 +123,24 @@ export const ChatScreen: React.FC = () => {
     }
 
     try {
+      let finalMessage = message;
+      
+      // If there are attachments, append their analysis to the message
+      if (attachments?.length) {
+        const attachmentContext = attachments.map(file => {
+          if (file.analysis?.aiResponse) {
+            return `\n\n📎 **${file.name}** (${file.type}):\n${file.analysis.aiResponse}`;
+          } else {
+            return `\n\n📎 **${file.name}** (${file.type}): File uploaded but analysis not available.`;
+          }
+        }).join('');
+        
+        finalMessage = (message + attachmentContext).trim();
+        console.log('📎 ChatScreen: Sending message with', attachments.length, 'attachments');
+      }
+      
       console.log(`📝 Sending message to current session: ${currentSession?.id}`);
-      await sendMessage(message, currentSession?.id, false); // Use non-streaming for better UX
+      await sendMessage(finalMessage, currentSession?.id, false); // Use non-streaming for better UX
     } catch (error) {
       Alert.alert('Error', 'Failed to send message. Please try again.');
       console.error('Send message error:', error);
@@ -284,13 +301,6 @@ export const ChatScreen: React.FC = () => {
           >
             <Composer
               onSend={handleSendMessage}
-              onFileAttach={(fileUrl, fileName, fileType) => {
-                // Route file into conversation pipeline - NO EXCEPTIONS
-                const fileMessage = `📎 Attached file: ${fileName}\n\nFile URL: ${fileUrl}`;
-                handleSendMessage(fileMessage);
-              }}
-              onUpload={handleUpload}
-              onVoiceNote={handleVoiceNote}
               placeholder={isLoading ? "Starting conversation..." : "What's on your mind?"}
               disabled={!canMakeQuery || isLoading}
               sessionId={currentSession?.id}

@@ -1,18 +1,28 @@
 import React, { useState, useRef } from 'react';
-import { View, TextInput, TouchableOpacity, StyleSheet, Animated, Keyboard, Alert, Platform, Pressable, PermissionsAndroid, Text } from 'react-native';
+import { View, TextInput, TouchableOpacity, StyleSheet, Animated, Keyboard, Alert, Pressable, Text, ScrollView } from 'react-native';
 import * as DocumentPicker from 'expo-document-picker';
+import * as ImagePicker from 'expo-image-picker';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../providers/ThemeProvider';
 import { useAuth } from '../providers/AuthProvider';
-import { supabase } from '../lib/supabase';
-import { Audio } from 'expo-av';
-import Constants from 'expo-constants';
+import { fileAnalysisService, AnalyzedFile } from '../services/fileAnalysisService';
+import { AttachmentMenu } from './AttachmentMenu';
+import { FilePreview } from './FilePreview';
+import { monitoring } from '../services/monitoring';
+
+// Safely import constants
+let Constants: any = null;
+try {
+  Constants = require('expo-constants').default;
+} catch (error) {
+  console.warn('⚠️ expo-constants not available:', error);
+}
+
+// Add this constant at the top after imports
+const IS_EXPO_GO = __DEV__ && !Constants.appOwnership;
 
 interface ComposerProps {
-  onSend: (message: string) => void;
-  onFileAttach?: (fileUrl: string, fileName: string, fileType: string) => void;
-  onUpload?: () => void;
-  onVoiceNote?: () => void;
+  onSend: (message: string, attachments?: AnalyzedFile[]) => void;
   placeholder?: string;
   disabled?: boolean;
   sessionId?: string;
@@ -20,14 +30,8 @@ interface ComposerProps {
   liveTranscription?: string;
 }
 
-// Add this constant at the top after imports
-const IS_EXPO_GO = __DEV__ && !Constants.appOwnership;
-
 export const Composer: React.FC<ComposerProps> = ({
   onSend,
-  onFileAttach,
-  onUpload,
-  onVoiceNote,
   placeholder = "What's on your mind?",
   disabled = false,
   sessionId,
@@ -38,18 +42,16 @@ export const Composer: React.FC<ComposerProps> = ({
   const { user } = useAuth();
   const [message, setMessage] = useState('');
   const [isFocused, setIsFocused] = useState(false);
-  const [isUploading, setIsUploading] = useState(false);
-  const [localRecording, setLocalRecording] = useState<Audio.Recording | null>(null);
+  const [attachedFiles, setAttachedFiles] = useState<AnalyzedFile[]>([]);
+  const [showAttachmentMenu, setShowAttachmentMenu] = useState(false);
   const [localLiveTranscription, setLocalLiveTranscription] = useState('');
-  const [localIsRecording, setLocalIsRecording] = useState(false);
   const focusAnim = useRef(new Animated.Value(0)).current;
   const textInputRef = useRef<TextInput>(null);
 
   // Use live transcription if provided, otherwise use message state
   const displayText = liveTranscription || localLiveTranscription || message;
-  const isCurrentlyRecording = isRecording || localIsRecording;
+  const isCurrentlyRecording = isRecording || false;
 
-  // TAP TARGET HELL - FIX: Make entire input area tappable
   const handleInputAreaPress = () => {
     if (textInputRef.current && !disabled && !liveTranscription && !localLiveTranscription) {
       textInputRef.current.focus();
@@ -76,16 +78,17 @@ export const Composer: React.FC<ComposerProps> = ({
 
   const handleSend = () => {
     const textToSend = liveTranscription || localLiveTranscription || message;
-    if (textToSend.trim() && !disabled) {
-      onSend(textToSend.trim());
+    if ((textToSend.trim() || attachedFiles.length > 0) && !disabled) {
+      onSend(textToSend.trim(), attachedFiles.length > 0 ? attachedFiles : undefined);
       setMessage('');
       setLocalLiveTranscription('');
+      setAttachedFiles([]);
       Keyboard.dismiss();
     }
   };
 
-  // VOICE RECORDING DISABLED - Remove permission issues
-  const handleVoiceRecording = async () => {
+  // Voice recording disabled for now
+  const handleVoiceRecording = () => {
     if (disabled) return;
     
     Alert.alert(
@@ -95,109 +98,147 @@ export const Composer: React.FC<ComposerProps> = ({
     );
   };
 
-  const handleFileUpload = async () => {
-    if (!user?.id || isUploading) return;
-    
-    // ATTACH FILE, NO EXCUSES - Remove all guards and work in any chat
-    performFileUpload();
+  // Camera photo capture
+  const handleTakePhoto = async () => {
+    if (disabled) return;
+
+    try {
+      const permission = await ImagePicker.requestCameraPermissionsAsync();
+      if (!permission.granted) {
+        Alert.alert('Permission Required', 'Camera permission is needed to take photos.');
+        return;
+      }
+
+      const result = await ImagePicker.launchCameraAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsEditing: true,
+        aspect: [4, 3],
+        quality: 0.8,
+      });
+
+      if (!result.canceled && result.assets[0]) {
+        await handleFileSelected(result.assets[0]);
+      }
+    } catch (error) {
+      console.error('Camera error:', error);
+      Alert.alert('Camera Error', 'Failed to open camera. Please try again.');
+    }
   };
 
-  const performFileUpload = async () => {
+  // Photo library picker
+  const handleChoosePhoto = async () => {
+    if (disabled) return;
+
     try {
-      setIsUploading(true);
-      
-      // Pick document
+      const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (!permission.granted) {
+        Alert.alert('Permission Required', 'Photo library permission is needed to choose photos.');
+        return;
+      }
+
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsEditing: true,
+        aspect: [4, 3],
+        quality: 0.8,
+      });
+
+      if (!result.canceled && result.assets[0]) {
+        await handleFileSelected(result.assets[0]);
+      }
+    } catch (error) {
+      console.error('Photo picker error:', error);
+      Alert.alert('Photo Error', 'Failed to open photo library. Please try again.');
+    }
+  };
+
+  // Document picker
+  const handleChooseFile = async () => {
+    if (disabled) return;
+
+    try {
       const result = await DocumentPicker.getDocumentAsync({
-        type: ['application/pdf', 'image/jpeg', 'image/png', 'image/jpg', 'text/plain'],
+        type: ['application/pdf', 'image/*', 'text/plain', 'text/csv'],
         copyToCacheDirectory: true,
         multiple: false,
       });
 
-      if (result.canceled) {
-        return;
+      if (!result.canceled && result.assets[0]) {
+        await handleFileSelected(result.assets[0]);
       }
-
-      if (!result.assets || result.assets.length === 0) {
-        Alert.alert('Error', 'No file selected.');
-        return;
-      }
-
-      const file = result.assets[0];
-      
-      // Validate file size (2MB limit - STRICT)
-      if (file.size && file.size > 2 * 1024 * 1024) {
-        Alert.alert('File Too Large', 'Please select a file smaller than 2MB.');
-        return;
-      }
-
-      // Validate file type
-      const allowedTypes = ['application/pdf', 'image/jpeg', 'image/png', 'image/jpg'];
-      if (!allowedTypes.includes(file.mimeType || '')) {
-        Alert.alert('Invalid File Type', 'Please select a PDF, JPG, or PNG file.');
-        return;
-      }
-
-      // Always feed files into conversation pipeline - NO EXCEPTIONS
-      if (onFileAttach) {
-        onFileAttach(file.uri, file.name, file.mimeType || 'application/octet-stream');
-      }
-
-      // If sessionId exists, also upload to Supabase Storage (optional)
-      if (sessionId && user?.id) {
-        await uploadToSupabase(file);
-      }
-
     } catch (error) {
-      console.error('File upload error:', error);
-      Alert.alert('Upload Failed', 'Failed to upload file. Please try again.');
-    } finally {
-      setIsUploading(false);
+      console.error('Document picker error:', error);
+      Alert.alert('File Error', 'Failed to select file. Please try again.');
     }
   };
 
-  const uploadToSupabase = async (file: any) => {
-    try {
-      // Create file path for storage
-      const fileExt = file.name.split('.').pop();
-      const fileName = `${user!.id}/${sessionId}/${Date.now()}.${fileExt}`;
-
-      // Upload to Supabase Storage
-      const { data: uploadData, error: uploadError } = await supabase.storage
-        .from('user-files')
-        .upload(fileName, {
-          uri: file.uri,
-          type: file.mimeType,
-          name: file.name,
-        } as any);
-
-      if (uploadError) {
-        throw uploadError;
-      }
-
-      // Get public URL
-      const { data: { publicUrl } } = supabase.storage
-        .from('user-files')
-        .getPublicUrl(fileName);
-
-      // Save file metadata to database
-      const { error: dbError } = await supabase
-        .from('user_files')
-        .insert({
-          user_id: user!.id,
-          session_id: sessionId,
-          file_name: file.name,
-          file_url: publicUrl,
-          file_size: file.size,
-          file_type: file.mimeType,
-        });
-
-      if (dbError) {
-        console.warn('Database save failed:', dbError);
-      }
-    } catch (error) {
-      console.warn('Supabase upload failed:', error);
-      // Don't show error to user since file was already handled by onFileAttach
+  // Handle selected file (from camera, photos, or documents)
+  const handleFileSelected = async (file: any) => {
+    if (!user?.id) {
+      Alert.alert('Error', 'Please sign in to upload files.');
+      return;
     }
+
+    // Validate file
+    const validation = fileAnalysisService.validateFile(file);
+    if (!validation.valid) {
+      Alert.alert('Invalid File', validation.error || 'File validation failed.');
+      return;
+    }
+
+    try {
+      // Create temporary file entry
+      const tempFile: AnalyzedFile = {
+        id: `temp_${Date.now()}`,
+        name: file.name || 'Untitled',
+        type: file.mimeType || file.type || 'application/octet-stream',
+        size: file.size || 0,
+        uri: file.uri,
+        uploadProgress: 0,
+        isAnalyzing: false,
+      };
+
+      // Add to attachments immediately
+      setAttachedFiles(prev => [...prev, tempFile]);
+
+      // Upload and analyze
+      const analyzedFile = await fileAnalysisService.uploadAndAnalyze(
+        file,
+        user.id,
+        sessionId,
+        (progress) => {
+          setAttachedFiles(prev => 
+            prev.map(f => f.id === tempFile.id ? { ...f, uploadProgress: progress } : f)
+          );
+        },
+        () => {
+          setAttachedFiles(prev => 
+            prev.map(f => f.id === tempFile.id ? { ...f, isAnalyzing: true } : f)
+          );
+        },
+        (result) => {
+          setAttachedFiles(prev => 
+            prev.map(f => f.id === tempFile.id ? result : f)
+          );
+        }
+      );
+
+      // Final update
+      setAttachedFiles(prev => 
+        prev.map(f => f.id === tempFile.id ? analyzedFile : f)
+      );
+
+    } catch (error) {
+      console.error('File processing error:', error);
+      // Remove failed upload
+      setAttachedFiles(prev => prev.filter(f => f.id !== tempFile.id));
+      Alert.alert('Upload Failed', 'Failed to process file. Please try again.');
+    }
+  };
+
+  // Remove file attachment
+  const handleRemoveFile = (fileId: string) => {
+    setAttachedFiles(prev => prev.filter(f => f.id !== fileId));
   };
 
   const borderColor = focusAnim.interpolate({
@@ -207,7 +248,26 @@ export const Composer: React.FC<ComposerProps> = ({
 
   return (
     <View style={styles.container}>
-      {/* Text Input Area with FIXED SEND BUTTON */}
+      {/* File Attachments Preview */}
+      {attachedFiles.length > 0 && (
+        <ScrollView 
+          horizontal 
+          style={styles.attachmentsContainer}
+          showsHorizontalScrollIndicator={false}
+        >
+          {attachedFiles.map((file) => (
+            <View key={file.id} style={styles.attachmentWrapper}>
+              <FilePreview
+                file={file}
+                onRemove={() => handleRemoveFile(file.id)}
+                compact
+              />
+            </View>
+          ))}
+        </ScrollView>
+      )}
+
+      {/* Text Input Area */}
       <Pressable onPress={handleInputAreaPress}>
         <Animated.View
           style={[
@@ -225,7 +285,7 @@ export const Composer: React.FC<ComposerProps> = ({
               styles.textInput,
               {
                 color: isCurrentlyRecording ? '#007AFF' : theme.semanticColors.textPrimary,
-                paddingRight: 45, // Space for fixed send button
+                paddingRight: 45, // Space for send button
               },
             ]}
             value={displayText}
@@ -241,8 +301,8 @@ export const Composer: React.FC<ComposerProps> = ({
             editable={!disabled && !liveTranscription && !localLiveTranscription}
           />
           
-          {/* FIXED SEND BUTTON - RIGIDLY PINNED TO RIGHT EDGE */}
-          {displayText.trim().length > 0 && (
+          {/* Send Button */}
+          {(displayText.trim().length > 0 || attachedFiles.length > 0) && (
             <TouchableOpacity
               style={[
                 styles.sendButtonFixed,
@@ -275,20 +335,19 @@ export const Composer: React.FC<ComposerProps> = ({
             {
               backgroundColor: theme.semanticColors.surface,
               borderColor: theme.semanticColors.border,
-              opacity: isUploading ? 0.6 : 1,
             },
           ]}
-          onPress={handleFileUpload}
-          disabled={disabled || isUploading}
+          onPress={() => setShowAttachmentMenu(true)}
+          disabled={disabled}
         >
           <Ionicons 
-            name={isUploading ? "cloud-upload" : "attach-outline"} 
+            name="attach-outline" 
             size={20} 
-            color={isUploading ? theme.semanticColors.textSecondary : theme.semanticColors.textPrimary} 
+            color={theme.semanticColors.textPrimary} 
           />
         </TouchableOpacity>
 
-        {/* Voice Recording Button - REAL TRANSCRIPTION */}
+        {/* Voice Recording Button */}
         <TouchableOpacity
           style={[
             styles.actionButton,
@@ -307,6 +366,15 @@ export const Composer: React.FC<ComposerProps> = ({
           />
         </TouchableOpacity>
       </View>
+
+      {/* Attachment Menu */}
+      <AttachmentMenu
+        visible={showAttachmentMenu}
+        onClose={() => setShowAttachmentMenu(false)}
+        onTakePhoto={handleTakePhoto}
+        onChoosePhoto={handleChoosePhoto}
+        onChooseFile={handleChooseFile}
+      />
     </View>
   );
 };
@@ -315,6 +383,14 @@ const styles = StyleSheet.create({
   container: {
     paddingHorizontal: 16,
     paddingVertical: 12,
+  },
+  attachmentsContainer: {
+    marginBottom: 12,
+    maxHeight: 120,
+  },
+  attachmentWrapper: {
+    marginRight: 8,
+    width: 200,
   },
   textContainer: {
     borderRadius: 12,
@@ -377,12 +453,6 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.05,
     shadowRadius: 2,
     elevation: 1,
-  },
-  uploadIcon: {
-    width: 16,
-    height: 16,
-    borderRadius: 2,
-    position: 'relative',
   },
   transcriptionIndicator: {
     position: 'absolute',
