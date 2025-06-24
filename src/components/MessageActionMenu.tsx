@@ -1,0 +1,206 @@
+import React, { useRef, useEffect } from 'react';
+import {
+  View,
+  Text,
+  TouchableOpacity,
+  StyleSheet,
+  Animated,
+  Modal,
+  TouchableWithoutFeedback,
+  Alert,
+} from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
+import { useTheme } from '../providers/ThemeProvider';
+
+interface MessageActionMenuProps {
+  visible: boolean;
+  onClose: () => void;
+  onCopy: () => void;
+  onEdit?: () => void;
+  onDelete?: () => void;
+  isUserMessage: boolean;
+  anchorPosition?: { x: number; y: number };
+}
+
+export const MessageActionMenu: React.FC<MessageActionMenuProps> = ({
+  visible,
+  onClose,
+  onCopy,
+  onEdit,
+  onDelete,
+  isUserMessage,
+  anchorPosition = { x: 0, y: 0 },
+}) => {
+  const { theme } = useTheme();
+  const scaleAnim = useRef(new Animated.Value(0)).current;
+  const opacityAnim = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    if (visible) {
+      Animated.parallel([
+        Animated.spring(scaleAnim, {
+          toValue: 1,
+          useNativeDriver: true,
+          tension: 100,
+          friction: 8,
+        }),
+        Animated.timing(opacityAnim, {
+          toValue: 1,
+          duration: 200,
+          useNativeDriver: true,
+        }),
+      ]).start();
+    } else {
+      Animated.parallel([
+        Animated.timing(scaleAnim, {
+          toValue: 0,
+          duration: 150,
+          useNativeDriver: true,
+        }),
+        Animated.timing(opacityAnim, {
+          toValue: 0,
+          duration: 150,
+          useNativeDriver: true,
+        }),
+      ]).start();
+    }
+  }, [visible]);
+
+  const handleMenuItemPress = (action: () => void) => {
+    onClose();
+    // Delay the action slightly to allow the menu to close
+    setTimeout(action, 150);
+  };
+
+  const handleCopy = async () => {
+    try {
+      await onCopy();
+      Alert.alert('Copied', 'Message copied to clipboard');
+    } catch (error) {
+      Alert.alert('Error', 'Failed to copy message');
+    }
+  };
+
+  if (!visible) return null;
+
+  const menuItems = [
+    {
+      icon: 'copy-outline',
+      label: 'Copy',
+      action: () => handleMenuItemPress(handleCopy),
+      color: '#2196F3',
+      show: true,
+    },
+    {
+      icon: 'pencil-outline',
+      label: 'Edit',
+      action: () => handleMenuItemPress(onEdit || (() => {})),
+      color: '#FF9800',
+      show: isUserMessage && !!onEdit,
+    },
+    {
+      icon: 'trash-outline',
+      label: 'Delete',
+      action: () => handleMenuItemPress(onDelete || (() => {})),
+      color: '#F44336',
+      show: isUserMessage && !!onDelete,
+    },
+  ].filter(item => item.show);
+
+  return (
+    <Modal transparent visible={visible} animationType="none">
+      <TouchableWithoutFeedback onPress={onClose}>
+        <View style={styles.overlay}>
+          <Animated.View
+            style={[
+              styles.menuContainer,
+              {
+                backgroundColor: theme.semanticColors.surface,
+                borderColor: theme.semanticColors.border,
+                transform: [{ scale: scaleAnim }],
+                opacity: opacityAnim,
+                left: Math.max(20, Math.min(anchorPosition.x - 80, 300)), // Keep within screen bounds
+                top: Math.max(100, anchorPosition.y - 60), // Position above the touch point
+              },
+            ]}
+          >
+            <View style={styles.menuContent}>
+              {menuItems.map((item, index) => (
+                <TouchableOpacity
+                  key={item.label}
+                  style={[
+                    styles.menuItem,
+                    {
+                      borderBottomColor: theme.semanticColors.border,
+                      borderBottomWidth: index < menuItems.length - 1 ? 1 : 0,
+                    },
+                  ]}
+                  onPress={item.action}
+                  activeOpacity={0.7}
+                >
+                  <View
+                    style={[
+                      styles.iconContainer,
+                      { backgroundColor: item.color },
+                    ]}
+                  >
+                    <Ionicons name={item.icon as any} size={20} color="#FFFFFF" />
+                  </View>
+                  <Text
+                    style={[
+                      styles.menuItemText,
+                      { color: theme.semanticColors.textPrimary },
+                    ]}
+                  >
+                    {item.label}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          </Animated.View>
+        </View>
+      </TouchableWithoutFeedback>
+    </Modal>
+  );
+};
+
+const styles = StyleSheet.create({
+  overlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.1)',
+  },
+  menuContainer: {
+    position: 'absolute',
+    borderRadius: 12,
+    borderWidth: 1,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 8,
+    elevation: 8,
+  },
+  menuContent: {
+    borderRadius: 12,
+    overflow: 'hidden',
+  },
+  menuItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    minWidth: 140,
+  },
+  iconContainer: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 12,
+  },
+  menuItemText: {
+    fontSize: 16,
+    fontWeight: '500',
+    flex: 1,
+  },
+}); 

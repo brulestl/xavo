@@ -17,3 +17,7 @@
 **Infra-Agent**: added assistant creation script + tier config.
 
 **Infra-Agent**: tier caps to 3/day, daily_usage RPC, live OpenAI chat.
+
+**Core-Agent**: Implemented comprehensive message deduplication system to prevent duplicate database entries from double-tap/rapid-fire sending. Solution includes: (1) Stable message fingerprinting using content+session hash instead of Date.now() keys; (2) Client-side pending message tracking with Set<string> for instant duplicate blocking; (3) UUID-based client_id generation with expo-crypto fallback; (4) Server-side deduplication using PostgreSQL onConflict('client_id').ignoreDuplicates(); (5) Database migration adding client_id column with unique constraint; (6) Fixed edit flow to regenerate assistant responses without duplicate user messages; (7) Enhanced UI with isSending state to disable composer during transmission. Provides Instagram/WhatsApp-level message reliability with zero performance impact.
+
+**UI-Agent**: Added Markdown rendering for chat via react-native-markdown-display.

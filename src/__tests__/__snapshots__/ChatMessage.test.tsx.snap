@@ -1,0 +1,744 @@
+// Jest Snapshot v1, https://goo.gl/fbAQLP
+
+exports[`ChatMessage handles empty text 1`] = `
+<View
+  style={
+    {
+      "margin": 0,
+      "padding": 0,
+    }
+  }
+/>
+`;
+
+exports[`ChatMessage renders markdown text correctly 1`] = `
+<View
+  style={
+    {
+      "margin": 0,
+      "padding": 0,
+    }
+  }
+>
+  <View
+    style={
+      {
+        "marginBottom": 8,
+        "marginTop": 16,
+      }
+    }
+  >
+    <Text
+      style={{}}
+    >
+      <Text
+        style={
+          [
+            {
+              "color": "#1A1A1A",
+              "fontSize": 20,
+              "fontWeight": "700",
+              "lineHeight": 22,
+            },
+            {},
+          ]
+        }
+      >
+        This is a heading
+      </Text>
+    </Text>
+  </View>
+  <View
+    style={
+      {
+        "marginVertical": 4,
+      }
+    }
+  >
+    <Text
+      style={{}}
+    >
+      <Text
+        style={
+          [
+            {
+              "color": "#1A1A1A",
+              "fontSize": 16,
+              "lineHeight": 22,
+            },
+            {},
+          ]
+        }
+      >
+        This is 
+      </Text>
+      <Text
+        style={
+          {
+            "color": "#1A1A1A",
+            "fontWeight": "700",
+          }
+        }
+      >
+        <Text
+          style={
+            [
+              {
+                "color": "#1A1A1A",
+                "fontSize": 16,
+                "fontWeight": "700",
+                "lineHeight": 22,
+              },
+              {},
+            ]
+          }
+        >
+          bold text
+        </Text>
+      </Text>
+      <Text
+        style={
+          [
+            {
+              "color": "#1A1A1A",
+              "fontSize": 16,
+              "lineHeight": 22,
+            },
+            {},
+          ]
+        }
+      >
+         and this is 
+      </Text>
+      <Text
+        style={
+          {
+            "color": "#1A1A1A",
+            "fontStyle": "italic",
+          }
+        }
+      >
+        <Text
+          style={
+            [
+              {
+                "color": "#1A1A1A",
+                "fontSize": 16,
+                "fontStyle": "italic",
+                "lineHeight": 22,
+              },
+              {},
+            ]
+          }
+        >
+          italic text
+        </Text>
+      </Text>
+      <Text
+        style={
+          [
+            {
+              "color": "#1A1A1A",
+              "fontSize": 16,
+              "lineHeight": 22,
+            },
+            {},
+          ]
+        }
+      >
+        .
+      </Text>
+    </Text>
+  </View>
+  <View
+    style={
+      {
+        "marginVertical": 4,
+      }
+    }
+  >
+    <Text
+      style={{}}
+    >
+      <Text
+        style={
+          [
+            {
+              "color": "#1A1A1A",
+              "fontSize": 16,
+              "lineHeight": 22,
+            },
+            {},
+          ]
+        }
+      >
+        Here’s a list:
+      </Text>
+    </Text>
+  </View>
+  <View
+    style={
+      {
+        "marginLeft": 6,
+        "marginVertical": 4,
+      }
+    }
+  >
+    <View
+      style={
+        {
+          "flexDirection": "row",
+          "marginVertical": 2,
+        }
+      }
+    >
+      <Text
+        accessible={false}
+        style={
+          [
+            {
+              "color": "#1A1A1A",
+              "fontSize": 16,
+              "lineHeight": 22,
+            },
+            {
+              "color": "#1A1A1AAA",
+              "marginRight": 6,
+            },
+          ]
+        }
+      >
+        ·
+      </Text>
+      <View
+        style={
+          {
+            "flex": 1,
+          }
+        }
+      >
+        <Text
+          style={{}}
+        >
+          <Text
+            style={
+              [
+                {
+                  "color": "#1A1A1A",
+                  "fontSize": 16,
+                  "lineHeight": 22,
+                },
+                {},
+              ]
+            }
+          >
+            Item 1
+          </Text>
+        </Text>
+      </View>
+    </View>
+    <View
+      style={
+        {
+          "flexDirection": "row",
+          "marginVertical": 2,
+        }
+      }
+    >
+      <Text
+        accessible={false}
+        style={
+          [
+            {
+              "color": "#1A1A1A",
+              "fontSize": 16,
+              "lineHeight": 22,
+            },
+            {
+              "color": "#1A1A1AAA",
+              "marginRight": 6,
+            },
+          ]
+        }
+      >
+        ·
+      </Text>
+      <View
+        style={
+          {
+            "flex": 1,
+          }
+        }
+      >
+        <Text
+          style={{}}
+        >
+          <Text
+            style={
+              [
+                {
+                  "color": "#1A1A1A",
+                  "fontSize": 16,
+                  "lineHeight": 22,
+                },
+                {},
+              ]
+            }
+          >
+            Item 2
+          </Text>
+        </Text>
+      </View>
+    </View>
+    <View
+      style={
+        {
+          "flexDirection": "row",
+          "marginVertical": 2,
+        }
+      }
+    >
+      <Text
+        accessible={false}
+        style={
+          [
+            {
+              "color": "#1A1A1A",
+              "fontSize": 16,
+              "lineHeight": 22,
+            },
+            {
+              "color": "#1A1A1AAA",
+              "marginRight": 6,
+            },
+          ]
+        }
+      >
+        ·
+      </Text>
+      <View
+        style={
+          {
+            "flex": 1,
+          }
+        }
+      >
+        <Text
+          style={{}}
+        >
+          <Text
+            style={
+              [
+                {
+                  "color": "#1A1A1A",
+                  "fontSize": 16,
+                  "lineHeight": 22,
+                },
+                {},
+              ]
+            }
+          >
+            Item 3
+          </Text>
+        </Text>
+      </View>
+    </View>
+  </View>
+  <View
+    style={
+      {
+        "marginVertical": 4,
+      }
+    }
+  >
+    <Text
+      style={{}}
+    >
+      <Text
+        style={
+          [
+            {
+              "color": "#1A1A1A",
+              "fontSize": 16,
+              "lineHeight": 22,
+            },
+            {},
+          ]
+        }
+      >
+        And a numbered list:
+      </Text>
+    </Text>
+  </View>
+  <View
+    style={
+      {
+        "marginLeft": 6,
+        "marginVertical": 4,
+      }
+    }
+  >
+    <View
+      style={
+        {
+          "flexDirection": "row",
+          "marginVertical": 2,
+        }
+      }
+    >
+      <Text
+        style={
+          [
+            {
+              "color": "#1A1A1A",
+              "fontSize": 16,
+              "lineHeight": 22,
+            },
+            {
+              "color": "#1A1A1AAA",
+              "marginRight": 6,
+            },
+          ]
+        }
+      >
+        1
+        .
+      </Text>
+      <View
+        style={
+          {
+            "flex": 1,
+          }
+        }
+      >
+        <Text
+          style={{}}
+        >
+          <Text
+            style={
+              [
+                {
+                  "color": "#1A1A1A",
+                  "fontSize": 16,
+                  "lineHeight": 22,
+                },
+                {},
+              ]
+            }
+          >
+            First item
+          </Text>
+        </Text>
+      </View>
+    </View>
+    <View
+      style={
+        {
+          "flexDirection": "row",
+          "marginVertical": 2,
+        }
+      }
+    >
+      <Text
+        style={
+          [
+            {
+              "color": "#1A1A1A",
+              "fontSize": 16,
+              "lineHeight": 22,
+            },
+            {
+              "color": "#1A1A1AAA",
+              "marginRight": 6,
+            },
+          ]
+        }
+      >
+        2
+        .
+      </Text>
+      <View
+        style={
+          {
+            "flex": 1,
+          }
+        }
+      >
+        <Text
+          style={{}}
+        >
+          <Text
+            style={
+              [
+                {
+                  "color": "#1A1A1A",
+                  "fontSize": 16,
+                  "lineHeight": 22,
+                },
+                {},
+              ]
+            }
+          >
+            Second item
+          </Text>
+        </Text>
+      </View>
+    </View>
+    <View
+      style={
+        {
+          "flexDirection": "row",
+          "marginVertical": 2,
+        }
+      }
+    >
+      <Text
+        style={
+          [
+            {
+              "color": "#1A1A1A",
+              "fontSize": 16,
+              "lineHeight": 22,
+            },
+            {
+              "color": "#1A1A1AAA",
+              "marginRight": 6,
+            },
+          ]
+        }
+      >
+        3
+        .
+      </Text>
+      <View
+        style={
+          {
+            "flex": 1,
+          }
+        }
+      >
+        <Text
+          style={{}}
+        >
+          <Text
+            style={
+              [
+                {
+                  "color": "#1A1A1A",
+                  "fontSize": 16,
+                  "lineHeight": 22,
+                },
+                {},
+              ]
+            }
+          >
+            Third item
+          </Text>
+        </Text>
+      </View>
+    </View>
+  </View>
+  <View
+    style={
+      {
+        "marginVertical": 4,
+      }
+    }
+  >
+    <Text
+      style={{}}
+    >
+      <Text
+        style={
+          [
+            {
+              "color": "#1A1A1A",
+              "fontSize": 16,
+              "lineHeight": 22,
+            },
+            {},
+          ]
+        }
+      >
+        Here’s some 
+      </Text>
+      <Text
+        style={
+          [
+            {
+              "color": "#1A1A1A",
+              "fontSize": 16,
+              "lineHeight": 22,
+            },
+            {
+              "backgroundColor": "#FFFFFF",
+              "borderRadius": 4,
+              "color": "#1A1A1A",
+              "fontFamily": "monospace",
+              "fontSize": 14,
+              "paddingHorizontal": 4,
+              "paddingVertical": 2,
+            },
+          ]
+        }
+      >
+        inline code
+      </Text>
+      <Text
+        style={
+          [
+            {
+              "color": "#1A1A1A",
+              "fontSize": 16,
+              "lineHeight": 22,
+            },
+            {},
+          ]
+        }
+      >
+         and a 
+      </Text>
+      <Text
+        onPress={[Function]}
+        style={
+          {
+            "color": "#4285F4",
+            "textDecorationLine": "underline",
+          }
+        }
+      >
+        <Text
+          style={
+            [
+              {
+                "color": "#4285F4",
+                "fontSize": 16,
+                "lineHeight": 22,
+                "textDecorationLine": "underline",
+              },
+              {},
+            ]
+          }
+        >
+          link
+        </Text>
+      </Text>
+      <Text
+        style={
+          [
+            {
+              "color": "#1A1A1A",
+              "fontSize": 16,
+              "lineHeight": 22,
+            },
+            {},
+          ]
+        }
+      >
+        .
+      </Text>
+    </Text>
+  </View>
+  <View
+    style={
+      {
+        "backgroundColor": "#FFFFFF",
+        "borderLeftColor": "#4285F4",
+        "borderLeftWidth": 4,
+        "marginVertical": 8,
+        "paddingHorizontal": 12,
+        "paddingVertical": 8,
+      }
+    }
+  >
+    <View
+      style={
+        {
+          "marginVertical": 4,
+        }
+      }
+    >
+      <Text
+        style={{}}
+      >
+        <Text
+          style={
+            [
+              {
+                "color": "#1A1A1A",
+                "fontSize": 16,
+                "lineHeight": 22,
+              },
+              {},
+            ]
+          }
+        >
+          This is a blockquote
+        </Text>
+      </Text>
+    </View>
+  </View>
+  <Text
+    style={
+      [
+        {
+          "color": "#1A1A1A",
+          "fontSize": 16,
+          "lineHeight": 22,
+        },
+        {
+          "backgroundColor": "#f5f5f5",
+          "borderColor": "#CCCCCC",
+          "borderRadius": 4,
+          "borderWidth": 1,
+          "fontFamily": "Courier",
+          "padding": 10,
+        },
+      ]
+    }
+  >
+    // This is a code block
+function hello() {
+  console.log("Hello world!");
+}
+  </Text>
+</View>
+`;
+
+exports[`ChatMessage renders plain text correctly 1`] = `
+<View
+  style={
+    {
+      "margin": 0,
+      "padding": 0,
+    }
+  }
+>
+  <View
+    style={
+      {
+        "marginVertical": 4,
+      }
+    }
+  >
+    <Text
+      style={{}}
+    >
+      <Text
+        style={
+          [
+            {
+              "color": "#1A1A1A",
+              "fontSize": 16,
+              "lineHeight": 22,
+            },
+            {},
+          ]
+        }
+      >
+        This is just plain text without any markdown formatting.
+      </Text>
+    </Text>
+  </View>
+</View>
+`;

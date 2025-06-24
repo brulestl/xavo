@@ -1,6 +1,7 @@
 {
   "cli": {
-    "version": ">= 13.2.3"
+    "version": ">= 13.2.3",
+    "appVersionSource": "local"
   },
   "build": {
     "development": {
@@ -41,9 +42,8 @@
         "metadataPath": "./store.json"
       },
       "android": {
-        "serviceAccountKeyPath": "../path/to/api-key.json",
-        "track": "internal",
-        "metadataPath": "./store.json"
+        "serviceAccountKeyPath": "./xavo-462614-5d22fcdbf509.json",
+        "track": "production"
       }
     }
   }

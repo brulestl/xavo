@@ -493,7 +493,7 @@ export const HomeScreen: React.FC = () => {
               backgroundColor: theme.semanticColors.background,
               zIndex: isDrawerVisible || isSettingsDrawerVisible ? -1 : 1,
               opacity: isDrawerVisible || isSettingsDrawerVisible ? 0 : 1,
-              paddingBottom: insets.bottom > 0 ? insets.bottom : 8, // Use safe area insets or minimal padding
+              paddingBottom: insets.bottom > 0 ? insets.bottom : 16, // Use safe area insets or minimal padding
             }
           ]}
         >

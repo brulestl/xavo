@@ -16,7 +16,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../providers/ThemeProvider';
 import { useAuth } from '../providers/AuthProvider';
 import { TierBadge } from './ui/TierBadge';
-import { ReviewDebugPanel } from './ReviewDebugPanel';
+// import { ReviewDebugPanel } from './ReviewDebugPanel'; // Commented out
 
 // USE SCREEN DIMENSIONS FOR ABSOLUTE STABILITY - NEVER AFFECTED BY KEYBOARD
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('screen');
@@ -41,7 +41,7 @@ export const SettingsDrawer: React.FC<SettingsDrawerProps> = ({
   const [editingName, setEditingName] = useState(false);
   const [tempDisplayName, setTempDisplayName] = useState(displayName);
   const [saving, setSaving] = useState(false);
-  const [showReviewDebug, setShowReviewDebug] = useState(false);
+  // const [showReviewDebug, setShowReviewDebug] = useState(false); // Commented out
 
   // Animation setup with NATIVE DRIVER - Initialize based on isVisible
   const slideAnim = useRef(new Animated.Value(isVisible ? 1 : 0)).current;
@@ -339,7 +339,8 @@ export const SettingsDrawer: React.FC<SettingsDrawerProps> = ({
             </TouchableOpacity>
           </View>
 
-          {/* Development Tools - Only show in DEV mode */}
+          {/* Development Tools - Commented out as requested */}
+          {/* 
           {__DEV__ && (
             <View style={styles.section}>
               <Text style={[styles.sectionTitle, { color: theme.semanticColors.textPrimary }]}>
@@ -366,6 +367,7 @@ export const SettingsDrawer: React.FC<SettingsDrawerProps> = ({
               </TouchableOpacity>
             </View>
           )}
+          */}
 
           {/* Legal */}
           <View style={styles.section}>
@@ -409,11 +411,12 @@ export const SettingsDrawer: React.FC<SettingsDrawerProps> = ({
         </ScrollView>
       </Animated.View>
 
-      {/* Review Debug Panel */}
+      {/* Review Debug Panel - Commented out 
       <ReviewDebugPanel
         visible={showReviewDebug}
         onClose={() => setShowReviewDebug(false)}
       />
+      */}
     </Animated.View>
   );
 };

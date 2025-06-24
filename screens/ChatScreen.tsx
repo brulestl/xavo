@@ -54,7 +54,7 @@ export default function ChatScreen() {
   const { theme, isDark } = useTheme();
 
   const { tier, dailyCounter, canAsk, decrementCounter } = useAuth();
-  const { conversations, getConversation, createConversation, addMessageToConversation } = useConversations();
+  const { conversations, getConversation, createConversation, addMessageToConversation, updateMessage } = useConversations();
 
   // @ts-ignore - navigation params
   const routeParams = route.params as any;
@@ -128,8 +128,10 @@ export default function ChatScreen() {
       return;
     }
 
+    // Create a temporary message with a temp ID
+    const tempId = `temp-${Date.now()}`;
     const userMessage: Message = { 
-      id: Date.now().toString(), 
+      id: tempId,
       role: 'user', 
       content: text.trim(),
       timestamp: new Date().toISOString()
@@ -163,26 +165,22 @@ export default function ChatScreen() {
         navigation.setParams({ sessionId: response.sessionId } as never);
       }
 
-      // Add assistant message
-      const assistantMessage: Message = {
-        id: response.id,
-        role: 'assistant',
-        content: response.message,
-        timestamp: response.timestamp,
-      };
-
-      setMessages(prev => [...prev, assistantMessage]);
+      // Now reload the session to get the proper database IDs
+      if (response.sessionId) {
+        console.log('🔄 Reloading session to sync database IDs...');
+        await loadSession(response.sessionId);
+      }
       
     } catch (error) {
       console.error('Failed to send message:', error);
       toast.error('Failed to send message. Please try again.');
       
-      // Remove the user message on error
-      setMessages(prev => prev.slice(0, -1));
+      // Remove the temporary user message on error
+      setMessages(prev => prev.filter(msg => msg.id !== tempId));
     } finally {
       setIsSending(false);
     }
-  }, [canAsk, tier, decrementCounter, currentSessionId, navigation]);
+  }, [canAsk, tier, decrementCounter, currentSessionId, navigation, loadSession]);
 
 
 
@@ -210,6 +208,83 @@ export default function ChatScreen() {
     (navigation as any).navigate('OnboardingEdit');
   };
 
+  const handleEditMessage = async (messageId: string, newContent: string): Promise<boolean> => {
+    if (!currentSessionId) {
+      throw new Error('No active session');
+    }
+
+    try {
+      console.log(`🔧 Editing message ${messageId} in session ${currentSessionId}`);
+      
+      // Find the message being edited
+      const messageIndex = messages.findIndex(msg => msg.id === messageId);
+      if (messageIndex === -1) {
+        throw new Error('Message not found in local state');
+      }
+
+      const editedMessage = messages[messageIndex];
+      if (editedMessage.role !== 'user') {
+        throw new Error('Only user messages can be edited');
+      }
+
+      // Update the message in the database
+      await updateMessage(currentSessionId, messageId, newContent);
+      
+      // Update local messages state and remove all subsequent messages
+      setMessages(prev => {
+        const updatedMessages = [...prev];
+        // Update the edited message
+        updatedMessages[messageIndex] = { ...editedMessage, content: newContent };
+        // Remove all messages after the edited one
+        return updatedMessages.slice(0, messageIndex + 1);
+      });
+
+      // Regenerate AI response for the edited message
+      console.log('🤖 Regenerating AI response for edited message...');
+      setIsSending(true);
+
+      try {
+        const response = await apiFetch<ChatResponse>('/chat', {
+          method: 'POST',
+          body: JSON.stringify({
+            message: newContent.trim(),
+            sessionId: currentSessionId,
+            actionType: 'general_coaching',
+          }),
+        });
+
+        console.log('✅ Regenerated AI Response:', response);
+
+        // Add the new AI response
+        const newAssistantMessage: Message = {
+          id: response.id,
+          role: 'assistant',
+          content: response.message,
+          timestamp: response.timestamp,
+        };
+
+        setMessages(prev => [...prev, newAssistantMessage]);
+
+        // Reload session to ensure all database IDs are in sync
+        setTimeout(() => {
+          console.log('🔄 Reloading session after edit to sync IDs...');
+          loadSession(currentSessionId);
+        }, 1000);
+
+      } catch (aiError) {
+        console.error('Failed to regenerate AI response:', aiError);
+        toast.error('Message updated, but failed to generate new AI response');
+      } finally {
+        setIsSending(false);
+      }
+      
+      return true;
+    } catch (error) {
+      console.error('Failed to edit message:', error);
+      throw error;
+    }
+  };
+
   const renderMessage = ({ item, index }: { item: Message; index: number }) => {
     const animatedValue = new Animated.Value(0);
     
@@ -225,9 +300,13 @@ export default function ChatScreen() {
     return (
       <ChatBubble
         message={item.content}
+        messageId={item.id}
+        conversationId={currentSessionId || ''}
         isUser={item.role === 'user'}
         timestamp={new Date(item.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
         animatedValue={animatedValue}
+        onEditMessage={handleEditMessage}
+        isStreaming={isSending && index === messages.length - 1 && item.role === 'assistant'}
       />
     );
   };

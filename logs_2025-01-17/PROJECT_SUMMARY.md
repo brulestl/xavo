@@ -77,6 +77,7 @@ GitHub Actions + EAS + Railway
 #### **Enhanced Chat System**
 - ✅ **Live API Integration**: Real-time chat with SWR mutation for optimistic UI
 - ✅ **ChatBubble Component**: Professional message display with theme integration
+- ✅ **Markdown Rendering**: Rich text support for bold, italic, headings, lists, and links via react-native-markdown-display
 - ✅ **TypingDots Component**: Animated typing indicators for better UX
 - ✅ **Timestamp Component**: Smart time formatting with relative display
 - ✅ **Optimistic UI**: Immediate message display with error handling

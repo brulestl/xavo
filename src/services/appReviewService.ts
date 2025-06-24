@@ -46,6 +46,17 @@ interface ReviewEligibility {
 
 class AppReviewService {
   private initialized = false;
+  private lastLogTime = 0;
+  private readonly LOG_THROTTLE_MS = 15 * 60 * 1000; // 15 minutes
+  
+  private shouldLog(): boolean {
+    const now = Date.now();
+    if (now - this.lastLogTime > this.LOG_THROTTLE_MS) {
+      this.lastLogTime = now;
+      return true;
+    }
+    return false;
+  }
 
   async initialize(): Promise<void> {
     if (this.initialized) return;
@@ -87,7 +98,9 @@ class AppReviewService {
         
         await secureStorage.setItem(STORAGE_KEYS.USAGE_DATES, JSON.stringify(usageDates));
         
-        console.log(`📅 AppReviewService: Recorded usage for ${today}. Total distinct days: ${usageDates.length}`);
+        if (this.shouldLog()) {
+          console.log(`📅 AppReviewService: Recorded usage for ${today}. Total distinct days: ${usageDates.length}`);
+        }
       }
     } catch (error) {
       console.error('❌ AppReviewService: Failed to record daily usage:', error);
@@ -103,7 +116,9 @@ class AppReviewService {
       
       await secureStorage.setItem(STORAGE_KEYS.SESSION_COUNT, newCount.toString());
       
-      console.log(`🎯 AppReviewService: Session count incremented to ${newCount}`);
+      if (this.shouldLog()) {
+        console.log(`🎯 AppReviewService: Session count incremented to ${newCount}`);
+      }
       
       // Track analytics
       try {
@@ -132,7 +147,9 @@ class AppReviewService {
       
       await secureStorage.setItem(STORAGE_KEYS.MESSAGE_COUNT, newCount.toString());
       
-      console.log(`💬 AppReviewService: Message count incremented to ${newCount}`);
+      if (this.shouldLog()) {
+        console.log(`💬 AppReviewService: Message count incremented to ${newCount}`);
+      }
 
       // Track milestone achievements
       if (newCount === CRITERIA.MIN_MESSAGE_COUNT) {
@@ -237,14 +254,16 @@ class AppReviewService {
         metrics
       };
       
-      console.log('📊 AppReviewService: Eligibility check:', {
-        isEligible,
-        sessionCount: `${metrics.sessionCount}/${CRITERIA.MIN_SESSION_COUNT}`,
-        distinctDays: `${metrics.distinctDaysUsed}/${CRITERIA.MIN_DISTINCT_DAYS}`,
-        messageCount: `${metrics.messageCount}/${CRITERIA.MIN_MESSAGE_COUNT}`,
-        daysSinceLastPrompt,
-        withinCooldownPeriod
-      });
+      if (this.shouldLog()) {
+        console.log('📊 AppReviewService: Eligibility check:', {
+          isEligible,
+          sessionCount: `${metrics.sessionCount}/${CRITERIA.MIN_SESSION_COUNT}`,
+          distinctDays: `${metrics.distinctDaysUsed}/${CRITERIA.MIN_DISTINCT_DAYS}`,
+          messageCount: `${metrics.messageCount}/${CRITERIA.MIN_MESSAGE_COUNT}`,
+          daysSinceLastPrompt,
+          withinCooldownPeriod
+        });
+      }
       
       return eligibility;
     } catch (error) {
@@ -267,7 +286,9 @@ class AppReviewService {
       const eligibility = await this.checkEligibility();
       
       if (!eligibility.isEligible) {
-        console.log(`📱 AppReviewService: Not eligible for review prompt (trigger: ${trigger})`);
+        if (this.shouldLog()) {
+          console.log(`📱 AppReviewService: Not eligible for review prompt (trigger: ${trigger})`);
+        }
         return false;
       }
       

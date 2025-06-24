@@ -1,7 +1,7 @@
 {
   "expo": {
     "name": "Xavo",
-    "slug": "xavo",
+    "slug": "influence",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
@@ -26,7 +26,9 @@
         "CFBundleURLTypes": [
           {
             "CFBundleURLName": "xavo-auth",
-            "CFBundleURLSchemes": ["xavo"]
+            "CFBundleURLSchemes": [
+              "xavo"
+            ]
           }
         ],
         "NSMicrophoneUsageDescription": "Xavo uses your microphone to record voice messages for AI coaching conversations.",
@@ -41,10 +43,12 @@
       "package": "com.xavo.app",
       "versionCode": 1,
       "permissions": [
-        "READ_EXTERNAL_STORAGE",
-        "WRITE_EXTERNAL_STORAGE",
-        "RECORD_AUDIO",
-        "CAMERA"
+        "android.permission.READ_EXTERNAL_STORAGE",
+        "android.permission.WRITE_EXTERNAL_STORAGE",
+        "android.permission.RECORD_AUDIO",
+        "android.permission.CAMERA",
+        "android.permission.CAMERA",
+        "android.permission.RECORD_AUDIO"
       ],
       "intentFilters": [
         {

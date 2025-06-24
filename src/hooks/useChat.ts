@@ -4,6 +4,7 @@ import { apiFetch, buildApiUrl } from '../lib/api';
 import { useAuth } from '../providers/AuthProvider';
 import { supabase } from '../lib/supabase';
 import { appReviewService } from '../services/appReviewService';
+import { getMessageFingerprint, generateClientId } from '../utils/messageFingerprint';
 
 export interface ChatMessage {
   id: string;
@@ -42,6 +43,7 @@ interface UseChatReturn {
   isLoading: boolean;
   isStreaming: boolean;
   isThinking: boolean;
+  isSending: boolean;
   error: string | null;
   
   // Actions
@@ -53,6 +55,7 @@ interface UseChatReturn {
   renameSession: (sessionId: string, newTitle: string) => Promise<void>;
   clearMessages: () => void;
   retryLastMessage: () => Promise<void>;
+  setCurrentSession: (session: ChatSession | null) => void;
 }
 
 export const useChat = (): UseChatReturn => {
@@ -62,12 +65,14 @@ export const useChat = (): UseChatReturn => {
   const [isLoading, setIsLoading] = useState(false);
   const [isStreaming, setIsStreaming] = useState(false);
   const [isThinking, setIsThinking] = useState(false);
+  const [isSending, setIsSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   
   const lastUserMessageRef = useRef<string>('');
   const abortControllerRef = useRef<AbortController | null>(null);
+  const pendingMessages = useRef<Set<string>>(new Set()); // Track pending messages by fingerprint
 
-  // Send message with optional streaming support (non-streaming by default due to Edge Function limitations)
+  // Send message with idempotency protection
   const sendMessage = async (
     content: string, 
     sessionId?: string, 
@@ -75,6 +80,49 @@ export const useChat = (): UseChatReturn => {
   ): Promise<ChatResponse | null> => {
     if (!content.trim()) return null;
     
+    // 🔥 FIX: Prioritize currentSession?.id over provided sessionId to ensure 
+    // messages go to the currently selected session, not route parameter
+    let targetSessionId = currentSession?.id || sessionId;
+    
+    // Add guard to ensure we have a valid session context
+    if (!targetSessionId) {
+      // 🚀 WORKAROUND: Use sessions endpoint directly to avoid chat function auth issues
+      console.log('🔧 Creating session via sessions endpoint to avoid chat function 401 errors');
+      const cleanTitle = content.trim().replace(/\n/g, ' ').replace(/\s+/g, ' ');
+      const sessionTitle = cleanTitle.length > 50 ? cleanTitle.substring(0, 50) + '...' : cleanTitle;
+      
+      try {
+        const newSession = await apiFetch<ChatSession>('/sessions', {
+          method: 'POST',
+          body: JSON.stringify({
+            title: sessionTitle
+          })
+        });
+        
+        if (newSession) {
+          targetSessionId = newSession.id;
+          setCurrentSession(newSession);
+          setSessions(prev => [newSession, ...prev]);
+          console.log('✅ Session created successfully via sessions endpoint:', targetSessionId);
+        }
+      } catch (sessionError) {
+        console.error('❌ Session creation failed:', sessionError);
+        throw new Error('Failed to create new session');
+      }
+    }
+
+    // 🔧 Generate stable fingerprint and clientId for deduplication
+    const messageFingerprint = getMessageFingerprint(content, targetSessionId || 'temp');
+    
+    // 🔧 Check if message is already pending (prevent double-tap)
+    if (pendingMessages.current.has(messageFingerprint)) {
+      console.log('🚫 Duplicate message blocked:', messageFingerprint);
+      return null;
+    }
+    
+    // 🔧 Add to pending messages and set sending state
+    pendingMessages.current.add(messageFingerprint);
+    setIsSending(true);
     setIsLoading(true);
     setIsThinking(true);
     setError(null);
@@ -85,49 +133,22 @@ export const useChat = (): UseChatReturn => {
       abortControllerRef.current.abort();
     }
 
+    // 🔧 Generate stable clientId for this message
+    const clientId = generateClientId();
+    
     try {
-      // 🔥 FIX: Prioritize currentSession?.id over provided sessionId to ensure 
-      // messages go to the currently selected session, not route parameter
-      let targetSessionId = currentSession?.id || sessionId;
+      console.log(`🎯 Sending message to session: ${targetSessionId} (fingerprint: ${messageFingerprint})`);
       
-      // Add guard to ensure we have a valid session context
-      if (!targetSessionId) {
-        // 🚀 WORKAROUND: Use sessions endpoint directly to avoid chat function auth issues
-        console.log('🔧 Creating session via sessions endpoint to avoid chat function 401 errors');
-        const cleanTitle = content.trim().replace(/\n/g, ' ').replace(/\s+/g, ' ');
-        const sessionTitle = cleanTitle.length > 50 ? cleanTitle.substring(0, 50) + '...' : cleanTitle;
-        
-        try {
-          const newSession = await apiFetch<ChatSession>('/sessions', {
-            method: 'POST',
-            body: JSON.stringify({
-              title: sessionTitle
-            })
-          });
-          
-          if (newSession) {
-            targetSessionId = newSession.id;
-            setCurrentSession(newSession);
-            setSessions(prev => [newSession, ...prev]);
-            console.log('✅ Session created successfully via sessions endpoint:', targetSessionId);
-          }
-        } catch (sessionError) {
-          console.error('❌ Session creation failed:', sessionError);
-          throw new Error('Failed to create new session');
-        }
-      }
-
-      console.log(`🎯 Sending message to session: ${targetSessionId} (current: ${currentSession?.id}, provided: ${sessionId})`);
-
-      // Add user message to UI immediately
+      // Add user message to UI immediately with stable clientId
       const userMessage: ChatMessage = {
-        id: `temp-user-${Date.now()}`,
+        id: clientId, // Use clientId as optimistic ID
         content,
         role: 'user',
         session_id: targetSessionId || 'temp-session',
         created_at: new Date().toISOString()
       };
       
+      // Add user message to UI (no duplicate check needed - fingerprint prevents this)
       setMessages(prev => [...prev, userMessage]);
 
       // Track message count for review system
@@ -170,9 +191,12 @@ export const useChat = (): UseChatReturn => {
       }
       
       // Remove the user message on error
-      setMessages(prev => prev.slice(0, -1));
+      setMessages(prev => prev.filter(msg => msg.id !== clientId));
       return null;
     } finally {
+      // 🔧 Always cleanup pending state
+      pendingMessages.current.delete(messageFingerprint);
+      setIsSending(false);
       setIsLoading(false);
       setIsStreaming(false);
       setIsThinking(false);
@@ -194,11 +218,12 @@ export const useChat = (): UseChatReturn => {
           message: content,
           sessionId: targetSessionId,
           actionType: 'general_chat',
+          clientId: userMessage.id, // Pass clientId for deduplication
         }),
         signal: abortControllerRef.current.signal
       });
 
-      // Add assistant message
+      // Add assistant message with proper ID from response
       const assistantMessage: ChatMessage = {
         id: response.id,
         content: response.message,
@@ -208,11 +233,30 @@ export const useChat = (): UseChatReturn => {
         function_calls: []
       };
       
-      setMessages(prev => [...prev, assistantMessage]);
+      // 🔧 FIX: Prevent duplicates - check if message already exists before adding
+      setMessages(prev => {
+        const existingMessage = prev.find(msg => msg.id === assistantMessage.id);
+        if (existingMessage) {
+          console.warn(`⚠️ [useChat] Duplicate assistant message detected, skipping: ${assistantMessage.id}`);
+          return prev; // Don't add duplicate
+        }
+        return [...prev, assistantMessage];
+      });
 
       // Track message count and session completion for review system
       await appReviewService.incrementMessageCount();
       await appReviewService.incrementSessionCount();
+
+      // 🔧 FIX: Reload session to sync proper database IDs for all messages
+      // This ensures user messages get their real UUIDs instead of temp IDs
+      console.log('🔄 [useChat] Reloading session to sync database IDs after sending message...');
+      try {
+        await loadSession(targetSessionId, true); // Preserve current messages during reload
+        console.log('✅ [useChat] Session reloaded successfully with proper message IDs');
+      } catch (reloadError) {
+        console.warn('⚠️ [useChat] Session reload failed, but message was sent:', reloadError);
+        // Don't throw - the message was sent successfully, ID sync is just nice-to-have
+      }
       
       return response;
       
@@ -271,6 +315,7 @@ export const useChat = (): UseChatReturn => {
           message: content,
           sessionId: targetSessionId,
           actionType: 'general_chat',
+          clientId: userMessage.id, // Pass clientId for deduplication
         }),
         signal: abortControllerRef.current.signal
       });
@@ -549,13 +594,84 @@ export const useChat = (): UseChatReturn => {
       setCurrentSession(data.session);
       console.log(`🔄 Loaded session: ${data.session.id} - "${data.session.title}"`);
       
-      // Clear messages first, then load new ones (unless preserving for streaming)
-      if (!preserveCurrentMessages) {
-        setMessages(data.messages || []);
+      // 🔍 DEBUG: Check for duplicates in database response
+      const dbMessages = data.messages || [];
+      const messageIds = dbMessages.map(m => m.id);
+      const uniqueIds = [...new Set(messageIds)];
+      if (messageIds.length !== uniqueIds.length) {
+        console.error('⚠️ [useChat] Duplicate messages detected in database response!', {
+          totalMessages: messageIds.length,
+          uniqueMessages: uniqueIds.length,
+          duplicateIds: messageIds.filter((id, index) => messageIds.indexOf(id) !== index)
+        });
       } else {
-        // When preserving messages (during streaming), only update if we don't have current messages
+        console.log(`✅ [useChat] Database response clean: ${dbMessages.length} unique messages`);
+      }
+      
+      if (!preserveCurrentMessages) {
+        // Normal case: Replace all messages
+        console.log(`🔄 [useChat] Replacing ${messages.length} current messages with ${dbMessages.length} database messages`);
+        setMessages(dbMessages);
+        
+        // 🔍 DEBUG: Verify state update
+        setTimeout(() => {
+          setMessages(currentMessages => {
+            const currentIds = currentMessages.map(m => m.id);
+            const currentUniqueIds = [...new Set(currentIds)];
+            if (currentIds.length !== currentUniqueIds.length) {
+              console.error('⚠️ [useChat] Duplicate messages detected in React state after update!', {
+                totalMessages: currentIds.length,
+                uniqueMessages: currentUniqueIds.length,
+                duplicateIds: currentIds.filter((id, index) => currentIds.indexOf(id) !== index)
+              });
+            } else {
+              console.log(`✅ [useChat] React state clean: ${currentMessages.length} unique messages`);
+            }
+            return currentMessages; // Don't change anything, just debug
+          });
+        }, 10);
+      } else {
+        // When preserving messages (after sending), sync IDs with database
         setMessages(currentMessages => {
-          return currentMessages.length > 0 ? currentMessages : (data.messages || []);
+          if (currentMessages.length === 0) {
+            return dbMessages;
+          }
+          
+          // 🔧 FIX: Better duplicate prevention during ID sync
+          const syncedMessages = currentMessages.map((currentMsg, index) => {
+            // Find matching message in database by content and role
+            const dbMatch = dbMessages.find(dbMsg => 
+              dbMsg.role === currentMsg.role && 
+              dbMsg.content.trim() === currentMsg.content.trim()
+            );
+            
+            // Sync optimistic messages (either temp- prefixed or clientId-based)
+            const isOptimisticMessage = currentMsg.id.startsWith('temp-') || 
+              !dbMessages.find(db => db.id === currentMsg.id);
+            
+            if (dbMatch && isOptimisticMessage) {
+              console.log(`🔄 [useChat] Syncing optimistic ID ${currentMsg.id} → ${dbMatch.id}`);
+              return {
+                ...currentMsg,
+                id: dbMatch.id,
+                session_id: dbMatch.session_id,
+                created_at: dbMatch.created_at
+              };
+            }
+            
+            return currentMsg;
+          });
+          
+          // 🔧 FIX: Remove any remaining duplicates after sync
+          const uniqueSyncedMessages = syncedMessages.filter((msg, index, arr) => 
+            arr.findIndex(m => m.id === msg.id) === index
+          );
+          
+          if (uniqueSyncedMessages.length !== syncedMessages.length) {
+            console.log(`🔧 [useChat] Removed ${syncedMessages.length - uniqueSyncedMessages.length} duplicates during sync`);
+          }
+          
+          return uniqueSyncedMessages;
         });
       }
 
@@ -726,6 +842,7 @@ export const useChat = (): UseChatReturn => {
     isLoading,
     isStreaming,
     isThinking,
+    isSending,
     error,
     
     // Actions
@@ -736,6 +853,7 @@ export const useChat = (): UseChatReturn => {
     deleteSession,
     renameSession,
     clearMessages,
-    retryLastMessage
+    retryLastMessage,
+    setCurrentSession
   };
 };

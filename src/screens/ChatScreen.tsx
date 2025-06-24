@@ -28,6 +28,7 @@ import { SettingsDrawer } from '../components/SettingsDrawer';
 import { useChat } from '../hooks/useChat';
 import { useConversations } from '../hooks/useConversations';
 import { Ionicons } from '@expo/vector-icons';
+import { supabase } from '../lib/supabase';
 
 
 type ChatScreenNavigationProp = DrawerNavigationProp<any>;
@@ -50,6 +51,7 @@ export const ChatScreen: React.FC = () => {
   const [isDrawerVisible, setIsDrawerVisible] = useState(false);
   const [isSettingsDrawerVisible, setIsSettingsDrawerVisible] = useState(false);
   const [hasProcessedInitialMessage, setHasProcessedInitialMessage] = useState(false);
+  const [isEditingMessage, setIsEditingMessage] = useState(false);
   
   // Rename modal state
   const [isRenameModalVisible, setIsRenameModalVisible] = useState(false);
@@ -63,16 +65,18 @@ export const ChatScreen: React.FC = () => {
     isLoading,
     isStreaming,
     isThinking,
+    isSending,
     error,
     sendMessage,
     loadSession,
     deleteSession,
     renameSession,
     clearMessages,
+    setCurrentSession,
   } = useChat();
 
   // 🔥 Use instant operations from useConversations for rename functionality
-  const { renameConversationInstant } = useConversations();
+  const { renameConversationInstant, updateMessage } = useConversations();
 
   const flatListRef = useRef<FlatList>(null);
 
@@ -87,6 +91,16 @@ export const ChatScreen: React.FC = () => {
   useEffect(() => {
     const initializeChat = async () => {
       try {
+        // 🔧 FIX: Only clear session if we're explicitly starting a NEW conversation
+        // AND we currently have an active session (indicating user clicked "New Conversation" from drawer)
+        if (!sessionId && currentSession) {
+          console.log('🆕 [ChatScreen] New conversation from existing session - clearing state');
+          clearMessages();
+          setCurrentSession(null);
+          setIsEditingMessage(false);
+          // Don't return - continue with normal initialization for new conversation
+        }
+        
         // Reset processed state when route params change
         if (initialMessage) {
           setHasProcessedInitialMessage(false);
@@ -214,11 +228,158 @@ export const ChatScreen: React.FC = () => {
     setRenameInputValue('');
   };
 
+  // Helper function to regenerate AI response without creating new user message
+  const regenerateAIResponse = async (messageContent: string, sessionId: string) => {
+    try {
+      console.log('🤖 [src/ChatScreen] Generating AI response for edited message...');
+      
+      // Call the chat API directly with a special flag to indicate this is regeneration
+      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+      if (sessionError || !session) {
+        throw new Error('Authentication required');
+      }
+
+      const response = await fetch('https://wdhmlynmbrhunizbdhdt.supabase.co/functions/v1/chat', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({
+          message: messageContent,
+          sessionId: sessionId,
+          actionType: 'regenerate_response', // Special flag for regeneration
+          skipUserMessage: true // Don't create new user message
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`AI response generation failed: ${response.statusText}`);
+      }
+
+      const result = await response.json();
+      console.log('✅ [src/ChatScreen] AI response regenerated successfully');
+      
+      // Reload session to show the new AI response
+      await loadSession(sessionId, false);
+      
+      return result;
+    } catch (error) {
+      console.error('❌ [src/ChatScreen] Failed to regenerate AI response:', error);
+      throw error;
+    }
+  };
+
+  const handleEditMessage = async (messageId: string, newContent: string): Promise<boolean> => {
+    if (!currentSession?.id) {
+      throw new Error('No active session');
+    }
+
+    // 🔧 FIX: Prevent multiple simultaneous edits
+    if (isEditingMessage) {
+      console.log('⚠️ [src/ChatScreen] Edit already in progress, ignoring duplicate request');
+      return false;
+    }
+
+    try {
+      // 🔧 FIX: Immediate feedback - set editing state first
+      setIsEditingMessage(true);
+      console.log(`🔧 [src/ChatScreen] Starting ChatGPT-like edit for message ${messageId}`);
+      console.log(`🔍 [src/ChatScreen] Current messages count: ${messages.length}`);
+      
+      // 1. Get fresh session data directly from API to avoid race conditions
+      console.log('🔄 [src/ChatScreen] Fetching fresh session data...');
+      const { data } = await supabase
+        .from('conversation_sessions')
+        .select(`
+          *,
+          conversation_messages (
+            id, role, content, created_at, message_timestamp
+          )
+        `)
+        .eq('id', currentSession.id)
+        .eq('user_id', user?.id)
+        .single();
+        
+      if (!data) {
+        throw new Error('Session not found');
+      }
+      
+      const freshMessages = data.conversation_messages || [];
+      console.log(`📝 [src/ChatScreen] Fresh messages count: ${freshMessages.length}`);
+      
+      // 2. Find the index of the message being edited  
+      const editedMessageIndex = freshMessages.findIndex((msg: any) => msg.id === messageId);
+      if (editedMessageIndex === -1) {
+        throw new Error(`Message ${messageId} not found in conversation`);
+      }
+      
+      console.log(`🔍 [src/ChatScreen] Found message at index ${editedMessageIndex} of ${freshMessages.length}`);
+      
+      // 3. Identify messages to remove (all messages after the edited one)
+      const messagesToRemove = freshMessages.slice(editedMessageIndex + 1);
+      console.log(`🗑️ [src/ChatScreen] Will remove ${messagesToRemove.length} subsequent messages`);
+      
+      // 4. Remove subsequent messages from database
+      if (messagesToRemove.length > 0) {
+        console.log('🗑️ [src/ChatScreen] Removing subsequent messages from database...');
+        for (const msgToRemove of messagesToRemove) {
+          try {
+            const { error } = await supabase
+              .from('conversation_messages')
+              .delete()
+              .eq('id', msgToRemove.id)
+              .eq('session_id', currentSession.id)
+              .eq('user_id', user?.id);
+              
+            if (error) {
+              console.error(`❌ Failed to delete message ${msgToRemove.id}:`, error);
+            } else {
+              console.log(`✅ Deleted message ${msgToRemove.id}`);
+            }
+          } catch (delError) {
+            console.error(`❌ Error deleting message ${msgToRemove.id}:`, delError);
+          }
+        }
+      }
+      
+      // 5. Update the edited message content in database
+      console.log(`📝 [src/ChatScreen] Updating message content in database...`);
+      await updateMessage(currentSession.id, messageId, newContent);
+      console.log(`✅ [src/ChatScreen] Message ${messageId} updated successfully in database`);
+      
+      // 6. Clear and reload to show updated conversation
+      console.log('🔄 [src/ChatScreen] Reloading conversation after cleanup...');
+      clearMessages();
+      await new Promise(resolve => setTimeout(resolve, 50));
+      await loadSession(currentSession.id, false);
+      
+      // 7. Generate new AI response WITHOUT creating duplicate user message
+      console.log('🤖 [src/ChatScreen] Regenerating AI response for edited message...');
+      await regenerateAIResponse(newContent, currentSession.id);
+      
+      console.log('✅ [src/ChatScreen] ChatGPT-like edit completed successfully!');
+      
+      return true;
+    } catch (error) {
+      console.error('❌ [src/ChatScreen] Failed to edit message:', error);
+      throw error;
+    } finally {
+      // 🔧 FIX: Always reset editing state
+      setIsEditingMessage(false);
+    }
+  };
+
   const renderMessage = ({ item }: { item: any }) => {
     return (
       <ChatBubble
         message={item.content}
+        messageId={item.id}
+        conversationId={currentSession?.id || ''}
         isUser={item.role === 'user'}
+        timestamp={item.timestamp}
+        onEditMessage={handleEditMessage}
+        isStreaming={isStreaming && item.role === 'assistant'}
       />
     );
   };
@@ -236,6 +397,23 @@ export const ChatScreen: React.FC = () => {
             <View style={[styles.hamburger, { backgroundColor: theme.semanticColors.textPrimary }]} />
             <View style={[styles.hamburger, { backgroundColor: theme.semanticColors.textPrimary }]} />
           </TouchableOpacity>
+
+          {/* Conversation Title */}
+          <View style={styles.titleContainer}>
+            <Text 
+              style={[styles.conversationTitle, { color: theme.semanticColors.textPrimary }]}
+              numberOfLines={1}
+              ellipsizeMode="tail"
+            >
+              {currentSession?.title ? 
+                (currentSession.title.length > 20 ? 
+                  `${currentSession.title.substring(0, 20)}...` : 
+                  currentSession.title
+                ) : 
+                'New Chat'
+              }
+            </Text>
+          </View>
 
           {/* Settings Button */}
           <TouchableOpacity 
@@ -301,8 +479,16 @@ export const ChatScreen: React.FC = () => {
           >
             <Composer
               onSend={handleSendMessage}
-              placeholder={isLoading ? "Starting conversation..." : "What's on your mind?"}
-              disabled={!canMakeQuery || isLoading}
+              placeholder={
+                isSending
+                  ? "Sending message..."
+                  : isEditingMessage 
+                    ? "Saving edit..." 
+                    : isLoading 
+                      ? "Starting conversation..." 
+                      : "What's on your mind?"
+              }
+              disabled={!canMakeQuery || isLoading || isEditingMessage || isSending}
               sessionId={currentSession?.id}
             />
           </View>
@@ -556,6 +742,17 @@ const styles = StyleSheet.create({
     height: 2,
     marginVertical: 2,
     borderRadius: 1,
+  },
+  titleContainer: {
+    flex: 1,
+    paddingHorizontal: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  conversationTitle: {
+    fontSize: 16,
+    fontWeight: '500',
+    textAlign: 'center',
   },
   settingsButton: {
     padding: 8,

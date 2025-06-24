@@ -49,17 +49,14 @@ export const DashboardScreen: React.FC = () => {
   
   const {
     messages,
-    isTyping,
-    isSending,
     error,
     sendMessage,
-    canSendMessage,
   } = useChat();
 
   const { prompts, loading: promptsLoading, personalizationData } = usePersonalizationPrompts();
 
   const handleActionPress = async (actionTitle: string) => {
-    if (!canSendMessage) {
+    if (!canMakeQuery) {
       Alert.alert(
         'Query Limit Reached',
         'You have reached your daily query limit. Upgrade to Power Strategist for unlimited queries.',
@@ -70,7 +67,7 @@ export const DashboardScreen: React.FC = () => {
 
     try {
       setShowActions(false);
-      await sendMessage(`Help me with: ${actionTitle}`, actionTitle.toLowerCase().replace(' ', '_'));
+      await sendMessage(`Help me with: ${actionTitle}`);
     } catch (error) {
       Alert.alert('Error', 'Failed to send message. Please try again.');
       console.error('Action error:', error);
@@ -104,7 +101,7 @@ export const DashboardScreen: React.FC = () => {
   };
 
   const handleSendMessage = async (message: string) => {
-    if (!canSendMessage) {
+    if (!canMakeQuery) {
       Alert.alert(
         'Query Limit Reached',
         'You have reached your daily query limit. Upgrade to Power Strategist for unlimited queries.',
@@ -142,8 +139,12 @@ export const DashboardScreen: React.FC = () => {
   const renderMessage = ({ item }: { item: any }) => (
     <ChatBubble
       message={item.content}
+      messageId={item.id || `temp-${Date.now()}`}
+      conversationId="dashboard"
       isUser={item.role === 'user'}
       timestamp={item.timestamp}
+      onEditMessage={undefined} // Dashboard messages are not editable
+      isStreaming={false}
     />
   );
 

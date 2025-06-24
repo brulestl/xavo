@@ -15,6 +15,8 @@ interface ChatRequest {
   sessionId?: string
   actionType?: string
   isPromptGeneration?: boolean
+  clientId?: string
+  skipUserMessage?: boolean
 }
 
 interface ChatResponse {
@@ -68,11 +70,75 @@ serve(async (req) => {
 
     console.log(`Authenticated user: ${user.id}`)
 
-    const { message, sessionId, isPromptGeneration } = await req.json() as ChatRequest
+    const requestBody = await req.json() as ChatRequest
+    const { message, sessionId, isPromptGeneration, clientId, skipUserMessage } = requestBody
+    
+    console.log(`📝 Edge function received:`, {
+      message: message?.substring(0, 50) + '...',
+      sessionId,
+      isPromptGeneration,
+      clientId,
+      hasClientId: !!clientId,
+      skipUserMessage
+    })
 
     // Check if this is a prompt generation request (no session needed)
     if (isPromptGeneration || message.includes('generate exactly') || message.includes('personalized coaching questions')) {
       console.log('🤖 Handling prompt generation request (no session required)')
+      
+      // Fetch user personalization data for enhanced prompts
+      const { data: personalization, error: profileError } = await supabaseClient
+        .from('user_personalization')
+        .select('current_position, primary_function, company_size, top_challenges, personality_scores, preferred_coaching_style, metadata')
+        .eq('user_id', user.id)
+        .single()
+
+      console.log('📊 User personalization for AI prompts:', personalization)
+      
+      // Build enhanced system prompt with user context
+      let systemPrompt = `You are Xavo, an elite corporate influence coach. Generate 5 sophisticated, personalized coaching questions based on this executive's profile.
+
+USER PROFILE:`
+
+      if (personalization && !profileError) {
+        if (personalization.current_position) {
+          systemPrompt += `\n• Position: ${personalization.current_position}`
+        }
+        if (personalization.primary_function) {
+          systemPrompt += `\n• Function: ${personalization.primary_function}`
+        }
+        if (personalization.company_size) {
+          systemPrompt += `\n• Company Size: ${personalization.company_size}`
+        }
+        if (personalization.top_challenges && personalization.top_challenges.length > 0) {
+          systemPrompt += `\n• Key Challenges: ${personalization.top_challenges.join(', ')}`
+        }
+        if (personalization.personality_scores) {
+          const topTraits = Object.entries(personalization.personality_scores)
+            .sort(([,a], [,b]) => (b as number) - (a as number))
+            .slice(0, 3)
+            .map(([trait, score]) => `${trait}: ${Math.round((score as number) * 100)}%`)
+            .join(', ')
+          systemPrompt += `\n• Personality Strengths: ${topTraits}`
+        }
+        if (personalization.preferred_coaching_style) {
+          systemPrompt += `\n• Coaching Style: ${personalization.preferred_coaching_style}`
+        }
+      }
+
+      systemPrompt += `
+
+REQUIREMENTS:
+• Create 5 coaching questions
+• Each question should be specific to their role, challenges, and personality
+• Focus on corporate influence, leadership presence, and strategic communication
+• Questions should sound like they come from a $500/hour executive coach
+• Make them actionable and relevant to their current challenges
+• Format as clean questions only, no numbering or bullet points
+• Each question on a new line
+• No introductory text or explanations
+
+Generate coaching questions that would help this executive maximize their influence and overcome their specific challenges.`
       
       // Call OpenAI directly for prompt generation
       const openaiResponse = await fetch('https://api.openai.com/v1/chat/completions', {
@@ -86,15 +152,15 @@ serve(async (req) => {
           messages: [
             {
               role: 'system',
-              content: `You are a corporate influence coach. Generate personalized coaching questions based on the user's context. Return ONLY the questions, no other text. Format each question to be actionable and specific.`
+              content: systemPrompt
             },
             {
               role: 'user',
-              content: message
+              content: `Generate 5 personalized coaching questions for this executive profile.`
             }
           ],
-          max_tokens: 500,
-          temperature: 0.7,
+          max_tokens: 600,
+          temperature: 0.8,
         }),
       })
 
@@ -147,21 +213,89 @@ serve(async (req) => {
       console.log(`Created new session: ${currentSessionId}`)
     }
 
-    // Store user message
-    const { data: userMessage, error: userMsgError } = await supabaseClient
-      .from('conversation_messages')
-      .insert({
+    // Store user message with deduplication (unless this is a regeneration request)
+    let userMessage = null
+    if (!skipUserMessage) {
+      const finalClientId = clientId || crypto.randomUUID()
+      console.log(`📝 Using client_id: ${finalClientId} (provided: ${clientId})`)
+      
+      const messageData = {
         session_id: currentSessionId,
         user_id: user.id,
         role: 'user',
         content: message,
         created_at: new Date().toISOString(),
-        message_timestamp: new Date().toISOString()
-      })
-      .select()
-      .single()
+        message_timestamp: new Date().toISOString(),
+        client_id: finalClientId
+      }
 
-    if (userMsgError) throw userMsgError
+      // Try to insert the message, handle duplicates gracefully
+      const { data: newUserMessage, error: userMsgError } = await supabaseClient
+        .from('conversation_messages')
+        .insert(messageData)
+        .select()
+        .single()
+
+      // Handle duplicate key error (unique constraint violation)
+      if (userMsgError && userMsgError.code === '23505') {
+        console.log('🚫 Duplicate message blocked by unique constraint:', messageData.client_id)
+        
+        // Fetch the existing message
+        const { data: existingMessage, error: fetchError } = await supabaseClient
+          .from('conversation_messages')
+          .select('*')
+          .eq('client_id', messageData.client_id)
+          .single()
+        
+        if (existingMessage && !fetchError) {
+          console.log('📋 Using existing user message:', existingMessage.id)
+          userMessage = existingMessage
+          
+          // Check if there's already an AI response to this message
+          const { data: existingAIResponse } = await supabaseClient
+            .from('conversation_messages')
+            .select('*')
+            .eq('session_id', currentSessionId)
+            .eq('role', 'assistant')
+            .gt('created_at', existingMessage.created_at)
+            .order('created_at', { ascending: true })
+            .limit(1)
+            .single()
+          
+          if (existingAIResponse) {
+            console.log('✅ Found existing AI response, returning conversation')
+            return new Response(JSON.stringify({
+              id: existingAIResponse.id,
+              message: existingAIResponse.content,
+              timestamp: existingAIResponse.created_at,
+              sessionId: currentSessionId,
+              model: 'gpt-4o-mini',
+              isDuplicate: true,
+              usage: { tokensUsed: 0 }
+            }), {
+              headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+            })
+          }
+          
+          // If no AI response exists, continue to generate one
+          console.log('🤖 No AI response found for duplicate message, generating new response')
+        }
+      }
+
+      // Handle other errors
+      if (userMsgError) {
+        console.error('User message insert error:', userMsgError)
+        throw userMsgError
+      }
+      
+      if (!newUserMessage) {
+        throw new Error('Failed to insert user message')
+      }
+      
+      userMessage = newUserMessage
+    } else {
+      console.log('🔄 Skipping user message creation for regeneration request')
+    }
 
     // Get conversation context (last 10 messages)
     const { data: recentMessages } = await supabaseClient
@@ -211,7 +345,8 @@ serve(async (req) => {
     const aiResult = await openaiResponse.json()
     const aiMessage = aiResult.choices[0].message.content
 
-    // Store AI response
+    // Store AI response with unique client_id
+    const assistantClientId = crypto.randomUUID()
     const { data: assistantMessage, error: aiMsgError } = await supabaseClient
       .from('conversation_messages')
       .insert({
@@ -221,7 +356,8 @@ serve(async (req) => {
         content: aiMessage,
         created_at: new Date().toISOString(),
         message_timestamp: new Date().toISOString(),
-        raw_response: aiResult
+        raw_response: aiResult,
+        client_id: assistantClientId
       })
       .select()
       .single()

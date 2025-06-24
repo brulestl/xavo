@@ -344,6 +344,34 @@ export function useConversations() {
     loadConversations();
   };
 
+  // Update a specific message in the database
+  const updateMessage = async (sessionId: string, messageId: string, newContent: string): Promise<void> => {
+    if (!user?.id) {
+      throw new Error('User not authenticated');
+    }
+
+    try {
+      console.log(`📝 Updating message ${messageId} in session ${sessionId}`);
+      
+      const { error } = await supabase
+        .from('conversation_messages')
+        .update({ 
+          content: newContent.trim()
+          // Note: Only updating content - updated_at column doesn't exist in current schema
+        })
+        .eq('id', messageId)
+        .eq('session_id', sessionId)
+        .eq('user_id', user.id);
+
+      if (error) throw error;
+
+      console.log(`✅ Message ${messageId} updated successfully`);
+    } catch (error) {
+      console.error(`❌ Failed to update message ${messageId}:`, error);
+      throw error;
+    }
+  };
+
   return {
     conversations,
     loading,
@@ -356,6 +384,7 @@ export function useConversations() {
     clearAllConversations,
     refreshConversations,
     renameConversationInstant,
-    deleteConversationInstant
+    deleteConversationInstant,
+    updateMessage
   };
 } 

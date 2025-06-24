@@ -181,37 +181,63 @@ How do I improve my executive presence?`,
     if (data.message) {
       console.log('📝 Raw AI response:', data.message);
       
-      // Extract questions from text response (newline-separated format)
-      const questions = data.message
-        .split('\n')
-        .map((line: string) => line.replace(/^[\d\.\-\s\*]+/, '').trim()) // Remove numbering
+      // Split response into individual lines and clean them up
+      const rawLines = data.message.split('\n');
+      console.log('🔍 Raw lines from AI:', rawLines);
+      
+      const questions = rawLines
+        .map((line: string) => {
+          // Remove common prefixes like "1.", "•", "-", etc.
+          return line.replace(/^[\d\.\-\s\*\•\>\#]+/, '').trim();
+        })
         .filter((line: string) => {
-          // Filter for actual questions
-          return line.includes('?') && 
-                 line.length >= 10 && 
-                 line.length <= 100 &&
-                 (line.startsWith('How do I') || 
-                  line.startsWith('What') || 
-                  line.startsWith('Where') || 
-                  line.startsWith('When') || 
-                  line.startsWith('Why'));
+          // More flexible filtering - just needs to be a reasonable question
+          const isQuestion = line.includes('?');
+          const hasMinLength = line.length >= 10;
+          const hasMaxLength = line.length <= 150; // Increased max length
+          const hasContent = line.trim().length > 0;
+          
+          console.log(`🔍 Line: "${line}" | Question: ${isQuestion} | MinLen: ${hasMinLength} | MaxLen: ${hasMaxLength} | Content: ${hasContent}`);
+          
+          return isQuestion && hasMinLength && hasMaxLength && hasContent;
         })
         .slice(0, count);
         
       console.log('🧹 Parsed questions:', questions);
       
+      // If we got good questions, return them
       if (questions.length > 0) {
         return questions;
       }
       
-      // Fallback: try JSON parsing
+      console.log('⚠️ No questions found via line parsing, trying alternative methods...');
+      
+      // Fallback 1: Try JSON parsing
       try {
-        const prompts = JSON.parse(data.message);
-        if (Array.isArray(prompts)) {
-          return prompts.slice(0, count);
+        const parsed = JSON.parse(data.message);
+        if (Array.isArray(parsed)) {
+          console.log('✅ Successfully parsed as JSON array');
+          return parsed.slice(0, count);
+        }
+        if (parsed.prompts && Array.isArray(parsed.prompts)) {
+          console.log('✅ Successfully parsed as JSON object with prompts');
+          return parsed.prompts.slice(0, count);
         }
       } catch (parseError) {
-        console.log('JSON parsing also failed, using fallback questions');
+        console.log('❌ JSON parsing failed:', parseError);
+      }
+      
+      // Fallback 2: If it's just one question, duplicate it with variations
+      if (data.message.includes('?') && data.message.length > 10) {
+        console.log('🔄 Single question detected, creating variations...');
+        const baseQuestion = data.message.trim();
+        return [
+          baseQuestion,
+          baseQuestion.replace('How do I', 'What strategies help me'),
+          baseQuestion.replace('How do I', 'What\'s the best way to'),
+          baseQuestion.replace('How do I', 'How can I better'),
+          baseQuestion.replace('How do I', 'What techniques can I use to')
+        ].slice(0, count);
       }
     }
     
