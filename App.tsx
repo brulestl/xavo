@@ -1,3 +1,11 @@
+// Configure polyfills for robust file uploads BEFORE any other imports
+import 'react-native-get-random-values';
+import { Buffer } from 'buffer';
+
+// Set up Buffer polyfill only (safer approach for React Native)
+// @ts-ignore - Buffer polyfill
+global.Buffer = Buffer;
+
 import React from 'react';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';

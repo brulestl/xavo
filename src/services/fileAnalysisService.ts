@@ -38,6 +38,7 @@ export interface AnalyzedFile {
   };
   uploadProgress?: number;
   isAnalyzing?: boolean;
+  isRAGDocument?: boolean;
   error?: string;
 }
 

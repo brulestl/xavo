@@ -130,7 +130,16 @@ export const FilePreview: React.FC<FilePreviewProps> = ({
               <View style={styles.analyzingContainer}>
                 <ActivityIndicator size="small" color={theme.semanticColors.primary} />
                 <Text style={[styles.analyzingText, { color: theme.semanticColors.primary }]}>
-                  Analyzing with AI...
+                  {file.isRAGDocument ? 'Processing document...' : 'Analyzing with AI...'}
+                </Text>
+              </View>
+            )}
+            
+            {file.isRAGDocument && !file.isAnalyzing && !file.error && (
+              <View style={styles.analyzingContainer}>
+                <Ionicons name="document-text-outline" size={16} color={theme.semanticColors.primary} />
+                <Text style={[styles.analyzingText, { color: theme.semanticColors.primary }]}>
+                  Ready to process
                 </Text>
               </View>
             )}

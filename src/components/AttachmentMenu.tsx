@@ -106,7 +106,7 @@ export const AttachmentMenu: React.FC<AttachmentMenuProps> = ({
                 transform: [{ scale: scaleAnim }],
                 opacity: opacityAnim,
                 bottom: 110, // Position above the composer
-                right: 20,
+                left: 20, // Changed from right to left positioning
               },
             ]}
           >

@@ -6,6 +6,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../providers/ThemeProvider';
 import { useAuth } from '../providers/AuthProvider';
 import { fileAnalysisService, AnalyzedFile } from '../services/fileAnalysisService';
+import { ragFileService, RAGDocument, ProcessingProgress } from '../services/ragFileService';
 import { AttachmentMenu } from './AttachmentMenu';
 import { FilePreview } from './FilePreview';
 import { monitoring } from '../services/monitoring';
@@ -76,13 +77,75 @@ export const Composer: React.FC<ComposerProps> = ({
     }).start();
   };
 
-  const handleSend = () => {
+  const handleSend = async () => {
     const textToSend = liveTranscription || localLiveTranscription || message;
     if ((textToSend.trim() || attachedFiles.length > 0) && !disabled) {
-      onSend(textToSend.trim(), attachedFiles.length > 0 ? attachedFiles : undefined);
+      
+      // Check if we have RAG documents to process
+      const ragDocuments = attachedFiles.filter(file => file.isRAGDocument);
+      const otherFiles = attachedFiles.filter(file => !file.isRAGDocument);
+      
+      // Send message with non-RAG files first
+      onSend(textToSend.trim(), otherFiles.length > 0 ? otherFiles : undefined);
+      
+      // Process RAG documents after sending
+      if (ragDocuments.length > 0 && user?.id) {
+        // Process each RAG document
+        for (const ragFile of ragDocuments) {
+          try {
+            // Update file status to show processing
+            setAttachedFiles(prev => 
+              prev.map(f => f.id === ragFile.id ? { ...f, isAnalyzing: true, uploadProgress: 0 } : f)
+            );
+
+            // Upload and process the document
+            await ragFileService.uploadAndProcessDocument(
+              {
+                name: ragFile.name,
+                mimeType: ragFile.type,
+                size: ragFile.size,
+                uri: ragFile.uri
+              } as any,
+              user.id,
+              (progress) => {
+                setAttachedFiles(prev => 
+                  prev.map(f => f.id === ragFile.id ? { 
+                    ...f, 
+                    uploadProgress: progress.progress,
+                    isAnalyzing: progress.stage === 'processing' 
+                  } : f)
+                );
+              }
+            );
+
+            // Remove processed file from attachments
+            setAttachedFiles(prev => prev.filter(f => f.id !== ragFile.id));
+            
+            // Show success message
+            Alert.alert('Document Processed', `${ragFile.name} has been processed and is ready for questions!`);
+            
+          } catch (error) {
+            console.error('RAG document processing error:', error);
+            
+            // Update file to show error
+            setAttachedFiles(prev => 
+              prev.map(f => f.id === ragFile.id ? { 
+                ...f, 
+                error: 'Processing failed',
+                isAnalyzing: false,
+                uploadProgress: 0
+              } : f)
+            );
+            
+            Alert.alert('Processing Failed', `Failed to process ${ragFile.name}. Please try again.`);
+          }
+        }
+      }
+      
       setMessage('');
       setLocalLiveTranscription('');
-      setAttachedFiles([]);
+      // Only clear non-RAG files or files that processed successfully
+      setAttachedFiles(prev => prev.filter(f => f.isRAGDocument && f.isAnalyzing));
       Keyboard.dismiss();
     }
   };
@@ -156,7 +219,7 @@ export const Composer: React.FC<ComposerProps> = ({
     }
   };
 
-  // Document picker
+  // Document picker - prioritize RAG-compatible files
   const handleChooseFile = async () => {
     if (disabled) return;
 
@@ -164,7 +227,13 @@ export const Composer: React.FC<ComposerProps> = ({
 
     try {
       const result = await DocumentPicker.getDocumentAsync({
-        type: ['application/pdf', 'image/*', 'text/plain', 'text/csv'],
+        type: [
+          'application/pdf', 
+          'text/plain', 
+          'text/csv',
+          'application/msword',
+          'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+        ],
         copyToCacheDirectory: true,
         multiple: false,
       });
@@ -185,29 +254,49 @@ export const Composer: React.FC<ComposerProps> = ({
       return;
     }
 
-    // Validate file
-    const validation = fileAnalysisService.validateFile(file);
-    if (!validation.valid) {
-      Alert.alert('Invalid File', validation.error || 'File validation failed.');
-      return;
-    }
-
-    try {
-      // Create temporary file entry
+    // Validate file for RAG processing
+    const ragValidation = ragFileService.validateFile(file);
+    if (ragValidation.valid) {
+      // RAG-compatible file - just attach it, process after send
       const tempFile: AnalyzedFile = {
         id: `temp_${Date.now()}`,
         name: file.name || 'Untitled',
         type: file.mimeType || file.type || 'application/octet-stream',
         size: file.size || 0,
         uri: file.uri,
-        uploadProgress: 0,
+        uploadProgress: 100, // Mark as ready to send
         isAnalyzing: false,
+        isRAGDocument: true, // Flag for RAG processing
       };
 
+      // Add to attachments - ready to send
+      setAttachedFiles(prev => [...prev, tempFile]);
+      return;
+    }
+
+    // Fallback to regular file analysis for images etc.
+    const validation = fileAnalysisService.validateFile(file);
+    if (!validation.valid) {
+      Alert.alert('Invalid File', validation.error || 'File validation failed.');
+      return;
+    }
+
+    // Create temporary file entry outside try block
+    const tempFile: AnalyzedFile = {
+      id: `temp_${Date.now()}`,
+      name: file.name || 'Untitled',
+      type: file.mimeType || file.type || 'application/octet-stream',
+      size: file.size || 0,
+      uri: file.uri,
+      uploadProgress: 0,
+      isAnalyzing: false,
+    };
+
+    try {
       // Add to attachments immediately
       setAttachedFiles(prev => [...prev, tempFile]);
 
-      // Upload and analyze
+      // Upload and analyze (for non-RAG files like images)
       const analyzedFile = await fileAnalysisService.uploadAndAnalyze(
         file,
         user.id,
