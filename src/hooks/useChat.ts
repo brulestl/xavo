@@ -1,10 +1,11 @@
 import { useState, useRef, useEffect } from 'react';
 import { Alert } from 'react-native';
-import { apiFetch, buildApiUrl } from '../lib/api';
+import { apiFetch, buildApiUrl, api } from '../lib/api';
 import { useAuth } from '../providers/AuthProvider';
 import { supabase } from '../lib/supabase';
 import { appReviewService } from '../services/appReviewService';
 import { getMessageFingerprint, generateClientId } from '../utils/messageFingerprint';
+import { ragFileService, ProcessingProgress } from '../services/ragFileService';
 
 export interface ChatMessage {
   id: string;
@@ -14,6 +15,15 @@ export interface ChatMessage {
   created_at: string;
   function_calls?: any[];
   isStreaming?: boolean;
+  // File attachment support
+  type?: 'text' | 'file' | 'typing';
+  filename?: string;
+  fileUrl?: string;
+  fileSize?: number;
+  fileType?: string;
+  documentId?: string;
+  status?: 'uploading' | 'processing' | 'processed' | 'querying' | 'sent' | 'failed';
+  metadata?: any;
 }
 
 export interface ChatSession {
@@ -47,7 +57,9 @@ interface UseChatReturn {
   error: string | null;
   
   // Actions
-  sendMessage: (content: string, sessionId?: string, useStreaming?: boolean) => Promise<ChatResponse | null>;
+  sendMessage: (content: string, sessionId?: string, useStreaming?: boolean, fileData?: any) => Promise<ChatResponse | null>;
+  sendFileMessage: (file: any, userId: string, sessionId?: string) => Promise<void>;
+  sendCombinedFileAndTextMessage: (file: any, text: string, userId: string, sessionId?: string, textMessageId?: string, fileMessageId?: string) => Promise<void>;
   createSession: (title?: string) => Promise<ChatSession | null>;
   loadSession: (sessionId: string, preserveCurrentMessages?: boolean) => Promise<void>;
   loadSessions: () => Promise<void>;
@@ -56,6 +68,10 @@ interface UseChatReturn {
   clearMessages: () => void;
   retryLastMessage: () => Promise<void>;
   setCurrentSession: (session: ChatSession | null) => void;
+  // Message helpers
+  appendMessage: (message: ChatMessage) => void;
+  updateMessage: (messageId: string, updates: Partial<ChatMessage>) => void;
+  removeMessage: (messageId: string) => void;
 }
 
 export const useChat = (): UseChatReturn => {
@@ -67,10 +83,26 @@ export const useChat = (): UseChatReturn => {
   const [isThinking, setIsThinking] = useState(false);
   const [isSending, setIsSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [isCombinedFlow, setIsCombinedFlow] = useState(false); // Track combined flow state
   
   const lastUserMessageRef = useRef<string>('');
   const abortControllerRef = useRef<AbortController | null>(null);
   const pendingMessages = useRef<Set<string>>(new Set()); // Track pending messages by fingerprint
+
+  // Helper functions for message state management
+  const appendMessage = (message: ChatMessage) => {
+    setMessages(prev => [...prev, message]);
+  };
+
+  const updateMessage = (messageId: string, updates: Partial<ChatMessage>) => {
+    setMessages(prev => prev.map(msg => 
+      msg.id === messageId ? { ...msg, ...updates } : msg
+    ));
+  };
+
+  const removeMessage = (messageId: string) => {
+    setMessages(prev => prev.filter(msg => msg.id !== messageId));
+  };
 
   // Send message with idempotency protection
   const sendMessage = async (
@@ -248,14 +280,18 @@ export const useChat = (): UseChatReturn => {
       await appReviewService.incrementSessionCount();
 
       // 🔧 FIX: Reload session to sync proper database IDs for all messages
-      // This ensures user messages get their real UUIDs instead of temp IDs
-      console.log('🔄 [useChat] Reloading session to sync database IDs after sending message...');
-      try {
-        await loadSession(targetSessionId, true); // Preserve current messages during reload
-        console.log('✅ [useChat] Session reloaded successfully with proper message IDs');
-      } catch (reloadError) {
-        console.warn('⚠️ [useChat] Session reload failed, but message was sent:', reloadError);
-        // Don't throw - the message was sent successfully, ID sync is just nice-to-have
+      // Skip reload during combined flows to avoid wiping optimistic messages
+      if (!isCombinedFlow) {
+        console.log('🔄 [useChat] Reloading session to sync database IDs after sending message...');
+        try {
+          await loadSession(targetSessionId, true); // Preserve current messages during reload
+          console.log('✅ [useChat] Session reloaded successfully with proper message IDs');
+        } catch (reloadError) {
+          console.warn('⚠️ [useChat] Session reload failed, but message was sent:', reloadError);
+          // Don't throw - the message was sent successfully, ID sync is just nice-to-have
+        }
+      } else {
+        console.log('🔄 [useChat] Skipping session reload during combined flow');
       }
       
       return response;
@@ -826,6 +862,240 @@ export const useChat = (): UseChatReturn => {
     }
   }, [authLoading, hasLoadedSessions]);
 
+  // Send file message (ChatGPT-style file upload)
+  const sendFileMessage = async (file: any, userId: string, sessionId?: string) => {
+    let targetSessionId = currentSession?.id || sessionId;
+    let newSession: ChatSession | null = null;
+    
+    if (!targetSessionId) {
+      // Create a new session for file upload
+      newSession = await createSession(`Document: ${file.name}`);
+      if (!newSession) throw new Error('Failed to create session');
+      targetSessionId = newSession.id;
+    }
+
+    // Generate client ID for optimistic message
+    const clientId = generateClientId();
+
+    // Create optimistic file message
+    const fileMessage: ChatMessage = {
+      id: clientId,
+      content: '', // Empty content for file messages
+      role: 'user',
+      session_id: targetSessionId,
+      created_at: new Date().toISOString(),
+      type: 'file',
+      filename: file.name,
+      fileUrl: file.uri, // Temporary local URL
+      fileSize: file.size,
+      fileType: file.mimeType || file.type,
+      status: 'uploading'
+    };
+
+    // Add optimistic message immediately
+    setMessages(prev => [...prev, fileMessage]);
+
+    try {
+      // Upload and process document
+      const ragDocument = await ragFileService.uploadAndProcessDocument(
+        file,
+        userId,
+        (progress: ProcessingProgress) => {
+          // Map progress stages to our status types
+          let newStatus: ChatMessage['status'] = 'uploading';
+          if (progress.stage === 'processing') newStatus = 'processing';
+          else if (progress.stage === 'completed') newStatus = 'processed';
+          else if (progress.stage === 'failed') newStatus = 'failed';
+          
+          // Update file message status during upload
+          setMessages(prev => prev.map(msg => 
+            msg.id === clientId ? { 
+              ...msg, 
+              content: `${progress.message}`,
+              status: newStatus
+            } : msg
+          ));
+        }
+      );
+
+      // Update message with successful upload
+      setMessages(prev => prev.map(msg => 
+        msg.id === clientId ? { 
+          ...msg, 
+          content: `Document uploaded successfully`,
+          fileUrl: ragDocument.publicUrl || msg.fileUrl,
+          documentId: ragDocument.id,
+          status: 'sent'
+        } : msg
+      ));
+
+      // Generate AI acknowledgment using RAG query to ensure document access
+      const acknowledgmentQuery = `Please analyze this uploaded document: ${file.name}. Provide a brief summary of its content and explain how you can help the user with this document.`;
+      
+      try {
+        const ragResult = await ragFileService.queryDocuments(
+          acknowledgmentQuery,
+          targetSessionId,
+          ragDocument.id,
+          false // Don't include conversation context for acknowledgment
+        );
+
+        if (ragResult) {
+          // Add the AI acknowledgment message to the chat
+          const assistantMessage: ChatMessage = {
+            id: ragResult.id,
+            content: ragResult.answer,
+            role: 'assistant',
+            session_id: targetSessionId,
+            created_at: new Date().toISOString(),
+            type: 'text'
+          };
+
+          setMessages(prev => [...prev, assistantMessage]);
+        }
+      } catch (ragError) {
+        console.error('RAG acknowledgment failed, falling back to regular message:', ragError);
+        // Fallback to regular message if RAG fails
+        const fallbackPrompt = `Document "${file.name}" has been uploaded and processed successfully. I can now analyze its content and answer questions about it.`;
+        await sendMessage(fallbackPrompt, targetSessionId);
+      }
+
+    } catch (error) {
+      // Update message with error status
+      setMessages(prev => prev.map(msg => 
+        msg.id === clientId ? { 
+          ...msg, 
+          content: `Upload failed: ${error instanceof Error ? error.message : 'Unknown error'}`,
+          status: 'failed'
+        } : msg
+      ));
+      throw error;
+    }
+  };
+
+  // Upload and process document (extracted helper function)
+  const uploadAndProcessDocument = async (file: any, userId: string): Promise<{ documentId: string; publicUrl?: string }> => {
+    return new Promise((resolve, reject) => {
+      ragFileService.uploadAndProcessDocument(
+        file,
+        userId,
+        (progress: ProcessingProgress) => {
+          // Progress updates are handled by calling code
+        }
+      ).then((ragDocument) => {
+        resolve({
+          documentId: ragDocument.id,
+          publicUrl: ragDocument.publicUrl
+        });
+      }).catch(reject);
+    });
+  };
+
+  // Send combined file and text message (unified RAG flow)
+  const sendCombinedFileAndTextMessage = async (
+    file: any, 
+    text: string, 
+    userId: string, 
+    sessionId?: string,
+    textMessageId?: string,
+    fileMessageId?: string
+  ) => {
+    console.log('🔥 Starting enhanced unified RAG flow');
+    
+    let targetSessionId = currentSession?.id || sessionId;
+    
+    if (!targetSessionId) {
+      // Create a new session for combined upload
+      const newSession = await createSession(`${text.substring(0, 30)}...`);
+      if (!newSession) throw new Error('Failed to create session');
+      targetSessionId = newSession.id;
+    }
+
+    // Use provided message IDs or generate fallback ones
+    const fileClientId = fileMessageId || generateClientId();
+    
+    setIsCombinedFlow(true);
+    setIsSending(true);
+    setIsLoading(true);
+
+    try {
+      // 1. Upload & process file with progress updates
+      const docMeta = await ragFileService.uploadAndProcessDocument(
+        file,
+        userId,
+        (progress: ProcessingProgress) => {
+          // Map progress stages to our status types
+          let newStatus: ChatMessage['status'] = 'uploading';
+          if (progress.stage === 'processing') newStatus = 'processing';
+          else if (progress.stage === 'completed') newStatus = 'processed';
+          else if (progress.stage === 'failed') newStatus = 'failed';
+          
+          // Update existing file message status
+          updateMessage(fileClientId, {
+            status: newStatus
+          });
+        }
+      );
+
+      // 2. Update file bubble to 'processed' status
+      updateMessage(fileClientId, { 
+        status: 'processed', 
+        documentId: docMeta.id,
+        fileUrl: docMeta.publicUrl 
+      });
+
+      // 3. Show assistant typing indicator
+      const typingId = `typing-${Date.now()}`;
+      appendMessage({
+        id: typingId,
+        role: 'assistant',
+        type: 'typing',
+        content: '',
+        session_id: targetSessionId,
+        created_at: new Date().toISOString(),
+      });
+      setIsThinking(true);
+
+      // 4. Query the document with user text
+      const response = await api.queryDocument({
+        documentId: docMeta.id,
+        question: text,
+        sessionId: targetSessionId,
+      });
+
+      // 5. Remove typing indicator
+      removeMessage(typingId);
+
+      // 6. Append the assistant's actual response
+      appendMessage({
+        id: response.id,
+        role: 'assistant',
+        type: 'text',
+        content: response.answer,
+        session_id: targetSessionId,
+        created_at: response.timestamp,
+        metadata: { sources: response.sources },
+      });
+
+      console.log('✅ Enhanced unified RAG flow completed successfully');
+
+    } catch (error) {
+      console.error('❌ Enhanced unified RAG flow failed:', error);
+      
+      // Update file message with error status
+      updateMessage(fileClientId, {
+        status: 'failed'
+      });
+      
+      throw error;
+    } finally {
+      setIsCombinedFlow(false);
+      setIsSending(false);
+      setIsLoading(false);
+      setIsThinking(false);
+    }
+  };
+
   // Cleanup on unmount
   useEffect(() => {
     return () => {
@@ -847,6 +1117,8 @@ export const useChat = (): UseChatReturn => {
     
     // Actions
     sendMessage,
+    sendFileMessage,
+    sendCombinedFileAndTextMessage,
     createSession,
     loadSession,
     loadSessions,
@@ -854,6 +1126,10 @@ export const useChat = (): UseChatReturn => {
     renameSession,
     clearMessages,
     retryLastMessage,
-    setCurrentSession
+    setCurrentSession,
+    // Message helpers
+    appendMessage,
+    updateMessage,
+    removeMessage
   };
 };

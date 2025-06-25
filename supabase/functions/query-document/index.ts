@@ -103,24 +103,34 @@ serve(async (req) => {
 
     // Generate embedding for the question
     const questionEmbedding = await generateEmbedding(question)
+    
+    // Detailed debug logging before RPC
+    console.log('🔍 questionEmbedding slice:', questionEmbedding.slice(0,5), '… length:', questionEmbedding.length)
+    console.log('🔍 calling RPC match_document_chunks with documentId:', documentId)
 
-    // Search for relevant document chunks using vector similarity
-    const { data: matchingChunks, error: searchError } = await supabaseClient
-      .rpc('match_document_chunks', {
-        query_embedding: JSON.stringify(questionEmbedding),
-        filter_user_id: user.id,
-        filter_document_id: documentId || null,
-        similarity_threshold: 0.7,
+    // Search for relevant document chunks using working RPC
+    const { data: matchingChunks, error: rpcError } = await supabaseClient.rpc(
+      'match_document_chunks',
+      {
+        query_embedding: questionEmbedding,       // raw number[]
+        p_document_id: documentId,                // exactly your doc UUID
         match_count: 5
-      })
+      }
+    )
 
-    if (searchError) {
-      console.error('Vector search error:', searchError)
-      throw new Error(`Document search failed: ${searchError.message}`)
+    // Detailed debug logging after RPC
+    if (rpcError) console.error('❌ RPC error:', rpcError)
+    console.log('🔍 matchingChunks count:', matchingChunks?.length || 0)
+    console.dir(matchingChunks, { depth: 1 })
+
+    if (rpcError) {
+      console.error('❌ Vector search error:', rpcError)
+      throw new Error(`Document search failed: ${rpcError.message}`)
     }
 
+    // Fail early on no chunks
     if (!matchingChunks || matchingChunks.length === 0) {
-      // No relevant chunks found - provide a helpful response
+      console.log('⚠️ No chunks found - returning early')
       const noResultsResponse: QueryDocumentResponse = {
         id: `query-${Date.now()}`,
         answer: "I couldn't find relevant information in your uploaded documents to answer this question. Please try rephrasing your question or ensure your documents contain information related to your query.",
@@ -137,11 +147,9 @@ serve(async (req) => {
 
     console.log(`📄 Found ${matchingChunks.length} relevant chunks`)
 
-    // Prepare context from matching chunks
-    const documentContext = matchingChunks
-      .map((chunk, index) => 
-        `[Source ${index + 1} - ${chunk.document_filename}, Page ${chunk.page}]:\n${chunk.content}`
-      )
+    // Build system prompt using chunks
+    const docsContext = matchingChunks
+      .map((c, i) => `[Source ${i+1} – ${c.document_filename}, Page ${c.page}]:\n${c.content}`)
       .join('\n\n---\n\n')
 
     // Get conversation context if requested
@@ -164,19 +172,12 @@ serve(async (req) => {
       }
     }
 
-    // Build the system prompt for the AI
-    const systemPrompt = `You are an AI assistant specialized in analyzing and answering questions about documents. Your task is to provide accurate, helpful answers based on the provided document context.
+    // Build the system prompt using document chunks
+    const systemPrompt = `You are an AI assistant with access to the following document context:
 
-Guidelines:
-- Answer the question based ONLY on the information provided in the document sources
-- If the documents don't contain enough information to answer the question, clearly state this
-- Always cite which source(s) you're referencing in your answer
-- Be precise and avoid speculation
-- If multiple sources provide different perspectives, acknowledge this
-- Keep your answer focused and relevant to the question
+${docsContext}
 
-Document context:
-${documentContext}${conversationContext}`
+Answer the user's question using only this information. Be specific and reference the content directly from the provided sources.${conversationContext}`
 
     // Call OpenAI for the response
     const openaiResponse = await fetch('https://api.openai.com/v1/chat/completions', {
@@ -198,7 +199,7 @@ ${documentContext}${conversationContext}`
           }
         ],
         max_tokens: 1000,
-        temperature: 0.3, // Lower temperature for more factual responses
+        temperature: 0.2, // Lower temperature for more factual responses
       }),
     })
 

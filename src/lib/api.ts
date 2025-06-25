@@ -123,4 +123,40 @@ export async function apiFetch<T>(
 // Helper function to build API URLs (for cases where you need the URL but not the fetch)
 export function buildApiUrl(path: string): string {
   return `${BASE}${path}`;
-} 
+}
+
+// Document query interface for RAG operations
+export interface QueryDocumentRequest {
+  question: string;
+  documentId?: string;
+  sessionId?: string;
+  includeConversationContext?: boolean;
+}
+
+export interface QueryDocumentResponse {
+  id: string;
+  answer: string;
+  sources: Array<{
+    documentId: string;
+    filename: string;
+    page: number;
+    chunkIndex: number;
+    similarity: number;
+    content: string;
+  }>;
+  timestamp: string;
+  sessionId?: string;
+  tokensUsed: number;
+}
+
+// Direct API methods for specific endpoints
+export const api = {
+  // Query document using the RAG Edge Function
+  async queryDocument(params: QueryDocumentRequest): Promise<QueryDocumentResponse> {
+    console.log('🔍 Calling query-document endpoint:', params.question.substring(0, 50) + '...');
+    return apiFetch<QueryDocumentResponse>('/query-document', {
+      method: 'POST',
+      body: JSON.stringify(params)
+    });
+  }
+}; 
