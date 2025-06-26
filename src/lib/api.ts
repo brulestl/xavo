@@ -160,5 +160,16 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(params)
     });
+  },
+
+  // Get session files using the list-session-files Edge Function
+  async getSessionFiles(sessionId: string): Promise<{ files: any[] }> {
+    console.log('📁 Calling list-session-files endpoint for session:', sessionId);
+    return apiFetch<{ files: any[] }>('/list-session-files', {
+      method: 'GET',
+      headers: {
+        'X-Session-ID': sessionId
+      }
+    });
   }
 }; 

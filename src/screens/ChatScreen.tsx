@@ -22,6 +22,9 @@ import { ChatBubble } from '../components/ChatBubble';
 import { TypingDots } from '../components/TypingDots';
 import { ThinkingIndicator } from '../components/ThinkingIndicator';
 import { AnalyzedFile } from '../services/fileAnalysisService';
+import { useIntent } from '../hooks/useIntent';
+import { api } from '../lib/api';
+import { ChatMessage } from '../hooks/useChat';
 
 import { Drawer } from '../components/Drawer';
 import { SettingsDrawer } from '../components/SettingsDrawer';
@@ -137,6 +140,71 @@ export const ChatScreen: React.FC = () => {
     }
 
     try {
+      // Check intent before processing
+      const intent = useIntent(message);
+      
+      // Handle list_files intent
+      if (intent.type === 'list_files' && currentSession?.id) {
+        console.log('📁 Detected list_files intent, fetching session files...');
+        
+        // First add the user message
+        const userMessage: ChatMessage = {
+          id: `user-${Date.now()}`,
+          role: 'user',
+          content: message,
+          session_id: currentSession.id,
+          created_at: new Date().toISOString(),
+          type: 'text'
+        };
+        appendMessage(userMessage);
+        
+        try {
+          // Get session files
+          const { files } = await api.getSessionFiles(currentSession.id);
+          
+          // Build synthetic assistant response
+          let assistantContent: string;
+          if (!files || files.length === 0) {
+            assistantContent = "You haven't uploaded any files yet in this chat.";
+          } else {
+            const fileList = files.map(file => {
+              const status = file.status === 'completed' ? '✅' : '⏳';
+              const pages = file.page_count ? `, ${file.page_count} pages` : '';
+              const chunks = file.chunk_count ? `, ${file.chunk_count} chunks` : '';
+              return `• ${file.filename} (${status}${pages}${chunks})`;
+            }).join('\n');
+            
+            assistantContent = `Here are the files you've uploaded in this chat:\n\n${fileList}`;
+          }
+          
+          // Add synthetic assistant message
+          const assistantMessage: ChatMessage = {
+            id: `assistant-${Date.now()}`,
+            role: 'assistant',
+            content: assistantContent,
+            session_id: currentSession.id,
+            created_at: new Date().toISOString(),
+            type: 'text'
+          };
+          appendMessage(assistantMessage);
+          
+        } catch (error) {
+          console.error('Failed to fetch session files:', error);
+          const errorMessage: ChatMessage = {
+            id: `assistant-${Date.now()}`,
+            role: 'assistant',
+            content: "I'm having trouble accessing your file list right now. Please try again later.",
+            session_id: currentSession.id,
+            created_at: new Date().toISOString(),
+            type: 'text'
+          };
+          appendMessage(errorMessage);
+        }
+        
+        return; // Don't proceed with normal message flow
+      }
+      
+      // Normal message flow for all other intents
       let finalMessage = message;
       
       // If there are attachments, append their analysis to the message
