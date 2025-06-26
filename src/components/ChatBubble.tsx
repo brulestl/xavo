@@ -64,8 +64,8 @@ export const ChatBubble: React.FC<ChatBubbleProps> = ({
 
   const dynamicBubbleStyle: ViewStyle = {
     backgroundColor: isUser 
-      ? theme.semanticColors.primary 
-      : (isDark ? '#2C2C2C' : '#F5F5F5'),
+      ? theme.getUserBubbleColor()
+      : theme.getAssistantBubbleColor(),
     alignSelf: isUser ? 'flex-end' : 'flex-start',
     shadowColor: theme.semanticColors.shadow,
   };
@@ -81,7 +81,7 @@ export const ChatBubble: React.FC<ChatBubbleProps> = ({
     styles.messageText,
     {
       color: isUser 
-        ? '#FFFFFF' 
+        ? theme.getUserMessageTextColor()
         : theme.semanticColors.textPrimary
     }
   ];

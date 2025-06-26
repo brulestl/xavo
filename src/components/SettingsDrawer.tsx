@@ -16,6 +16,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../providers/ThemeProvider';
 import { useAuth } from '../providers/AuthProvider';
 import { TierBadge } from './ui/TierBadge';
+import { ThemeSwitch } from './ThemeSwitch';
 // import { ReviewDebugPanel } from './ReviewDebugPanel'; // Commented out
 
 // USE SCREEN DIMENSIONS FOR ABSOLUTE STABILITY - NEVER AFFECTED BY KEYBOARD
@@ -315,6 +316,8 @@ export const SettingsDrawer: React.FC<SettingsDrawerProps> = ({
                 color={theme.semanticColors.textSecondary}
               />
             </TouchableOpacity>
+            
+            <ThemeSwitch style={{ marginTop: 16 }} />
           </View>
 
           {/* Subscriptions */}

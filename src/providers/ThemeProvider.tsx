@@ -2,7 +2,12 @@ import React, { createContext, useContext, useState, useEffect, ReactNode } from
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 export interface XavoColors {
-  // Xavo Brand Colors
+  // User-specified colors
+  assistantBubble: string;
+  userBubble: string;
+  fileUploadBubble: string;
+  
+  // Legacy brand colors
   xavoBlue: string;
   growthGreen: string;
   pureWhite: string;
@@ -23,6 +28,10 @@ export interface ThemeSemanticColors {
   border: string;
   shadow: string;
   cta: string;
+  
+  // New chat-specific colors
+  composerBackground: string;
+  userMessageText: string;
 }
 
 export interface Theme {
@@ -36,6 +45,11 @@ export interface Theme {
   getSecondaryTextColor: () => string;
   getAccentColor: () => string;
   getCTAColor: () => string;
+  getComposerBackgroundColor: () => string;
+  getAssistantBubbleColor: () => string;
+  getUserBubbleColor: () => string;
+  getFileUploadBubbleColor: () => string;
+  getUserMessageTextColor: () => string;
   getPrimaryButtonStyle: () => {
     backgroundColor: string;
     opacity: number;
@@ -46,32 +60,51 @@ export interface Theme {
   };
 }
 
-const xavoColors: XavoColors = {
+const createXavoColors = (isDark: boolean): XavoColors => ({
+  // User-specified chat colors (theme-dependent)
+  assistantBubble: isDark ? '#333533' : '#e8eddf',
+  userBubble: '#0071fc',
+  fileUploadBubble: '#f5cb5c',
+  
+  // Legacy brand colors
   xavoBlue: '#4285F4',
   growthGreen: '#1DB954',
   pureWhite: '#FFFFFF',
   deepNavy: '#011C27',
   nearlyBlack: '#1A1A1A',
-  mutedAccent: '#4285F466', // Muted blue for night mode
-};
+  mutedAccent: '#4285F466',
+});
 
 const createTheme = (isDark: boolean): Theme => {
+  const colors = createXavoColors(isDark);
+  
   const semanticColors: ThemeSemanticColors = {
-    primary: xavoColors.xavoBlue,
-    primaryDisabled: xavoColors.xavoBlue + '66', // 40% opacity
-    background: isDark ? xavoColors.deepNavy : xavoColors.pureWhite,
-    cardBackground: isDark ? xavoColors.deepNavy : xavoColors.pureWhite,
-    textPrimary: isDark ? xavoColors.pureWhite : xavoColors.nearlyBlack,
-    textSecondary: isDark ? xavoColors.pureWhite + 'CC' : xavoColors.nearlyBlack + 'AA',
-    accent: isDark ? xavoColors.mutedAccent : xavoColors.xavoBlue,
-    surface: isDark ? xavoColors.deepNavy : xavoColors.pureWhite,
-    border: isDark ? xavoColors.pureWhite + '20' : xavoColors.nearlyBlack + '10',
-    shadow: isDark ? xavoColors.nearlyBlack : xavoColors.nearlyBlack + '20',
-    cta: xavoColors.growthGreen,
+    primary: colors.userBubble, // Use user bubble color as primary
+    primaryDisabled: colors.userBubble + '66', // 40% opacity
+    
+    // Background colors based on mode
+    background: isDark ? '#242423' : '#FFFFFF',
+    cardBackground: isDark ? '#242423' : '#FFFFFF',
+    
+    // Text colors - all white in dark mode
+    textPrimary: isDark ? '#FFFFFF' : '#000000',
+    textSecondary: isDark ? '#FFFFFF' : '#666666',
+    
+    // Composer background
+    composerBackground: isDark ? '#333533' : '#e8eddf',
+    
+    // User message text should be white
+    userMessageText: '#FFFFFF',
+    
+    accent: colors.fileUploadBubble,
+    surface: isDark ? '#333533' : '#FFFFFF',
+    border: isDark ? '#FFFFFF20' : '#00000010',
+    shadow: isDark ? '#000000' : '#00000020',
+    cta: colors.growthGreen,
   };
 
   return {
-    colors: xavoColors,
+    colors,
     semanticColors,
     
     getBackgroundColor: () => semanticColors.background,
@@ -80,6 +113,11 @@ const createTheme = (isDark: boolean): Theme => {
     getSecondaryTextColor: () => semanticColors.textSecondary,
     getAccentColor: () => semanticColors.accent,
     getCTAColor: () => semanticColors.cta,
+    getComposerBackgroundColor: () => semanticColors.composerBackground,
+    getAssistantBubbleColor: () => colors.assistantBubble,
+    getUserBubbleColor: () => colors.userBubble,
+    getFileUploadBubbleColor: () => colors.fileUploadBubble,
+    getUserMessageTextColor: () => semanticColors.userMessageText,
     getPrimaryButtonStyle: () => ({
       backgroundColor: semanticColors.primary,
       opacity: 1,
@@ -151,12 +189,12 @@ export const ThemeProvider: React.FC<ThemeProviderProps> = ({ children }) => {
   const theme = createTheme(isDark);
 
   // Tailwind class helpers for NativeWind
-  const getBackgroundClass = () => isDark ? 'bg-deep-navy' : 'bg-pure-white';
-  const getCardBackgroundClass = () => isDark ? 'bg-deep-navy' : 'bg-pure-white';
-  const getTextPrimaryClass = () => isDark ? 'text-pure-white' : 'text-nearly-black';
-  const getTextSecondaryClass = () => isDark ? 'text-pure-white/80' : 'text-nearly-black/70';
-  const getPrimaryButtonClass = () => 'bg-xavo-blue rounded-xl';
-  const getCTAButtonClass = () => 'bg-growth-green rounded-xl';
+  const getBackgroundClass = () => isDark ? 'bg-[#242423]' : 'bg-white';
+  const getCardBackgroundClass = () => isDark ? 'bg-[#242423]' : 'bg-white';
+  const getTextPrimaryClass = () => isDark ? 'text-white' : 'text-black';
+  const getTextSecondaryClass = () => isDark ? 'text-white' : 'text-gray-600';
+  const getPrimaryButtonClass = () => 'bg-[#0071fc] rounded-xl';
+  const getCTAButtonClass = () => 'bg-[#1DB954] rounded-xl';
 
   return (
     <ThemeContext.Provider 

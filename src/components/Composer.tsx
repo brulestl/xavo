@@ -503,7 +503,7 @@ export const Composer: React.FC<ComposerProps> = ({
           style={[
             styles.textContainer,
             {
-              backgroundColor: theme.semanticColors.surface,
+              backgroundColor: theme.getComposerBackgroundColor(),
               borderColor,
               shadowColor: theme.semanticColors.shadow,
             },
