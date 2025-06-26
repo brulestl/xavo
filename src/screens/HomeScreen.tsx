@@ -525,8 +525,8 @@ export const HomeScreen: React.FC = () => {
             style={[styles.newConversationButton, { backgroundColor: theme.semanticColors.surface, borderColor: theme.semanticColors.border }]}
             onPress={() => {
               setIsDrawerVisible(false);
-              console.log('🆕 HomeScreen: Starting new conversation');
-              // Navigate to new conversation (clear any existing session)
+              console.log('🆕 HomeScreen: Starting NEW EMPTY conversation from drawer');
+              // Navigate to ChatScreen for empty "Start your conversation" experience
               (navigation as any).navigate('Chat', {});
             }}
           >

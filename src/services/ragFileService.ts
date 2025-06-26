@@ -51,6 +51,10 @@ export interface QueryResult {
     content: string;
   }>;
   tokensUsed: number;
+  timestamp?: string;
+  sessionId?: string;
+  userMessageId?: string;
+  assistantMessageId?: string;
 }
 
 class RAGFileService {

@@ -9,6 +9,7 @@ import { fileAnalysisService, AnalyzedFile } from '../services/fileAnalysisServi
 import { ragFileService, RAGDocument, ProcessingProgress } from '../services/ragFileService';
 import { AttachmentMenu } from './AttachmentMenu';
 import { FilePreview } from './FilePreview';
+import { PDFProcessingErrorDialog } from './PDFProcessingErrorDialog';
 import { monitoring } from '../services/monitoring';
 
 // Safely import constants
@@ -24,6 +25,9 @@ const IS_EXPO_GO = __DEV__ && !Constants.appOwnership;
 
 interface ComposerProps {
   onSend: (message: string, attachments?: AnalyzedFile[]) => void;
+  onSendFile?: (file: any) => void;
+  onSendCombinedFileAndText?: (file: any, text: string, textMessageId: string, fileMessageId: string) => void;
+  onAddOptimisticMessage?: (message: any) => void;
   placeholder?: string;
   disabled?: boolean;
   sessionId?: string;
@@ -33,6 +37,9 @@ interface ComposerProps {
 
 export const Composer: React.FC<ComposerProps> = ({
   onSend,
+  onSendFile,
+  onSendCombinedFileAndText,
+  onAddOptimisticMessage,
   placeholder = "What's on your mind?",
   disabled = false,
   sessionId,
@@ -46,12 +53,43 @@ export const Composer: React.FC<ComposerProps> = ({
   const [attachedFiles, setAttachedFiles] = useState<AnalyzedFile[]>([]);
   const [showAttachmentMenu, setShowAttachmentMenu] = useState(false);
   const [localLiveTranscription, setLocalLiveTranscription] = useState('');
+  const [showPDFErrorDialog, setShowPDFErrorDialog] = useState(false);
+  const [failedFileName, setFailedFileName] = useState<string>('');
   const focusAnim = useRef(new Animated.Value(0)).current;
   const textInputRef = useRef<TextInput>(null);
 
   // Use live transcription if provided, otherwise use message state
   const displayText = liveTranscription || localLiveTranscription || message;
   const isCurrentlyRecording = isRecording || false;
+
+  // Check if error is related to PDF text extraction
+  const isPDFTextExtractionError = (error: any): boolean => {
+    const errorMessage = error?.message || error?.toString() || '';
+    return errorMessage.includes('No meaningful text content found') ||
+           errorMessage.includes('unsupported Unicode escape sequence') ||
+           errorMessage.includes('\\u0000 cannot be converted to text') ||
+           errorMessage.includes('Failed to save chunks');
+  };
+
+  // Handle PDF processing errors with custom dialog
+  const handlePDFProcessingError = (fileName: string, error: any) => {
+    if (isPDFTextExtractionError(error)) {
+      setFailedFileName(fileName);
+      setShowPDFErrorDialog(true);
+    } else {
+      // Fallback to generic error for other types of failures
+      Alert.alert('Processing Failed', `Failed to process ${fileName}. Please try again.`);
+    }
+  };
+
+  // Handle "Try Pasting" action from PDF error dialog
+  const handleTryPasting = () => {
+    setShowPDFErrorDialog(false);
+    // Focus the text input to encourage pasting
+    setTimeout(() => {
+      textInputRef.current?.focus();
+    }, 300);
+  };
 
   const handleInputAreaPress = () => {
     if (textInputRef.current && !disabled && !liveTranscription && !localLiveTranscription) {
@@ -85,10 +123,106 @@ export const Composer: React.FC<ComposerProps> = ({
       const ragDocuments = attachedFiles.filter(file => file.isRAGDocument);
       const otherFiles = attachedFiles.filter(file => !file.isRAGDocument);
       
-      // Send message with non-RAG files first
+      // 🔥 NEW: Unified RAG flow - Combined file + text
+      if (ragDocuments.length === 1 && textToSend.trim() && otherFiles.length === 0 && onSendCombinedFileAndText && onAddOptimisticMessage && user?.id) {
+        const ragFile = ragDocuments[0];
+        try {
+          // Generate unique IDs for both bubbles
+          const textMessageId = `temp-text-${Date.now()}`;
+          const fileMessageId = `temp-file-${Date.now()}`;
+          
+          // 1. Create optimistic user text bubble
+          const textMessage = {
+            id: textMessageId,
+            content: textToSend.trim(),
+            role: 'user',
+            session_id: sessionId || 'temp-session',
+            created_at: new Date().toISOString(),
+            type: 'text',
+            status: 'sent'
+          };
+          
+          // 2. Create optimistic file bubble
+          const fileMessage = {
+            id: fileMessageId,
+            content: ragFile.name,
+            role: 'user',
+            session_id: sessionId || 'temp-session',
+            created_at: new Date().toISOString(),
+            type: 'file',
+            filename: ragFile.name,
+            fileUrl: ragFile.uri,
+            fileSize: ragFile.size,
+            fileType: ragFile.type,
+            status: 'uploading'
+          };
+          
+          // Add both bubbles to UI immediately
+          onAddOptimisticMessage(textMessage);
+          onAddOptimisticMessage(fileMessage);
+          
+          // Convert to the format expected by unified function
+          const fileForUpload = {
+            name: ragFile.name,
+            mimeType: ragFile.type,
+            size: ragFile.size,
+            uri: ragFile.uri,
+            type: ragFile.type
+          };
+          
+          // Clear attachments immediately
+          setAttachedFiles([]);
+          
+          // Use the unified file + text flow with existing message IDs
+          await onSendCombinedFileAndText(fileForUpload, textToSend.trim(), textMessageId, fileMessageId);
+          
+        } catch (error) {
+          console.error('Combined file + text error:', error);
+          // Use custom PDF error dialog for text extraction issues
+          handlePDFProcessingError(ragFile.name, error);
+        }
+        
+        setMessage('');
+        setLocalLiveTranscription('');
+        Keyboard.dismiss();
+        return;
+      }
+      
+      // ChatGPT-style file upload: If only RAG document and no text, use sendFileMessage
+      if (ragDocuments.length === 1 && !textToSend.trim() && otherFiles.length === 0 && onSendFile && user?.id) {
+        const ragFile = ragDocuments[0];
+        try {
+          // Convert to the format expected by sendFileMessage
+          const fileForUpload = {
+            name: ragFile.name,
+            mimeType: ragFile.type,
+            size: ragFile.size,
+            uri: ragFile.uri,
+            type: ragFile.type
+          };
+          
+          // Clear attachments immediately
+          setAttachedFiles([]);
+          
+          // Use the ChatGPT-style file upload
+          await onSendFile(fileForUpload);
+          
+        } catch (error) {
+          console.error('File upload error:', error);
+          // Use custom PDF error dialog for text extraction issues
+          handlePDFProcessingError(ragFile.name, error);
+        }
+        
+        setMessage('');
+        setLocalLiveTranscription('');
+        Keyboard.dismiss();
+        return;
+      }
+      
+      // Regular message sending with attachments
       onSend(textToSend.trim(), otherFiles.length > 0 ? otherFiles : undefined);
       
-      // Process RAG documents after sending
+      // Process RAG documents after sending (legacy flow)
       if (ragDocuments.length > 0 && user?.id) {
         // Process each RAG document
         for (const ragFile of ragDocuments) {
@@ -137,7 +271,8 @@ export const Composer: React.FC<ComposerProps> = ({
               } : f)
             );
             
-            Alert.alert('Processing Failed', `Failed to process ${ragFile.name}. Please try again.`);
+            // Use custom PDF error dialog for text extraction issues
+            handlePDFProcessingError(ragFile.name, error);
           }
         }
       }
@@ -469,6 +604,14 @@ export const Composer: React.FC<ComposerProps> = ({
         onTakePhoto={handleTakePhoto}
         onChoosePhoto={handleChoosePhoto}
         onChooseFile={handleChooseFile}
+      />
+
+      {/* PDF Processing Error Dialog */}
+      <PDFProcessingErrorDialog
+        visible={showPDFErrorDialog}
+        fileName={failedFileName}
+        onClose={() => setShowPDFErrorDialog(false)}
+        onTryPasting={handleTryPasting}
       />
     </View>
   );

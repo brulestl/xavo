@@ -68,11 +68,14 @@ export const ChatScreen: React.FC = () => {
     isSending,
     error,
     sendMessage,
+    sendFileMessage,
+    sendCombinedFileAndTextMessage,
     loadSession,
     deleteSession,
     renameSession,
     clearMessages,
     setCurrentSession,
+    appendMessage,
   } = useChat();
 
   // 🔥 Use instant operations from useConversations for rename functionality
@@ -91,14 +94,11 @@ export const ChatScreen: React.FC = () => {
   useEffect(() => {
     const initializeChat = async () => {
       try {
-        // 🔧 FIX: Only clear session if we're explicitly starting a NEW conversation
-        // AND we currently have an active session (indicating user clicked "New Conversation" from drawer)
-        if (!sessionId && currentSession) {
-          console.log('🆕 [ChatScreen] New conversation from existing session - clearing state');
-          clearMessages();
-          setCurrentSession(null);
+        // 🔧 CRITICAL FIX: Always clear session state when starting new conversation
+        if (!sessionId) {
+          console.log('🆕 [ChatScreen] Starting new conversation - clearing all state');
+          clearMessages(); // This now also clears currentSession
           setIsEditingMessage(false);
-          // Don't return - continue with normal initialization for new conversation
         }
         
         // Reset processed state when route params change
@@ -153,12 +153,41 @@ export const ChatScreen: React.FC = () => {
         console.log('📎 ChatScreen: Sending message with', attachments.length, 'attachments');
       }
       
-      console.log(`📝 Sending message to current session: ${currentSession?.id}`);
+      console.log(`📝 Sending message to session: ${currentSession?.id || 'new session'}`);
       await sendMessage(finalMessage, currentSession?.id, false); // Use non-streaming for better UX
     } catch (error) {
       Alert.alert('Error', 'Failed to send message. Please try again.');
       console.error('Send message error:', error);
     }
+  };
+
+  const handleSendCombinedFileAndText = async (file: any, text: string, textMessageId: string, fileMessageId: string) => {
+    if (!canMakeQuery) {
+      Alert.alert(
+        'Query Limit Reached',
+        'You have reached your daily query limit. Upgrade to Power Strategist for unlimited queries.',
+        [{ text: 'OK' }]
+      );
+      return;
+    }
+
+    if (!user?.id) {
+      Alert.alert('Error', 'Please sign in to upload files.');
+      return;
+    }
+
+    try {
+      console.log(`🔥 Starting unified RAG flow: "${text}" with file "${file.name}"`);
+      await sendCombinedFileAndTextMessage(file, text, user.id, currentSession?.id, textMessageId, fileMessageId);
+    } catch (error) {
+      Alert.alert('Error', 'Failed to process file with your question. Please try again.');
+      console.error('Combined file + text error:', error);
+    }
+  };
+
+  const handleAddOptimisticMessage = (message: any) => {
+    // Use the appendMessage helper from useChat
+    appendMessage(message);
   };
 
 
@@ -380,6 +409,13 @@ export const ChatScreen: React.FC = () => {
         timestamp={item.timestamp}
         onEditMessage={handleEditMessage}
         isStreaming={isStreaming && item.role === 'assistant'}
+        type={item.type || 'text'}
+        filename={item.filename}
+        fileUrl={item.fileUrl}
+        fileSize={item.fileSize}
+        fileType={item.fileType}
+        status={item.status}
+        metadata={item.metadata}
       />
     );
   };
@@ -479,6 +515,9 @@ export const ChatScreen: React.FC = () => {
           >
             <Composer
               onSend={handleSendMessage}
+              onSendFile={user?.id ? (file) => sendFileMessage(file, user.id, currentSession?.id) : undefined}
+              onSendCombinedFileAndText={user?.id ? handleSendCombinedFileAndText : undefined}
+              onAddOptimisticMessage={handleAddOptimisticMessage}
               placeholder={
                 isSending
                   ? "Sending message..."
@@ -506,13 +545,13 @@ export const ChatScreen: React.FC = () => {
             style={[styles.newConversationButton, { backgroundColor: theme.semanticColors.surface, borderColor: theme.semanticColors.border }]}
             onPress={() => {
               setIsDrawerVisible(false);
-              console.log('🆕 ChatScreen: Starting new conversation');
+              console.log('🆕 ChatScreen: Starting NEW EMPTY conversation from drawer');
               
-              // Clear current session and messages for fresh start
-              clearMessages();
+              // Clear ALL session state but STAY on ChatScreen for empty experience
+              clearMessages(); // This now also clears currentSession
+              setCurrentSession(null); // Extra safety
               
-              // Navigate to HomeScreen for completely fresh start
-              navigation.navigate('Home' as never);
+              // Don't navigate - just clear the current session to show empty state
             }}
           >
             <Ionicons name="add" size={20} color={theme.semanticColors.primary} />

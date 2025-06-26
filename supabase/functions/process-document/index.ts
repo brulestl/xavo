@@ -19,6 +19,8 @@ interface ProcessDocumentRequest {
 interface ProcessDocumentResponse {
   success: boolean
   documentId: string
+  publicUrl?: string
+  filename?: string
   chunksCreated: number
   processingTime: number
   error?: string
@@ -27,9 +29,13 @@ interface ProcessDocumentResponse {
 // Text extraction utilities
 async function extractTextFromPDF(buffer: ArrayBuffer): Promise<string> {
   try {
+    console.log(`🔍 DEBUG - Starting PDF extraction, buffer size: ${buffer.byteLength}`)
+    
     // Import PDF.js from jsDelivr using the correct .mjs files for Deno compatibility
     const pdfjs = await import('https://cdn.jsdelivr.net/npm/pdfjs-dist@4.6.82/build/pdf.min.mjs');
     const pdfjsworker = await import('https://cdn.jsdelivr.net/npm/pdfjs-dist@4.6.82/build/pdf.worker.min.mjs');
+    
+    console.log(`🔍 DEBUG - PDF.js loaded successfully`)
     
     // Force worker import reference (prevents tree shaking)
     const workerType = typeof pdfjsworker;
@@ -38,6 +44,8 @@ async function extractTextFromPDF(buffer: ArrayBuffer): Promise<string> {
     pdfjs.GlobalWorkerOptions.workerSrc = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@4.6.82/build/pdf.worker.min.mjs';
     
     const pdf = await pdfjs.getDocument({ data: buffer }).promise;
+    console.log(`🔍 DEBUG - PDF loaded, pages: ${pdf.numPages}`)
+    
     let fullText = '';
     
     for (let i = 1; i <= pdf.numPages; i++) {
@@ -46,34 +54,53 @@ async function extractTextFromPDF(buffer: ArrayBuffer): Promise<string> {
       const pageText = textContent.items
         .map((item: any) => item.str)
         .join(' ');
+      
+      console.log(`🔍 DEBUG - Page ${i} text length: ${pageText.length}`)
+      console.log(`🔍 DEBUG - Page ${i} first 100 chars: "${pageText.substring(0, 100)}"`)
+      
       fullText += `\n\nPage ${i}:\n${pageText}`;
     }
     
-    return fullText.trim();
+    const result = fullText.trim();
+    console.log(`🔍 DEBUG - Total PDF text extracted: ${result.length} characters`)
+    return result;
   } catch (error) {
-    console.error('PDF extraction error:', error);
+    console.error('❌ PDF extraction error:', error);
+    console.error('❌ Error details:', error.message, error.stack);
     throw new Error(`PDF text extraction failed: ${error.message}`);
   }
 }
 
 async function extractTextFromFile(buffer: ArrayBuffer, mimeType: string): Promise<string> {
-  if (mimeType === 'application/pdf') {
-    return await extractTextFromPDF(buffer);
+  console.log(`🔍 DEBUG - extractTextFromFile called with mimeType: "${mimeType}", buffer size: ${buffer.byteLength}`)
+  
+  if (mimeType === 'application/pdf' || mimeType === 'pdf') {
+    console.log(`📄 Processing as PDF...`)
+    const result = await extractTextFromPDF(buffer);
+    console.log(`📄 PDF extraction result length: ${result?.length || 0}`)
+    return result;
   } 
   
   if (mimeType.startsWith('text/')) {
+    console.log(`📝 Processing as text file...`)
     const decoder = new TextDecoder('utf-8');
-    return decoder.decode(buffer);
+    const result = decoder.decode(buffer);
+    console.log(`📝 Text file result length: ${result?.length || 0}`)
+    return result;
   }
   
   if (mimeType.includes('word') || mimeType.includes('document')) {
+    console.log(`📄 Processing as Word document...`)
     // For DOCX files, we'll extract basic text (simplified)
     const decoder = new TextDecoder('utf-8');
     const text = decoder.decode(buffer);
     // Basic text extraction from XML structure
-    return text.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
+    const result = text.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
+    console.log(`📄 Word document result length: ${result?.length || 0}`)
+    return result;
   }
   
+  console.error(`❌ Unsupported file type: ${mimeType}`)
   throw new Error(`Unsupported file type: ${mimeType}`);
 }
 
@@ -201,8 +228,17 @@ serve(async (req) => {
       .single()
 
     if (docError || !document) {
+      console.error(`❌ Document lookup failed:`, docError)
       throw new Error('Document not found or access denied')
     }
+
+    console.log(`🔍 DEBUG - Document details:`, {
+      id: document.id,
+      filename: document.filename,
+      file_type: document.file_type,
+      bucket_path: document.bucket_path,
+      file_size: document.file_size
+    })
 
     // Mark document as processing
     await supabaseClient.rpc('update_document_status', {
@@ -228,14 +264,38 @@ serve(async (req) => {
     // Extract text based on file type
     const extractedText = await extractTextFromFile(arrayBuffer, document.file_type)
     
+    // 🔍 DEBUG: Log extracted text details
+    console.log(`🔍 DEBUG - Extracted text length: ${extractedText?.length || 0}`)
+    console.log(`🔍 DEBUG - Text type: ${typeof extractedText}`)
+    console.log(`🔍 DEBUG - First 200 chars: "${extractedText?.substring(0, 200)}"`)
+    console.log(`🔍 DEBUG - Trimmed length: ${extractedText?.trim().length || 0}`)
+    
     if (!extractedText || extractedText.trim().length < 10) {
+      console.error(`❌ Text extraction failed - Length: ${extractedText?.length || 0}, Trimmed: ${extractedText?.trim().length || 0}`)
       throw new Error('No meaningful text content found in document')
     }
 
-    console.log(`✂️ Chunking text (${extractedText.length} characters)`)
+    // 🧹 CRITICAL FIX: Sanitize text to remove null bytes and control characters that break PostgreSQL
+    console.log(`🧹 Sanitizing extracted text for database compatibility`)
+    const sanitizedText = extractedText
+      .replace(/\u0000/g, '') // Remove null bytes (\u0000) that cause "22P05" PostgreSQL errors
+      .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, '') // Remove other control characters
+      .replace(/\uFFFD/g, '') // Remove replacement characters
+      .replace(/\s+/g, ' ') // Normalize whitespace
+      .trim()
     
-    // Chunk the text
-    const chunks = chunkText(extractedText)
+    console.log(`🔍 DEBUG - Sanitized text length: ${sanitizedText.length}`)
+    console.log(`🔍 DEBUG - Sanitized first 200 chars: "${sanitizedText.substring(0, 200)}"`)
+    
+    if (!sanitizedText || sanitizedText.length < 10) {
+      console.error(`❌ Text sanitization failed - Final length: ${sanitizedText?.length || 0}`)
+      throw new Error('No meaningful text content after sanitization')
+    }
+
+    console.log(`✂️ Chunking sanitized text (${sanitizedText.length} characters)`)
+    
+    // Chunk the sanitized text
+    const chunks = chunkText(sanitizedText)
     
     if (chunks.length === 0) {
       throw new Error('No text chunks created from document')
@@ -255,14 +315,23 @@ serve(async (req) => {
       const embeddings = await Promise.all(embeddingPromises)
       
       // Prepare database records
-      const batchRecords = batch.map((chunk, index) => ({
-        document_id: documentId,
-        page: chunk.page,
-        chunk_index: chunk.chunkIndex,
-        content: chunk.content,
-        token_count: Math.ceil(chunk.content.length / 4), // Rough token estimation
-        embedding: JSON.stringify(embeddings[index]) // Store as JSON string for pg vector
-      }))
+      const batchRecords = batch.map((chunk, index) => {
+        const embedding = embeddings[index];
+        console.log(`🔍 Embedding type: ${typeof embedding}, length: ${Array.isArray(embedding) ? embedding.length : 'not array'}`);
+        
+        // 🔥 CRITICAL FIX: Stringify embedding array for PostgreSQL vector type
+        const stringifiedEmbedding = `[${embedding.join(',')}]`;
+        console.log(`🔧 Stringified embedding: ${stringifiedEmbedding.substring(0, 50)}...`);
+        
+        return {
+          document_id: documentId,
+          page: chunk.page,
+          chunk_index: chunk.chunkIndex,
+          content: chunk.content,
+          token_count: Math.ceil(chunk.content.length / 4), // Rough token estimation
+          embedding: stringifiedEmbedding // Store as stringified vector for pgvector
+        };
+      })
       
       chunkRecords.push(...batchRecords)
       
@@ -300,9 +369,16 @@ serve(async (req) => {
 
     console.log(`✅ Document processing completed in ${processingTime}ms`)
 
+    // Get public URL for the document
+    const { data: { publicUrl } } = supabaseClient.storage
+      .from('documents')
+      .getPublicUrl(filePath)
+
     const response: ProcessDocumentResponse = {
       success: true,
       documentId: documentId,
+      publicUrl: publicUrl,
+      filename: filename || document.filename,
       chunksCreated: chunks.length,
       processingTime: processingTime
     }
@@ -314,24 +390,8 @@ serve(async (req) => {
   } catch (error) {
     console.error('Document processing error:', error)
     
-    // Try to mark document as failed if we have the documentId
-    try {
-      const { documentId } = await req.json() as ProcessDocumentRequest
-      if (documentId) {
-        const supabaseClient = createClient(
-          Deno.env.get('SUPABASE_URL') ?? '',
-          Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '',
-        )
-        
-        await supabaseClient.rpc('update_document_status', {
-          doc_id: documentId,
-          status: 'failed',
-          error_message: error.message
-        })
-      }
-    } catch (updateError) {
-      console.error('Failed to update document status:', updateError)
-    }
+    // Note: Cannot parse req.json() again here as body is already consumed
+    // Document status will remain as 'processing' and will be cleaned up by scheduled cleanup job
 
     return new Response(
       JSON.stringify({ 

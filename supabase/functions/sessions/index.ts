@@ -62,12 +62,16 @@ serve(async (req) => {
             headers: { ...corsHeaders, 'Content-Type': 'application/json' }
           })
         } else {
-          // Get all active sessions for user (exclude deleted ones)
-          const { data: sessions, error } = await supabaseClient
-            .from('active_conversation_sessions')
-            .select('*')
-            .eq('user_id', user.id)
-            .order('last_message_at', { ascending: false })
+          // Get paginated sessions overview with optimized query
+          const limit = Math.min(Number(url.searchParams.get("limit") ?? 20), 50);
+          const before = url.searchParams.get("before") ?? new Date().toISOString();
+
+          // Use optimized RPC function for fast session loading
+          const { data: sessions, error } = await supabaseClient.rpc("list_sessions_overview", {
+            p_user_id: user.id,
+            p_before: before,
+            p_limit: limit
+          });
 
           if (error) throw error
 

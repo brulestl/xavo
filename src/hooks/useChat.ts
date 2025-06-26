@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import { Alert } from 'react-native';
-import { apiFetch, buildApiUrl, api } from '../lib/api';
+import { apiFetch, buildApiUrl, api, QueryDocumentResponse } from '../lib/api';
 import { useAuth } from '../providers/AuthProvider';
 import { supabase } from '../lib/supabase';
 import { appReviewService } from '../services/appReviewService';
@@ -16,7 +16,7 @@ export interface ChatMessage {
   function_calls?: any[];
   isStreaming?: boolean;
   // File attachment support
-  type?: 'text' | 'file' | 'typing';
+  type?: 'text' | 'file' | 'typing' | 'text_with_file';
   filename?: string;
   fileUrl?: string;
   fileSize?: number;
@@ -45,6 +45,8 @@ interface ChatResponse {
     remainingQueries?: number;
   };
 }
+
+
 
 interface UseChatReturn {
   messages: ChatMessage[];
@@ -88,6 +90,7 @@ export const useChat = (): UseChatReturn => {
   const lastUserMessageRef = useRef<string>('');
   const abortControllerRef = useRef<AbortController | null>(null);
   const pendingMessages = useRef<Set<string>>(new Set()); // Track pending messages by fingerprint
+  const tempAssistantIdRef = useRef<string | null>(null); // Track temp assistant message for immediate replacement
 
   // Helper functions for message state management
   const appendMessage = (message: ChatMessage) => {
@@ -112,14 +115,14 @@ export const useChat = (): UseChatReturn => {
   ): Promise<ChatResponse | null> => {
     if (!content.trim()) return null;
     
-    // 🔥 FIX: Prioritize currentSession?.id over provided sessionId to ensure 
-    // messages go to the currently selected session, not route parameter
-    let targetSessionId = currentSession?.id || sessionId;
+    // 🔥 CRITICAL FIX: Use provided sessionId first, then fall back to currentSession
+    // This allows proper new conversation creation
+    let targetSessionId = sessionId || currentSession?.id;
     
     // Add guard to ensure we have a valid session context
     if (!targetSessionId) {
-      // 🚀 WORKAROUND: Use sessions endpoint directly to avoid chat function auth issues
-      console.log('🔧 Creating session via sessions endpoint to avoid chat function 401 errors');
+      // 🚀 CRITICAL: Create new session to ensure proper isolation
+      console.log('🔧 Creating NEW session to ensure conversation isolation');
       const cleanTitle = content.trim().replace(/\n/g, ' ').replace(/\s+/g, ' ');
       const sessionTitle = cleanTitle.length > 50 ? cleanTitle.substring(0, 50) + '...' : cleanTitle;
       
@@ -135,7 +138,8 @@ export const useChat = (): UseChatReturn => {
           targetSessionId = newSession.id;
           setCurrentSession(newSession);
           setSessions(prev => [newSession, ...prev]);
-          console.log('✅ Session created successfully via sessions endpoint:', targetSessionId);
+          console.log('✅ NEW session created successfully:', targetSessionId);
+          console.log('🔍 Session details:', { id: newSession.id, title: newSession.title });
         }
       } catch (sessionError) {
         console.error('❌ Session creation failed:', sessionError);
@@ -615,75 +619,310 @@ export const useChat = (): UseChatReturn => {
     }
   };
 
+  // Helper function to fetch and rehydrate file attachments for a session
+  const rehydrateFileAttachments = async (sessionId: string): Promise<ChatMessage[]> => {
+    try {
+      console.log('📎 Rehydrating file attachments for session:', sessionId);
+      
+      // Get the current user
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return [];
+
+      // Query for file upload messages and documents linked to this session
+      const [messagesQuery, documentsQuery] = await Promise.all([
+        // Look for file upload action messages 
+        supabase
+          .from('conversation_messages')
+          .select('*')
+          .eq('session_id', sessionId)
+          .eq('user_id', user.id)
+          .eq('action_type', 'file_upload')
+          .order('created_at', { ascending: true }),
+        
+        // Look for documents that might be linked to this session
+        supabase
+          .from('documents')
+          .select('*')
+          .eq('user_id', user.id)
+          .eq('session_id', sessionId) // Use session_id for better filtering
+          .order('uploaded_at', { ascending: true })
+      ]);
+
+      const fileMessages = messagesQuery.data || [];
+      const documents = documentsQuery.data || [];
+      
+      console.log(`📎 Found ${fileMessages.length} file messages and ${documents.length} session documents`);
+
+      // Create file bubbles from file upload messages - but mark them for potential grouping
+      const rehydratedMessages: ChatMessage[] = [];
+
+      // Process file upload messages
+      for (const msg of fileMessages) {
+        const metadata = msg.metadata || {};
+        
+        // Find associated document if documentId is in metadata
+        let associatedDoc = null;
+        if (metadata.documentId) {
+          associatedDoc = documents.find(doc => doc.id === metadata.documentId);
+        }
+
+        // Skip file messages that have textMessageId - they should be grouped with text messages
+        if (metadata.textMessageId) {
+          console.log(`📎 Skipping file message ${msg.id} - it's linked to text message ${metadata.textMessageId}`);
+          continue;
+        }
+
+        // Create file bubble only for standalone file uploads (no associated text)
+        const fileBubble: ChatMessage = {
+          id: msg.id,
+          content: associatedDoc ? `Document uploaded: ${associatedDoc.filename}` : 'File uploaded',
+          role: 'user',
+          session_id: sessionId,
+          created_at: msg.created_at,
+          type: 'file',
+          filename: associatedDoc?.filename || metadata.filename || 'Unknown file',
+          fileUrl: associatedDoc?.public_url || metadata.fileUrl,
+          fileSize: associatedDoc?.file_size || metadata.fileSize,
+          fileType: associatedDoc?.file_type || metadata.fileType,
+          documentId: associatedDoc?.id || metadata.documentId,
+          status: 'sent', // File uploads that are stored are considered successful
+          metadata: {
+            isStandaloneFile: true
+          }
+        };
+
+        rehydratedMessages.push(fileBubble);
+      }
+
+      // Also check for any orphaned documents that might not have corresponding messages
+      // (This handles edge cases where message creation failed but file upload succeeded)
+      for (const doc of documents) {
+        const hasCorrespondingMessage = rehydratedMessages.some(msg => 
+          msg.documentId === doc.id
+        );
+        
+        if (!hasCorrespondingMessage && doc.uploaded_at) {
+          // Create a file bubble for orphaned document
+          const orphanedFileBubble: ChatMessage = {
+            id: `orphaned-${doc.id}`,
+            content: `Document recovered: ${doc.filename}`,
+            role: 'user', 
+            session_id: sessionId,
+            created_at: doc.uploaded_at,
+            type: 'file',
+            filename: doc.filename,
+            fileUrl: doc.public_url,
+            fileSize: doc.file_size,
+            fileType: doc.file_type,
+            documentId: doc.id,
+            status: 'sent',
+            metadata: {
+              isOrphanedFile: true
+            }
+          };
+          
+          rehydratedMessages.push(orphanedFileBubble);
+          console.log(`📎 Recovered orphaned document: ${doc.filename}`);
+        }
+      }
+
+      console.log(`📎 Rehydrated ${rehydratedMessages.length} standalone file attachments`);
+      return rehydratedMessages;
+
+    } catch (error) {
+      console.error('❌ Error rehydrating file attachments:', error);
+      return [];
+    }
+  };
+
+  // NEW: Enhanced message loading with file attachment grouping
+  const loadMessagesWithAttachments = async (sessionId: string): Promise<ChatMessage[]> => {
+    try {
+      console.log('📎 Loading enhanced messages with attachments for session:', sessionId);
+      
+      // Get the current user
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return [];
+
+      // Load all conversation messages for the session
+      const { data: allMessages, error: messagesError } = await supabase
+        .from('conversation_messages')
+        .select('*')
+        .eq('session_id', sessionId)
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: true });
+
+      if (messagesError) {
+        throw new Error(`Failed to load messages: ${messagesError.message}`);
+      }
+
+      // Load documents for this session
+      const { data: documents, error: documentsError } = await supabase
+        .from('documents')
+        .select('*')
+        .eq('user_id', user.id)
+        .eq('session_id', sessionId)
+        .order('uploaded_at', { ascending: true });
+
+      if (documentsError) {
+        console.warn('Failed to load documents:', documentsError);
+      }
+
+      const sessionDocuments = documents || [];
+      console.log(`📎 Found ${allMessages?.length || 0} messages and ${sessionDocuments.length} documents`);
+
+      // Process messages and group file attachments with text messages
+      const processedMessages: ChatMessage[] = [];
+      const fileUploadMessages = new Map(); // Map of textMessageId -> file message
+
+      // First pass: identify file upload messages and their associations
+      for (const msg of allMessages || []) {
+        if (msg.action_type === 'file_upload') {
+          const metadata = msg.metadata || {};
+          if (metadata.textMessageId) {
+            // This file is associated with a text message
+            fileUploadMessages.set(metadata.textMessageId, {
+              msg,
+              documentData: sessionDocuments.find(doc => doc.id === metadata.documentId)
+            });
+          } else {
+            // Standalone file upload - convert to file bubble
+            const doc = sessionDocuments.find(d => d.id === metadata.documentId);
+            const fileBubble: ChatMessage = {
+              id: msg.id,
+              content: doc ? `Document uploaded: ${doc.filename}` : 'File uploaded',
+              role: 'user',
+              session_id: sessionId,
+              created_at: msg.created_at,
+              type: 'file',
+              filename: doc?.filename || metadata.filename || 'Unknown file',
+              fileUrl: doc?.public_url || metadata.fileUrl,
+              fileSize: doc?.file_size || metadata.fileSize,
+              fileType: doc?.file_type || metadata.fileType,
+              documentId: doc?.id || metadata.documentId,
+              status: 'sent',
+              metadata: {
+                isStandaloneFile: true
+              }
+            };
+            processedMessages.push(fileBubble);
+          }
+        }
+      }
+
+      // Second pass: process regular messages and attach files where needed
+      for (const msg of allMessages || []) {
+        // Skip file upload messages - they're handled separately
+        if (msg.action_type === 'file_upload') continue;
+
+        // Create the base message
+        const baseMessage: ChatMessage = {
+          id: msg.id,
+          content: msg.content,
+          role: msg.role as 'user' | 'assistant',
+          session_id: sessionId,
+          created_at: msg.created_at || msg.message_timestamp,
+          type: 'text',
+          metadata: msg.metadata
+        };
+
+        // Check if this message has an associated file upload
+        const associatedFileData = fileUploadMessages.get(msg.id);
+        if (associatedFileData) {
+          const { msg: fileMsg, documentData: doc } = associatedFileData;
+          const fileMetadata = fileMsg.metadata || {};
+          
+          // Enhance the message with file attachment info
+          baseMessage.type = 'text_with_file';
+          baseMessage.metadata = {
+            ...baseMessage.metadata,
+            hasAttachment: true,
+            attachmentInfo: {
+              fileMessageId: fileMsg.id,
+              filename: doc?.filename || fileMetadata.filename || 'Unknown file',
+              fileUrl: doc?.public_url || fileMetadata.fileUrl,
+              fileSize: doc?.file_size || fileMetadata.fileSize,
+              fileType: doc?.file_type || fileMetadata.fileType,
+              documentId: doc?.id || fileMetadata.documentId,
+              status: 'sent'
+            }
+          };
+          console.log(`📎 Enhanced message ${msg.id} with attachment: ${doc?.filename || 'Unknown file'}`);
+        }
+
+        processedMessages.push(baseMessage);
+      }
+
+      // Sort by creation time to maintain chronological order
+      processedMessages.sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
+
+      console.log(`✅ Processed ${processedMessages.length} enhanced messages with proper file associations`);
+      return processedMessages;
+
+    } catch (error) {
+      console.error('❌ Error loading enhanced messages:', error);
+      return [];
+    }
+  };
+
   // Load specific chat session
   const loadSession = async (sessionId: string, preserveCurrentMessages: boolean = false) => {
     setIsLoading(true);
     setError(null);
 
     try {
-      const data = await apiFetch<{
-        session: ChatSession;
-        messages: ChatMessage[];
-      }>(`/sessions/${sessionId}`);
+      // Fetch session info and use enhanced message loading
+      const [sessionResponse, enhancedMessages] = await Promise.all([
+        apiFetch<{ session: ChatSession }>(`/sessions/${sessionId}`),
+        loadMessagesWithAttachments(sessionId)
+      ]);
       
       // 🔥 FIX: Always update currentSession to ensure proper session tracking
-      setCurrentSession(data.session);
-      console.log(`🔄 Loaded session: ${data.session.id} - "${data.session.title}"`);
+      setCurrentSession(sessionResponse.session);
+      console.log(`🔄 Loaded session: ${sessionResponse.session.id} - "${sessionResponse.session.title}"`);
+      console.log(`📊 Session has ${enhancedMessages.length} enhanced messages`);
       
-      // 🔍 DEBUG: Check for duplicates in database response
-      const dbMessages = data.messages || [];
-      const messageIds = dbMessages.map(m => m.id);
+      // 🔍 DEBUG: Check for duplicates in enhanced messages
+      const messageIds = enhancedMessages.map(m => m.id);
       const uniqueIds = [...new Set(messageIds)];
       if (messageIds.length !== uniqueIds.length) {
-        console.error('⚠️ [useChat] Duplicate messages detected in database response!', {
+        console.error('⚠️ [useChat] Duplicate messages detected in enhanced response!', {
           totalMessages: messageIds.length,
           uniqueMessages: uniqueIds.length,
           duplicateIds: messageIds.filter((id, index) => messageIds.indexOf(id) !== index)
         });
+        // Remove duplicates
+        const deduplicatedMessages = enhancedMessages.filter((msg, index, arr) => 
+          arr.findIndex(m => m.id === msg.id) === index
+        );
+        console.log(`🔧 Removed duplicates: ${enhancedMessages.length} → ${deduplicatedMessages.length}`);
+        enhancedMessages.splice(0, enhancedMessages.length, ...deduplicatedMessages);
       } else {
-        console.log(`✅ [useChat] Database response clean: ${dbMessages.length} unique messages`);
+        console.log(`✅ [useChat] Enhanced message list clean: ${enhancedMessages.length} unique messages`);
       }
       
       if (!preserveCurrentMessages) {
-        // Normal case: Replace all messages
-        console.log(`🔄 [useChat] Replacing ${messages.length} current messages with ${dbMessages.length} database messages`);
-        setMessages(dbMessages);
-        
-        // 🔍 DEBUG: Verify state update
-        setTimeout(() => {
-          setMessages(currentMessages => {
-            const currentIds = currentMessages.map(m => m.id);
-            const currentUniqueIds = [...new Set(currentIds)];
-            if (currentIds.length !== currentUniqueIds.length) {
-              console.error('⚠️ [useChat] Duplicate messages detected in React state after update!', {
-                totalMessages: currentIds.length,
-                uniqueMessages: currentUniqueIds.length,
-                duplicateIds: currentIds.filter((id, index) => currentIds.indexOf(id) !== index)
-              });
-            } else {
-              console.log(`✅ [useChat] React state clean: ${currentMessages.length} unique messages`);
-            }
-            return currentMessages; // Don't change anything, just debug
-          });
-        }, 10);
+        // Normal case: Replace all messages with enhanced messages
+        console.log(`🔄 [useChat] Replacing ${messages.length} current messages with ${enhancedMessages.length} enhanced messages`);
+        setMessages(enhancedMessages);
       } else {
         // When preserving messages (after sending), sync IDs with database
         setMessages(currentMessages => {
           if (currentMessages.length === 0) {
-            return dbMessages;
+            return enhancedMessages;
           }
           
           // 🔧 FIX: Better duplicate prevention during ID sync
           const syncedMessages = currentMessages.map((currentMsg, index) => {
             // Find matching message in database by content and role
-            const dbMatch = dbMessages.find(dbMsg => 
+            const dbMatch = enhancedMessages.find(dbMsg => 
               dbMsg.role === currentMsg.role && 
               dbMsg.content.trim() === currentMsg.content.trim()
             );
             
             // Sync optimistic messages (either temp- prefixed or clientId-based)
             const isOptimisticMessage = currentMsg.id.startsWith('temp-') || 
-              !dbMessages.find(db => db.id === currentMsg.id);
+              !enhancedMessages.find(db => db.id === currentMsg.id);
             
             if (dbMatch && isOptimisticMessage) {
               console.log(`🔄 [useChat] Syncing optimistic ID ${currentMsg.id} → ${dbMatch.id}`);
@@ -830,9 +1069,11 @@ export const useChat = (): UseChatReturn => {
     }
   };
 
-  // Clear current messages
+  // Clear current messages and session state
   const clearMessages = () => {
+    console.log('🧹 Clearing messages and session state');
     setMessages([]);
+    setCurrentSession(null); // 🔥 CRITICAL: Also clear current session
   };
 
   // Retry last message
@@ -918,16 +1159,49 @@ export const useChat = (): UseChatReturn => {
         }
       );
 
-      // Update message with successful upload
-      setMessages(prev => prev.map(msg => 
-        msg.id === clientId ? { 
-          ...msg, 
-          content: `Document uploaded successfully`,
-          fileUrl: ragDocument.publicUrl || msg.fileUrl,
-          documentId: ragDocument.id,
-          status: 'sent'
-        } : msg
-      ));
+      // 🔥 CRITICAL FIX: Create conversation_messages entry for standalone file upload
+      console.log('📎 Creating conversation_messages entry for standalone file upload');
+      const { data: fileUploadMessage, error: fileUploadError } = await supabase
+        .from('conversation_messages')
+        .insert({
+          session_id: targetSessionId,
+          user_id: userId,
+          role: 'user',
+          content: `File uploaded: ${ragDocument.filename}`,
+          action_type: 'file_upload',
+          metadata: {
+            documentId: ragDocument.id,
+            filename: ragDocument.filename,
+            fileUrl: ragDocument.publicUrl,
+            fileSize: ragDocument.fileSize,
+            fileType: ragDocument.fileType,
+            isStandaloneFile: true // Mark as standalone (not linked to text message)
+          },
+          created_at: new Date().toISOString(),
+          message_timestamp: new Date().toISOString(),
+          client_id: clientId
+        })
+        .select()
+        .single();
+
+      if (fileUploadError) {
+        console.error('❌ Failed to create file upload message:', fileUploadError);
+        // Don't throw - continue with the flow but log the issue
+      } else {
+        console.log(`✅ Created standalone file upload message: ${fileUploadMessage.id}`);
+        
+        // Update optimistic message with real database ID
+        setMessages(prev => prev.map(msg => 
+          msg.id === clientId ? { 
+            ...msg, 
+            id: fileUploadMessage.id,
+            content: `Document uploaded successfully`,
+            fileUrl: ragDocument.publicUrl || msg.fileUrl,
+            documentId: ragDocument.id,
+            status: 'sent'
+          } : msg
+        ));
+      }
 
       // Generate AI acknowledgment using RAG query to ensure document access
       const acknowledgmentQuery = `Please analyze this uploaded document: ${file.name}. Provide a brief summary of its content and explain how you can help the user with this document.`;
@@ -1037,15 +1311,27 @@ export const useChat = (): UseChatReturn => {
         }
       );
 
-      // 2. Update file bubble to 'processed' status
+      // 2. Update document with session_id for proper linking
+      console.log(`📎 Updating document ${docMeta.id} with session_id: ${targetSessionId}`);
+      const { error: updateError } = await supabase
+        .from('documents')
+        .update({ session_id: targetSessionId })
+        .eq('id', docMeta.id);
+
+      if (updateError) {
+        console.warn('Failed to update document session_id:', updateError);
+      }
+
+      // 3. Update file bubble to 'processed' status
       updateMessage(fileClientId, { 
         status: 'processed', 
         documentId: docMeta.id,
         fileUrl: docMeta.publicUrl 
       });
 
-      // 3. Show assistant typing indicator
+      // 4. Show assistant typing indicator
       const typingId = `typing-${Date.now()}`;
+      tempAssistantIdRef.current = typingId; // Store temp ID for immediate replacement
       appendMessage({
         id: typingId,
         role: 'assistant',
@@ -1056,31 +1342,145 @@ export const useChat = (): UseChatReturn => {
       });
       setIsThinking(true);
 
-      // 4. Query the document with user text
+      // 5. Use the existing query-document edge function (it now creates both user and assistant messages)
+      console.log(`🤖 Calling query-document edge function`);
       const response = await api.queryDocument({
         documentId: docMeta.id,
         question: text,
         sessionId: targetSessionId,
+        includeConversationContext: true
       });
 
-      // 5. Remove typing indicator
-      removeMessage(typingId);
+      // 🔥 IMMEDIATE UI UPDATE: Replace temp spinner with real message as soon as response arrives
+      if (tempAssistantIdRef.current) {
+        console.log(`🔄 Immediately replacing temp message ${tempAssistantIdRef.current} with real response`);
+        updateMessage(tempAssistantIdRef.current, {
+          id: response.assistantMessageId || response.id,
+          content: response.answer,
+          type: 'text',
+          metadata: {
+            sources: response.sources,
+            tokensUsed: response.tokensUsed,
+            query_type: 'document'
+          }
+        });
+        tempAssistantIdRef.current = null; // Clear the ref
+        setIsThinking(false);
+      }
 
-      // 6. Append the assistant's actual response
-      appendMessage({
-        id: response.id,
-        role: 'assistant',
-        type: 'text',
-        content: response.answer,
-        session_id: targetSessionId,
-        created_at: response.timestamp,
-        metadata: { sources: response.sources },
-      });
+      // 6. The edge function now creates messages automatically, so we need to find them
+      // Wait a moment for the database to be consistent
+      await new Promise(resolve => setTimeout(resolve, 100));
+      
+      console.log(`🔍 Finding messages created by edge function`);
+      // 🔥 FIX: Search by session and recent timestamp instead of content matching
+      const searchTimestamp = new Date(Date.now() - 10000).toISOString(); // Last 10 seconds
+      const { data: recentMessages, error: recentError } = await supabase
+        .from('conversation_messages')
+        .select('id, role, content, action_type, created_at')
+        .eq('session_id', targetSessionId)
+        .eq('user_id', userId)
+        .gte('created_at', searchTimestamp)
+        .order('created_at', { ascending: false })
+        .limit(5);
+
+      if (recentError) {
+        console.error('Failed to find messages:', recentError);
+      }
+
+      // Find the user text message (action_type = 'document_query') - most recent one
+      const userTextMessage = recentMessages?.find(msg => 
+        msg.role === 'user' && msg.action_type === 'document_query'
+      );
+
+      // 🔥 FIX: Use message IDs directly from response instead of searching
+      const responseUserMessageId = response.userMessageId || userTextMessage?.id;
+      
+      if (responseUserMessageId) {
+        console.log(`✅ Using user text message ID: ${responseUserMessageId}`);
+
+        // 7. Create the file upload message linked to the text message
+        console.log(`📎 Creating file upload message linked to text message: ${responseUserMessageId}`);
+        const { data: fileUploadMessage, error: fileUploadError } = await supabase
+          .from('conversation_messages')
+          .insert({
+            session_id: targetSessionId,
+            user_id: userId,
+            role: 'user',
+            content: `File uploaded: ${docMeta.filename}`,
+            action_type: 'file_upload',
+            metadata: {
+              documentId: docMeta.id,
+              filename: docMeta.filename,
+              fileUrl: docMeta.publicUrl,
+              fileSize: docMeta.fileSize,
+              fileType: docMeta.fileType,
+              textMessageId: responseUserMessageId, // Link to the text message
+              isLinkedToTextMessage: true
+            },
+            created_at: new Date().toISOString(),
+            message_timestamp: new Date().toISOString(),
+            client_id: generateClientId()
+          })
+          .select()
+          .single();
+
+        if (fileUploadError) {
+          console.error('Failed to create file upload message:', fileUploadError);
+          // Don't throw here - the main flow worked, this is just for UI linking
+          console.warn('Continuing without file upload link message');
+        } else {
+          console.log(`✅ Created linked file upload message: ${fileUploadMessage.id}`);
+        }
+      } else {
+        console.warn('⚠️ Could not find user text message, creating standalone file upload message');
+        // Fallback: create standalone file upload message
+        const { data: standaloneFileMessage, error: standaloneError } = await supabase
+          .from('conversation_messages')
+          .insert({
+            session_id: targetSessionId,
+            user_id: userId,
+            role: 'user',
+            content: `File uploaded: ${docMeta.filename}`,
+            action_type: 'file_upload',
+            metadata: {
+              documentId: docMeta.id,
+              filename: docMeta.filename,
+              fileUrl: docMeta.publicUrl,
+              fileSize: docMeta.fileSize,
+              fileType: docMeta.fileType,
+              isStandaloneFile: true
+            },
+            created_at: new Date().toISOString(),
+            message_timestamp: new Date().toISOString(),
+            client_id: generateClientId()
+          })
+          .select()
+          .single();
+
+        if (standaloneError) {
+          console.error('Failed to create standalone file upload message:', standaloneError);
+        } else {
+          console.log(`✅ Created standalone file upload message: ${standaloneFileMessage.id}`);
+        }
+      }
+
+      // 8. No need to remove typing indicator - already replaced with real message
+
+      // 9. Reload session to get all messages with proper IDs (including ones created by edge function)
+      console.log('🔄 Reloading session to sync all messages after RAG query');
+      await loadSession(targetSessionId, true); // Preserve current optimistic messages
 
       console.log('✅ Enhanced unified RAG flow completed successfully');
 
     } catch (error) {
       console.error('❌ Enhanced unified RAG flow failed:', error);
+      
+      // Remove typing indicator if query failed and it wasn't replaced
+      if (tempAssistantIdRef.current) {
+        removeMessage(tempAssistantIdRef.current);
+        tempAssistantIdRef.current = null;
+      }
       
       // Update file message with error status
       updateMessage(fileClientId, {
@@ -1093,6 +1493,7 @@ export const useChat = (): UseChatReturn => {
       setIsSending(false);
       setIsLoading(false);
       setIsThinking(false);
+      tempAssistantIdRef.current = null; // Always clean up temp assistant ref
     }
   };
 

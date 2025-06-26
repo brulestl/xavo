@@ -8,7 +8,8 @@ import {
   TouchableOpacity, 
   TextInput, 
   Alert,
-  ActivityIndicator
+  ActivityIndicator,
+  Linking
 } from 'react-native';
 import * as Clipboard from 'expo-clipboard';
 import { useTheme } from '../providers/ThemeProvider';
@@ -25,6 +26,14 @@ interface ChatBubbleProps {
   animatedValue?: Animated.Value;
   onEditMessage?: (messageId: string, newContent: string) => Promise<boolean>;
   isStreaming?: boolean;
+  // File message support
+  type?: 'text' | 'file' | 'text_with_file';
+  filename?: string;
+  fileUrl?: string;
+  fileSize?: number;
+  fileType?: string;
+  status?: 'uploading' | 'processing' | 'processed' | 'querying' | 'sent' | 'failed';
+  metadata?: any;
 }
 
 export const ChatBubble: React.FC<ChatBubbleProps> = ({ 
@@ -35,7 +44,14 @@ export const ChatBubble: React.FC<ChatBubbleProps> = ({
   timestamp,
   animatedValue = new Animated.Value(1),
   onEditMessage,
-  isStreaming = false
+  isStreaming = false,
+  type = 'text',
+  filename,
+  fileUrl,
+  fileSize,
+  fileType,
+  status = 'sent',
+  metadata
 }) => {
   const { theme, isDark } = useTheme();
   const [isEditing, setIsEditing] = useState(false);
@@ -138,6 +154,216 @@ export const ChatBubble: React.FC<ChatBubbleProps> = ({
   const handleCancel = () => {
     setEditedText(message);
     setIsEditing(false);
+  };
+
+  const handleFilePress = async () => {
+    if (fileUrl && status === 'sent') {
+      try {
+        const supported = await Linking.canOpenURL(fileUrl);
+        if (supported) {
+          await Linking.openURL(fileUrl);
+        } else {
+          Alert.alert('Cannot open file', 'No app available to open this file type');
+        }
+      } catch (error) {
+        Alert.alert('Error', 'Failed to open file');
+        console.error('File open error:', error);
+      }
+    }
+  };
+
+  const getFileIcon = () => {
+    if (!fileType) return 'document-outline';
+    
+    if (fileType.includes('pdf')) return 'document-text-outline';
+    if (fileType.includes('image')) return 'image-outline';
+    if (fileType.includes('word') || fileType.includes('document')) return 'document-outline';
+    if (fileType.includes('text')) return 'document-text-outline';
+    return 'attach-outline';
+  };
+
+  const formatFileSize = (bytes?: number) => {
+    if (!bytes) return '';
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  };
+
+  // Render file message
+  const renderFileContent = () => {
+    return (
+      <TouchableOpacity 
+        style={styles.fileContainer}
+        onPress={handleFilePress}
+        disabled={status !== 'sent'}
+      >
+        <View style={styles.fileIconContainer}>
+          <Ionicons 
+            name={getFileIcon()} 
+            size={24} 
+            color={isUser ? '#FFFFFF' : theme.semanticColors.primary} 
+          />
+          {(status === 'uploading' || status === 'processing') && (
+            <View style={styles.statusOverlay}>
+              <ActivityIndicator 
+                size="small" 
+                color={isUser ? '#FFFFFF' : theme.semanticColors.primary} 
+              />
+            </View>
+          )}
+          {status === 'failed' && (
+            <View style={styles.statusOverlay}>
+              <Ionicons 
+                name="warning-outline" 
+                size={16} 
+                color="#FF3B30" 
+              />
+            </View>
+          )}
+        </View>
+        
+        <View style={styles.fileDetails}>
+          <Text 
+            style={[
+              styles.filename, 
+              { 
+                color: isUser ? '#FFFFFF' : theme.semanticColors.textPrimary,
+                opacity: status === 'failed' ? 0.6 : 1
+              }
+            ]}
+            numberOfLines={2}
+          >
+            {filename || 'Unknown file'}
+          </Text>
+          <Text 
+            style={[
+              styles.fileMetadata, 
+              { 
+                color: isUser ? 'rgba(255,255,255,0.7)' : theme.semanticColors.textSecondary,
+                opacity: status === 'failed' ? 0.6 : 1
+              }
+            ]}
+          >
+            {formatFileSize(fileSize)}
+            {status === 'uploading' && ' • Uploading...'}
+            {status === 'processing' && ' • Processing...'}
+            {status === 'processed' && ' • Processed'}
+            {status === 'querying' && ' • Querying...'}
+            {status === 'failed' && ' • Upload failed'}
+          </Text>
+        </View>
+
+        {status === 'sent' && (
+          <Ionicons 
+            name="chevron-forward" 
+            size={16} 
+            color={isUser ? 'rgba(255,255,255,0.5)' : theme.semanticColors.textSecondary} 
+          />
+        )}
+      </TouchableOpacity>
+    );
+  };
+
+  // Render text with attached file content
+  const renderTextWithFileContent = () => {
+    const attachmentInfo = metadata?.attachmentInfo;
+    if (!attachmentInfo) {
+      // Fallback to regular text if no attachment info
+      return <ChatMessage text={message} />;
+    }
+
+    const handleAttachedFilePress = async () => {
+      if (attachmentInfo.fileUrl && attachmentInfo.status === 'sent') {
+        try {
+          const supported = await Linking.canOpenURL(attachmentInfo.fileUrl);
+          if (supported) {
+            await Linking.openURL(attachmentInfo.fileUrl);
+          } else {
+            Alert.alert('Cannot open file', 'No app available to open this file type');
+          }
+        } catch (error) {
+          Alert.alert('Error', 'Failed to open file');
+          console.error('File open error:', error);
+        }
+      }
+    };
+
+    const getAttachedFileIcon = () => {
+      const fileType = attachmentInfo.fileType;
+      if (!fileType) return 'document-outline';
+      
+      if (fileType.includes('pdf')) return 'document-text-outline';
+      if (fileType.includes('image')) return 'image-outline';
+      if (fileType.includes('word') || fileType.includes('document')) return 'document-outline';
+      if (fileType.includes('text')) return 'document-text-outline';
+      return 'attach-outline';
+    };
+
+    return (
+      <View style={styles.textWithFileContainer}>
+        {/* Text Content */}
+        <View style={styles.textContent}>
+          <ChatMessage text={message} />
+        </View>
+        
+        {/* File Attachment */}
+        <TouchableOpacity 
+          style={[
+            styles.attachedFileContainer,
+            {
+              backgroundColor: isUser 
+                ? 'rgba(255,255,255,0.15)' 
+                : (isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)'),
+              borderColor: isUser 
+                ? 'rgba(255,255,255,0.3)' 
+                : theme.semanticColors.border
+            }
+          ]}
+          onPress={handleAttachedFilePress}
+          disabled={attachmentInfo.status !== 'sent'}
+        >
+          <View style={styles.attachedFileIcon}>
+            <Ionicons 
+              name={getAttachedFileIcon()} 
+              size={20} 
+              color={isUser ? 'rgba(255,255,255,0.8)' : theme.semanticColors.primary} 
+            />
+          </View>
+          
+          <View style={styles.attachedFileDetails}>
+            <Text 
+              style={[
+                styles.attachedFilename, 
+                { 
+                  color: isUser ? 'rgba(255,255,255,0.9)' : theme.semanticColors.textPrimary
+                }
+              ]}
+              numberOfLines={1}
+            >
+              📎 {attachmentInfo.filename}
+            </Text>
+            <Text 
+              style={[
+                styles.attachedFileSize, 
+                { 
+                  color: isUser ? 'rgba(255,255,255,0.7)' : theme.semanticColors.textSecondary
+                }
+              ]}
+            >
+              {formatFileSize(attachmentInfo.fileSize)}
+            </Text>
+          </View>
+
+          {attachmentInfo.status === 'sent' && (
+            <Ionicons 
+              name="download-outline" 
+              size={16} 
+              color={isUser ? 'rgba(255,255,255,0.5)' : theme.semanticColors.textSecondary} 
+            />
+          )}
+        </TouchableOpacity>
+      </View>
+    );
   };
 
   if (isEditing) {
@@ -252,7 +478,7 @@ export const ChatBubble: React.FC<ChatBubbleProps> = ({
           delayLongPress={500}
           activeOpacity={0.8}
         >
-          <ChatMessage text={message} />
+          {type === 'file' ? renderFileContent() : type === 'text_with_file' ? renderTextWithFileContent() : <ChatMessage text={message} />}
         </TouchableOpacity>
       </Animated.View>
 
@@ -325,5 +551,68 @@ const styles = StyleSheet.create({
   },
   saveButton: {
     borderWidth: 0,
+  },
+  // File message styles
+  fileContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 4,
+  },
+  fileIconContainer: {
+    marginRight: 12,
+    position: 'relative',
+  },
+  statusOverlay: {
+    position: 'absolute',
+    top: -4,
+    right: -4,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    borderRadius: 10,
+    width: 20,
+    height: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  fileDetails: {
+    flex: 1,
+    marginRight: 8,
+  },
+  filename: {
+    fontSize: 14,
+    fontWeight: '500',
+    marginBottom: 2,
+  },
+  fileMetadata: {
+    fontSize: 12,
+    opacity: 0.8,
+  },
+  textWithFileContainer: {
+    flexDirection: 'column',
+  },
+  textContent: {
+    marginBottom: 12,
+  },
+  attachedFileContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 8,
+    borderWidth: 1,
+    borderRadius: 8,
+    marginTop: 4,
+  },
+  attachedFileIcon: {
+    marginRight: 8,
+  },
+  attachedFileDetails: {
+    flex: 1,
+  },
+  attachedFilename: {
+    fontSize: 14,
+    fontWeight: '500',
+    marginBottom: 2,
+  },
+  attachedFileSize: {
+    fontSize: 12,
+    opacity: 0.8,
   },
 });

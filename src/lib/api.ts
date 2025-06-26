@@ -147,6 +147,8 @@ export interface QueryDocumentResponse {
   timestamp: string;
   sessionId?: string;
   tokensUsed: number;
+  userMessageId?: string;
+  assistantMessageId?: string;
 }
 
 // Direct API methods for specific endpoints
