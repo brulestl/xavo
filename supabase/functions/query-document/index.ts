@@ -227,7 +227,8 @@ I'd be happy to help once the document is properly processed!`;
           (msg.role === 'assistant' &&
             msg.action_type === 'document_response' &&    // extra guard
             msg.metadata?.document_id === documentId &&   // same doc only
-            msg.metadata?.fallback_response !== true)     // no fallbacks
+            msg.metadata?.fallback_response !== true &&   // no fallbacks
+            !/I (?:currently )?do not have access|unable to access/i.test(msg.content))  // exclude "no access" messages
         ) ?? [];
 
         if (filtered.length) {
