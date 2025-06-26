@@ -64,7 +64,7 @@ export class RAGService {
       useUserProfile = true,
       useCoachCorpus = true,
       maxContextTokens = 4000,
-      coachCorpusThreshold = 0.75,
+      coachCorpusThreshold = 0.3,
       coachCorpusCount = 3,
       memoryOptions = {},
     } = options;
@@ -212,18 +212,25 @@ export class RAGService {
     }
 
     // Add current user query
-    prompt += `\n\nCurrent Question: ${request.message}\n\nPlease provide a comprehensive response that takes into account the conversation history and user context above.`;
+    prompt += `\n\nCurrent Question: ${request.message}\n\nPlease provide a comprehensive response that incorporates the coach expertise above, takes into account the conversation history and user context, and follows the system guidelines. Remember: you are a specialized Corporate Influence Coach trained on expert content - provide actionable workplace and political navigation advice based on your training.`;
 
     return prompt;
   }
 
   private buildBasicPrompt(request: ChatRequestDto): string {
     const systemContext = this.getSystemContext(request.actionType);
-    return `${systemContext}\n\nUser Question: ${request.message}`;
+    return `${systemContext}\n\nUser Question: ${request.message}\n\nProvide actionable corporate influence and workplace navigation advice based on your specialized training.`;
   }
 
   private getSystemContext(actionType?: string): string {
-    const baseContext = `You are a Corporate Influence Coach, an AI assistant specialized in helping professionals navigate workplace dynamics, office politics, and corporate communication. You provide strategic advice on stakeholder management, influence building, and professional relationship development.`;
+    const baseContext = `You are a Corporate Influence Coach, an AI assistant specialized in helping professionals navigate workplace dynamics, office politics, and corporate communication. You provide strategic advice on stakeholder management, influence building, and professional relationship development.
+
+IMPORTANT CONTEXT GUIDELINES:
+- You are trained on extensive corporate influence and leadership coaching content from expert practitioners
+- Your knowledge includes insights from executive coaches, leadership experts, and workplace dynamics specialists
+- When you don't have specific details about a person, company, or methodology, simply state "I don't have access to those specific details" rather than referencing any training cutoff dates
+- Focus on providing actionable corporate influence and political navigation advice based on your specialized training
+- Never reference OpenAI's training data limitations or cutoff dates - you are a specialized corporate coach, not a general AI assistant`;
 
     const actionSpecificContext = {
       evaluate_scenario: ` Focus on analyzing the political landscape, power dynamics, and potential risks/opportunities in the situation.`,
@@ -337,7 +344,7 @@ export class RAGService {
    */
   private async searchCoachCorpus(
     query: string,
-    threshold: number = 0.75,
+    threshold: number = 0.3,
     matchCount: number = 3
   ): Promise<CoachCorpusMatch[]> {
     try {
@@ -436,7 +443,7 @@ export class RAGService {
     }
 
     // Add current user query
-    prompt += `\n\nCurrent Question: ${request.message}\n\nPlease provide a comprehensive response that incorporates the coach expertise above, takes into account the conversation history and user context, and follows the system guidelines.`;
+    prompt += `\n\nCurrent Question: ${request.message}\n\nPlease provide a comprehensive response that incorporates the coach expertise above, takes into account the conversation history and user context, and follows the system guidelines. Remember: you are a specialized Corporate Influence Coach trained on expert content - provide actionable workplace and political navigation advice based on your training.`;
 
     return prompt;
   }
