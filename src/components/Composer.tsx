@@ -7,6 +7,8 @@ import { useTheme } from '../providers/ThemeProvider';
 import { useAuth } from '../providers/AuthProvider';
 import { fileAnalysisService, AnalyzedFile } from '../services/fileAnalysisService';
 import { ragFileService, RAGDocument, ProcessingProgress } from '../services/ragFileService';
+import { supabaseFileService, FileProcessingProgress } from '../services/supabaseFileService';
+import { supabase } from '../lib/supabase';
 import { AttachmentMenu } from './AttachmentMenu';
 import { FilePreview } from './FilePreview';
 import { PDFProcessingErrorDialog } from './PDFProcessingErrorDialog';
@@ -28,6 +30,7 @@ interface ComposerProps {
   onSendFile?: (file: any) => void;
   onSendCombinedFileAndText?: (file: any, text: string, textMessageId: string, fileMessageId: string) => void;
   onAddOptimisticMessage?: (message: any) => void;
+  onCreateSession?: (title?: string) => Promise<{ id: string; title: string } | null>;
   placeholder?: string;
   disabled?: boolean;
   sessionId?: string;
@@ -40,6 +43,7 @@ export const Composer: React.FC<ComposerProps> = ({
   onSendFile,
   onSendCombinedFileAndText,
   onAddOptimisticMessage,
+  onCreateSession,
   placeholder = "What's on your mind?",
   disabled = false,
   sessionId,
@@ -116,15 +120,32 @@ export const Composer: React.FC<ComposerProps> = ({
   };
 
   const handleSend = async () => {
+    console.log('🚀 [Composer] handleSend called');
+    
     const textToSend = liveTranscription || localLiveTranscription || message;
+    console.log('🔍 [Composer] Send conditions:', {
+      textToSend: textToSend.trim(),
+      attachedFilesLength: attachedFiles.length,
+      disabled,
+      hasTextOrFiles: textToSend.trim() || attachedFiles.length > 0
+    });
+    
     if ((textToSend.trim() || attachedFiles.length > 0) && !disabled) {
       
-      // Check if we have RAG documents to process
+      // Check if we have RAG documents and images to process
       const ragDocuments = attachedFiles.filter(file => file.isRAGDocument);
-      const otherFiles = attachedFiles.filter(file => !file.isRAGDocument);
+      const imageAttachments = attachedFiles.filter(file => file.isImageAttachment);
+      const otherFiles = attachedFiles.filter(file => !file.isRAGDocument && !file.isImageAttachment);
+      
+      console.log('📁 [Composer] File breakdown:', {
+        ragDocuments: ragDocuments.length,
+        imageAttachments: imageAttachments.length,
+        otherFiles: otherFiles.length,
+        totalFiles: attachedFiles.length
+      });
       
       // 🔥 NEW: Unified RAG flow - Combined file + text
-      if (ragDocuments.length === 1 && textToSend.trim() && otherFiles.length === 0 && onSendCombinedFileAndText && onAddOptimisticMessage && user?.id) {
+      if (ragDocuments.length === 1 && textToSend.trim() && imageAttachments.length === 0 && otherFiles.length === 0 && onSendCombinedFileAndText && onAddOptimisticMessage && user?.id) {
         const ragFile = ragDocuments[0];
         try {
           // Generate unique IDs for both bubbles
@@ -188,8 +209,308 @@ export const Composer: React.FC<ComposerProps> = ({
         return;
       }
       
+      // 🆕 NEW SUPABASE FILE FLOW: Single file + text or file only
+      const allFiles = [...ragDocuments, ...imageAttachments];
+      console.log('🔍 [Composer] SUPABASE FILE FLOW conditions:', {
+        allFilesLength: allFiles.length,
+        hasOnAddOptimisticMessage: !!onAddOptimisticMessage,
+        hasUserId: !!user?.id,
+        hasSessionId: !!sessionId,
+        sessionId,
+        userId: user?.id?.substring(0, 10) + '...'
+      });
+      
+      if (allFiles.length === 1 && onAddOptimisticMessage && user?.id) {
+        console.log('✅ [Composer] Entering SUPABASE FILE FLOW (with session handling)');
+        const file = allFiles[0];
+        
+        // 🔧 CRITICAL FIX: Handle session creation when sessionId is missing
+        const executeFileFlow = async (targetSessionId: string) => {
+          try {
+            // React Native compatible UUID generation function
+            const generateUUID = (): string => {
+              return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+                const r = Math.random() * 16 | 0;
+                const v = c === 'x' ? r : (r & 0x3 | 0x8);
+                return v.toString(16);
+              });
+            };
+            
+            const textMessageId = textToSend.trim() ? generateUUID() : '';
+            const fileMessageId = generateUUID();
+            
+            console.log('🆔 [Composer] Generated UUIDs:', { textMessageId, fileMessageId, targetSessionId });
+            
+            // Add optimistic text message if there's text
+            if (textToSend.trim()) {
+              const textMessage = {
+                id: textMessageId,
+                content: textToSend.trim(),
+                role: 'user',
+                session_id: targetSessionId,
+                created_at: new Date().toISOString(),
+                type: 'text',
+                status: 'sent'
+              };
+              onAddOptimisticMessage(textMessage);
+            }
+            
+            // Add optimistic file bubble
+            const fileMessage = {
+              id: fileMessageId,
+              content: file.name,
+              role: 'user',
+              session_id: targetSessionId,
+              created_at: new Date().toISOString(),
+              type: 'file',
+              filename: file.name,
+              fileUrl: file.uri,
+              fileSize: file.size,
+              fileType: file.type,
+              status: 'uploading'
+            };
+            onAddOptimisticMessage(fileMessage);
+            
+            // Clear attachments immediately 
+            setAttachedFiles([]);
+            
+            // Process file using new Supabase edge functions
+            console.log(`📄 Processing file: ${file.name} (${file.type}) with session: ${targetSessionId}`);
+            console.log('🔍 File details before processing:', {
+              fileName: file.name,
+              fileType: file.type,
+              fileUri: file.uri.substring(0, 50) + '...',
+              fileSize: file.size,
+              sessionId: targetSessionId,
+              uriLength: file.uri.length
+            });
+            
+            console.log('🎬 About to call supabaseFileService.processFile...');
+            console.log('🔧 Service parameters:', {
+              fileUri: file.uri,
+              fileType: file.type,
+              fileName: file.name,
+              sessionId: targetSessionId
+            });
+            
+            let result;
+            try {
+              console.log('🚀 CALLING supabaseFileService.processFile NOW...');
+              result = await supabaseFileService.processFile(
+                file.uri,
+                file.type,
+                file.name,
+                targetSessionId,
+                (progress: FileProcessingProgress) => {
+                  console.log(`📄 File processing: ${progress.stage} - ${progress.message}`);
+                  // Note: Progress updates would need to be handled by parent component
+                  // through a callback if real-time updates are needed
+                }
+              );
+              console.log('🎯 Service call completed, result:', result);
+              
+              console.log('🎉 processFile completed successfully:', {
+                success: result.success,
+                fileId: result.fileId,
+                hasDescription: !!result.description
+              });
+            } catch (serviceError) {
+              console.error('💥 processFile threw an error:', serviceError);
+              throw serviceError; // Re-throw to maintain existing error handling
+            }
+            
+            if (!result.success) {
+              throw new Error(result.error || 'File processing failed');
+            }
+            
+            console.log(`✅ File processed successfully: ${result.fileId}, chunks: ${result.chunksCreated || 'N/A'}`);
+            
+            // 🔧 CRITICAL: Check if we have chunks to trigger auto-analysis
+            console.log('🔍 [Composer] Checking auto-analysis conditions:', {
+              hasFileId: !!result.fileId,
+              hasSessionId: !!targetSessionId,
+              chunksCreated: result.chunksCreated,
+              textLength: textToSend.trim().length,
+              fileType: file.type,
+              isImage: file.type.startsWith('image/')
+            });
+            
+            // 💾 SAVE USER MESSAGE: Now save the user's message with file attachment to database
+            console.log('💾 Saving user message with file attachment to database...');
+            try {
+              const userMessageData = {
+                session_id: targetSessionId,
+                user_id: user.id,
+                role: 'user',
+                content: textToSend.trim(),
+                action_type: 'file_upload',
+                metadata: {
+                  fileId: result.fileId,
+                  filename: file.name,
+                  fileSize: file.size,
+                  fileType: file.type,
+                  hasAttachment: true
+                },
+                created_at: new Date().toISOString(),
+                message_timestamp: new Date().toISOString(),
+                client_id: generateUUID() // ✅ Generate proper UUID instead of temp string
+              };
+
+              const { data: savedMessage, error: saveError } = await supabase
+                .from('conversation_messages')
+                .insert(userMessageData)
+                .select()
+                .single();
+
+              if (saveError) {
+                console.error('❌ Failed to save user message:', saveError);
+              } else {
+                console.log('✅ User message saved to database:', savedMessage.id);
+                
+                // Update optimistic message with real ID and file info
+                if (onAddOptimisticMessage) {
+                  const updatedMessage = {
+                    id: savedMessage.id,
+                    content: textToSend.trim(),
+                    role: 'user',
+                    session_id: targetSessionId,
+                    created_at: savedMessage.created_at,
+                    type: 'text_with_file',
+                    filename: file.name,
+                    fileUrl: file.uri,
+                    fileSize: file.size,
+                    fileType: file.type,
+                    status: 'sent',
+                    metadata: {
+                      fileId: result.fileId,
+                      hasAttachment: true
+                    }
+                  };
+                  onAddOptimisticMessage(updatedMessage);
+                }
+              }
+            } catch (dbError) {
+              console.error('❌ Database save error:', dbError);
+            }
+            
+            // 🤖 AUTO-ANALYZE: ALWAYS analyze files that have chunks created
+            const hasValidChunks = result.chunksCreated && result.chunksCreated > 0;
+            const shouldAutoAnalyze = hasValidChunks && result.fileId && targetSessionId;
+            
+            console.log('🔍 [Composer] Auto-analysis decision:', {
+              hasValidChunks,
+              shouldAutoAnalyze,
+              fileId: result.fileId,
+              sessionId: targetSessionId,
+              chunksCreated: result.chunksCreated
+            });
+            
+            if (shouldAutoAnalyze) {
+              console.log('🚀 [Composer] AUTO-ANALYSIS TRIGGERED! Starting query-file function...');
+              try {
+                // Use appropriate question for auto-analysis
+                const analysisQuestion = textToSend.trim() || 
+                  (file.type.startsWith('image/') ? 
+                    'Please analyze this image and describe what you see, including any text content.' :
+                    'Please analyze this file and summarize its contents.');
+                
+                console.log('🔍 [Composer] Calling query-file function with:', {
+                  question: analysisQuestion.substring(0, 50) + '...',
+                  fileId: result.fileId,
+                  sessionId: targetSessionId
+                });
+                
+                console.log('🌐 [Composer] About to call supabaseFileService.callQueryFileFunction...');
+                
+                const queryResult = await supabaseFileService.callQueryFileFunction({
+                  question: analysisQuestion,
+                  fileId: result.fileId,
+                  sessionId: targetSessionId
+                });
+                
+                console.log('🎉 [Composer] Query-file function completed!', {
+                  success: !!queryResult,
+                  hasAnswer: !!queryResult?.answer,
+                  sourceCount: queryResult?.sources?.length || 0,
+                  userMessageId: queryResult?.userMessageId,
+                  assistantMessageId: queryResult?.assistantMessageId
+                });
+                
+                // The query-file function already created the conversation messages
+                // so we don't need to manually add them here
+                
+              } catch (queryError: any) {
+                console.error('💥 [Composer] Auto-analysis failed with error:', queryError);
+                console.error('💥 [Composer] Error details:', {
+                  message: queryError?.message,
+                  stack: queryError?.stack,
+                  name: queryError?.name
+                });
+                
+                // Don't fail the whole upload - just show a warning
+                Alert.alert('Analysis Failed', 'File uploaded successfully, but auto-analysis failed. You can ask questions about the file manually.');
+              }
+            } else {
+              console.log('❌ [Composer] Auto-analysis SKIPPED because conditions not met');
+            }
+            
+          } catch (error) {
+            console.error('💥 [Composer] Supabase file processing error:', error);
+            
+            // Provide specific error messaging based on error type
+            let errorMessage = 'Failed to process file. Please try again.';
+            if (error instanceof Error) {
+              if (error.message.includes('uuid')) {
+                errorMessage = 'Database error: Invalid ID format. Please try again.';
+              } else if (error.message.includes('network') || error.message.includes('fetch')) {
+                errorMessage = 'Network error. Please check your connection and try again.';
+              }
+              console.error('💥 [Composer] Detailed error:', error.message);
+            }
+            
+            Alert.alert('Processing Failed', errorMessage);
+            
+            // 🔧 CRITICAL: Clear optimistic messages on failure to prevent state corruption
+            console.log('🧹 [Composer] Failed optimistic messages will be cleared by parent state management');
+          }
+        };
+        
+        // Check if we have a session, if not create one first
+        if (!sessionId) {
+          console.log('🚨 [Composer] No sessionId - creating new session first');
+          
+          if (!onCreateSession) {
+            console.error('💥 [Composer] No onCreateSession prop provided');
+            Alert.alert('Error', 'Cannot create new conversation. Missing session handler.');
+            return;
+          }
+          
+          try {
+            const newSession = await onCreateSession(`Image: ${file.name}`);
+            
+            if (!newSession) {
+              throw new Error('Failed to create new session');
+            }
+            
+            console.log('✅ [Composer] New session created:', newSession.id);
+            await executeFileFlow(newSession.id);
+          } catch (sessionError) {
+            console.error('💥 [Composer] Session creation failed:', sessionError);
+            Alert.alert('Error', 'Failed to create new conversation. Please try again.');
+          }
+        } else {
+          console.log('✅ [Composer] Using existing session:', sessionId);
+          await executeFileFlow(sessionId);
+        }
+        
+        setMessage('');
+        setLocalLiveTranscription('');
+        Keyboard.dismiss();
+        return;
+      }
+
       // ChatGPT-style file upload: If only RAG document and no text, use sendFileMessage
-      if (ragDocuments.length === 1 && !textToSend.trim() && otherFiles.length === 0 && onSendFile && user?.id) {
+      if (ragDocuments.length === 1 && !textToSend.trim() && imageAttachments.length === 0 && otherFiles.length === 0 && onSendFile && user?.id) {
         const ragFile = ragDocuments[0];
         try {
           // Convert to the format expected by sendFileMessage
@@ -279,8 +600,8 @@ export const Composer: React.FC<ComposerProps> = ({
       
       setMessage('');
       setLocalLiveTranscription('');
-      // Only clear non-RAG files or files that processed successfully
-      setAttachedFiles(prev => prev.filter(f => f.isRAGDocument && f.isAnalyzing));
+      // Only clear files that are still processing
+      setAttachedFiles(prev => prev.filter(f => (f.isRAGDocument || f.isImageAttachment) && f.isAnalyzing));
       Keyboard.dismiss();
     }
   };
@@ -300,7 +621,13 @@ export const Composer: React.FC<ComposerProps> = ({
   const handleTakePhoto = async () => {
     if (disabled) return;
 
-    Keyboard.dismiss(); // Dismiss keyboard before opening camera
+    // Save focus state and dismiss keyboard
+    const wasFocused = isFocused;
+    textInputRef.current?.blur();
+    Keyboard.dismiss();
+    
+    // Small delay to ensure keyboard is dismissed
+    await new Promise(resolve => setTimeout(resolve, 100));
 
     try {
       const permission = await ImagePicker.requestCameraPermissionsAsync();
@@ -311,8 +638,7 @@ export const Composer: React.FC<ComposerProps> = ({
 
       const result = await ImagePicker.launchCameraAsync({
         mediaTypes: ImagePicker.MediaTypeOptions.Images,
-        allowsEditing: true,
-        aspect: [4, 3],
+        allowsEditing: false,
         quality: 0.8,
       });
 
@@ -323,13 +649,26 @@ export const Composer: React.FC<ComposerProps> = ({
       console.error('Camera error:', error);
       Alert.alert('Camera Error', 'Failed to open camera. Please try again.');
     }
+    
+    // Restore focus if it was previously focused (small delay to ensure camera is closed)
+    if (wasFocused) {
+      setTimeout(() => {
+        textInputRef.current?.focus();
+      }, 300);
+    }
   };
 
   // Photo library picker
   const handleChoosePhoto = async () => {
     if (disabled) return;
 
-    Keyboard.dismiss(); // Dismiss keyboard before opening photo library
+    // Save focus state and dismiss keyboard
+    const wasFocused = isFocused;
+    textInputRef.current?.blur();
+    Keyboard.dismiss();
+    
+    // Small delay to ensure keyboard is dismissed
+    await new Promise(resolve => setTimeout(resolve, 100));
 
     try {
       const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -340,8 +679,7 @@ export const Composer: React.FC<ComposerProps> = ({
 
       const result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ImagePicker.MediaTypeOptions.Images,
-        allowsEditing: true,
-        aspect: [4, 3],
+        allowsEditing: false,
         quality: 0.8,
       });
 
@@ -352,13 +690,26 @@ export const Composer: React.FC<ComposerProps> = ({
       console.error('Photo picker error:', error);
       Alert.alert('Photo Error', 'Failed to open photo library. Please try again.');
     }
+    
+    // Restore focus if it was previously focused
+    if (wasFocused) {
+      setTimeout(() => {
+        textInputRef.current?.focus();
+      }, 300);
+    }
   };
 
   // Document picker - prioritize RAG-compatible files
   const handleChooseFile = async () => {
     if (disabled) return;
 
-    Keyboard.dismiss(); // Dismiss keyboard before opening file picker
+    // Save focus state and dismiss keyboard properly
+    const wasFocused = isFocused;
+    textInputRef.current?.blur();
+    Keyboard.dismiss();
+    
+    // Longer delay for file picker to ensure proper keyboard dismissal
+    await new Promise(resolve => setTimeout(resolve, 150));
 
     try {
       const result = await DocumentPicker.getDocumentAsync({
@@ -380,6 +731,13 @@ export const Composer: React.FC<ComposerProps> = ({
       console.error('Document picker error:', error);
       Alert.alert('File Error', 'Failed to select file. Please try again.');
     }
+    
+    // Restore focus with longer delay for file picker
+    if (wasFocused) {
+      setTimeout(() => {
+        textInputRef.current?.focus();
+      }, 500);
+    }
   };
 
   // Handle selected file (from camera, photos, or documents)
@@ -389,81 +747,68 @@ export const Composer: React.FC<ComposerProps> = ({
       return;
     }
 
-    // Validate file for RAG processing
-    const ragValidation = ragFileService.validateFile(file);
-    if (ragValidation.valid) {
-      // RAG-compatible file - just attach it, process after send
-      const tempFile: AnalyzedFile = {
-        id: `temp_${Date.now()}`,
-        name: file.name || 'Untitled',
-        type: file.mimeType || file.type || 'application/octet-stream',
-        size: file.size || 0,
-        uri: file.uri,
-        uploadProgress: 100, // Mark as ready to send
-        isAnalyzing: false,
-        isRAGDocument: true, // Flag for RAG processing
-      };
+    // Generate a proper filename if one doesn't exist (common for camera/photo library)
+    const generateFileName = (file: any): string => {
+      if (file.name) return file.name;
+      
+      const type = file.mimeType || file.type || '';
+      const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+      
+      if (type.startsWith('image/')) {
+        const ext = type.split('/')[1] || 'jpg';
+        return `Image_${timestamp}.${ext}`;
+      }
+      
+      return `File_${timestamp}`;
+    };
 
-      // Add to attachments - ready to send
-      setAttachedFiles(prev => [...prev, tempFile]);
+    const fileName = generateFileName(file);
+
+    // Check if it's a supported file type
+    const fileType = file.mimeType || file.type || '';
+    const isImage = fileType.startsWith('image/');
+    const isPDF = fileType === 'application/pdf';
+    const isDocument = fileType.includes('document') || fileType.includes('text');
+    
+    // Basic size validation (10MB limit)
+    const maxSize = 10 * 1024 * 1024;
+    if (file.size && file.size > maxSize) {
+      Alert.alert('File Too Large', 'File size must be less than 10MB.');
+      return;
+    }
+    
+    // Supported file types for the new Supabase processing system
+    const supportedTypes = [
+      'image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp',
+      'application/pdf',
+      'text/plain', 'text/csv',
+      'application/msword',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+    ];
+    
+    if (!supportedTypes.includes(fileType)) {
+      Alert.alert('Unsupported File', 'Please use images, PDFs, or text documents.');
       return;
     }
 
-    // Fallback to regular file analysis for images etc.
-    const validation = fileAnalysisService.validateFile(file);
-    if (!validation.valid) {
-      Alert.alert('Invalid File', validation.error || 'File validation failed.');
-      return;
-    }
-
-    // Create temporary file entry outside try block
+    // ALL FILES now follow the "attach first, process later" pattern
+    // This works with the new Supabase file processing system
     const tempFile: AnalyzedFile = {
       id: `temp_${Date.now()}`,
-      name: file.name || 'Untitled',
+      name: fileName,
       type: file.mimeType || file.type || 'application/octet-stream',
       size: file.size || 0,
       uri: file.uri,
-      uploadProgress: 0,
+      uploadProgress: 100, // Mark as ready to send
       isAnalyzing: false,
+      isRAGDocument: isPDF || isDocument, // True for PDFs/docs
+      isImageAttachment: isImage, // Flag for images
+      needsProcessing: true, // Flag that this needs Supabase processing
     };
 
-    try {
-      // Add to attachments immediately
-      setAttachedFiles(prev => [...prev, tempFile]);
-
-      // Upload and analyze (for non-RAG files like images)
-      const analyzedFile = await fileAnalysisService.uploadAndAnalyze(
-        file,
-        user.id,
-        sessionId,
-        (progress) => {
-          setAttachedFiles(prev => 
-            prev.map(f => f.id === tempFile.id ? { ...f, uploadProgress: progress } : f)
-          );
-        },
-        () => {
-          setAttachedFiles(prev => 
-            prev.map(f => f.id === tempFile.id ? { ...f, isAnalyzing: true } : f)
-          );
-        },
-        (result) => {
-          setAttachedFiles(prev => 
-            prev.map(f => f.id === tempFile.id ? result : f)
-          );
-        }
-      );
-
-      // Final update
-      setAttachedFiles(prev => 
-        prev.map(f => f.id === tempFile.id ? analyzedFile : f)
-      );
-
-    } catch (error) {
-      console.error('File processing error:', error);
-      // Remove failed upload
-      setAttachedFiles(prev => prev.filter(f => f.id !== tempFile.id));
-      Alert.alert('Upload Failed', 'Failed to process file. Please try again.');
-    }
+    // Add to attachments - ready to send (no immediate processing)
+    setAttachedFiles(prev => [...prev, tempFile]);
+    return;
   };
 
   // Remove file attachment

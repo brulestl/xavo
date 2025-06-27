@@ -15,6 +15,8 @@ import { useChat } from '../hooks/useChat';
 import { generateAiPrompts } from '../services/aiPromptService';
 import { supabase } from '../lib/supabase';
 import { useConversations } from '../hooks/useConversations';
+import { SatoshiText } from '../components/SatoshiText';
+import { SharkToggleIcon } from '../components/SharkToggleIcon';
 
 
 // Mock data - TODO: Replace with actual user data from onboarding
@@ -97,6 +99,7 @@ export const HomeScreen: React.FC = () => {
     conversations, 
     loading: conversationsLoading, 
     refreshConversations,
+    triggerRefreshAfterMessage,
     renameConversationInstant,
     deleteConversationInstant
   } = useConversations();
@@ -361,16 +364,19 @@ export const HomeScreen: React.FC = () => {
           <View style={[styles.hamburger, { backgroundColor: theme.semanticColors.textPrimary }]} />
         </TouchableOpacity>
 
-        {/* Settings Button */}
-        <TouchableOpacity 
-          style={styles.settingsButton} 
-          onPress={() => {
-            Keyboard.dismiss(); // Dismiss keyboard before opening settings drawer
-            setIsSettingsDrawerVisible(true);
-          }}
-        >
-          <Ionicons name="settings-outline" size={24} color={theme.semanticColors.textPrimary} />
-        </TouchableOpacity>
+        {/* Header Right: Shark Toggle + Settings */}
+        <View style={{ flexDirection: 'row', gap: 8, marginRight: -8 }}>
+          <SharkToggleIcon />
+          <TouchableOpacity 
+            style={styles.settingsButton} 
+            onPress={() => {
+              Keyboard.dismiss(); // Dismiss keyboard before opening settings drawer
+              setIsSettingsDrawerVisible(true);
+            }}
+          >
+            <Ionicons name="settings-outline" size={24} color={theme.semanticColors.textPrimary} />
+          </TouchableOpacity>
+        </View>
       </View>
 
       {/* Content - Wrap in SafeAreaView for bottom edge */}
@@ -386,9 +392,13 @@ export const HomeScreen: React.FC = () => {
             ]}
           >
             {/* Hero Question */}
-            <Text style={[styles.heroQuestion, { color: theme.semanticColors.textPrimary }]}>
+            <SatoshiText 
+              variant="header" 
+              weight="bold" 
+              style={styles.heroQuestion}
+            >
               {heroQuestion}
-            </Text>
+            </SatoshiText>
 
             {/* Quick Prompts */}
             <Animated.View style={styles.promptsWrapper}>
@@ -530,8 +540,8 @@ export const HomeScreen: React.FC = () => {
               (navigation as any).navigate('Chat', {});
             }}
           >
-            <Ionicons name="add" size={20} color={theme.semanticColors.primary} />
-            <Text style={[styles.newConversationText, { color: theme.semanticColors.primary }]}>
+            <Ionicons name="add" size={20} color={theme.semanticColors.textPrimary} />
+            <Text style={[styles.newConversationText, { color: theme.semanticColors.textPrimary }]}>
               New Conversation
             </Text>
           </TouchableOpacity>

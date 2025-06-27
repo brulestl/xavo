@@ -15,6 +15,7 @@ import { Ionicons } from '@expo/vector-icons';
 import * as DocumentPicker from 'expo-document-picker';
 import { Audio } from 'expo-av';
 import Constants from 'expo-constants';
+import { useTheme } from '../src/providers/ThemeProvider';
 
 // Add this constant for Expo Go detection
 const IS_EXPO_GO = __DEV__ && !Constants.appOwnership;
@@ -42,6 +43,7 @@ export default function ChatComposer({
   onInputChange,
   sessionId,
 }: Props) {
+  const { theme } = useTheme();
   const [input, setInput] = useState('');
   const [isRecording, setIsRecording] = useState(false);
   const [liveTranscription, setLiveTranscription] = useState('');
@@ -122,10 +124,10 @@ export default function ChatComposer({
   const displayText = liveTranscription || currentInput;
 
   return (
-    <View style={[styles.container]}>
+    <View style={[styles.container, { backgroundColor: theme.getComposerBackgroundColor() }]}>
       {/* Main Input Container - FULLY TAPPABLE with FIXED SEND BUTTON */}
       <Pressable 
-        style={[styles.inputPressable, { borderColor: accentColor }]}
+        style={[styles.inputPressable, { borderColor: accentColor, backgroundColor: theme.getComposerBackgroundColor() }]}
         onPress={handleInputAreaPress}
         disabled={disabled}
       >
@@ -170,7 +172,13 @@ export default function ChatComposer({
       <View style={styles.actionsContainer}>
         {/* Attach/Paperclip Icon - NO GUARDS */}
         <TouchableOpacity 
-          style={[styles.actionButton, { borderColor: accentColor, opacity: isUploading ? 0.6 : 1 }]} 
+          style={[
+            styles.actionButton, 
+            { 
+              borderColor: accentColor, 
+              opacity: isUploading ? 0.6 : 1 
+            }
+          ]} 
           onPress={handleFileAttach}
           disabled={disabled || isUploading}
         >

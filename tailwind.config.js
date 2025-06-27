@@ -4,7 +4,16 @@ module.exports = {
   theme: {
     extend: {
       colors: {
-        // Xavo Brand Colors
+        // New Theme Colors
+        'user-bubble': '#0071fc',
+        'assistant-bubble': '#cfdbd5',
+        'file-upload-bubble': '#f5cb5c',
+        'composer-light': '#e8eddf',
+        'composer-dark': '#333533',
+        'background-light': '#FFFFFF',
+        'background-dark': '#242423',
+        
+        // Xavo Brand Colors (Legacy)
         'xavo-blue': '#4285F4',
         'growth-green': '#1DB954',
         'pure-white': '#FFFFFF',

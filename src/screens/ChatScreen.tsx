@@ -11,6 +11,10 @@ import {
   Modal,
   TextInput,
   StatusBar,
+  ActivityIndicator,
+  ScrollView,
+  AppState,
+  Keyboard,
 } from 'react-native';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { DrawerNavigationProp } from '@react-navigation/drawer';
@@ -22,7 +26,7 @@ import { ChatBubble } from '../components/ChatBubble';
 import { TypingDots } from '../components/TypingDots';
 import { ThinkingIndicator } from '../components/ThinkingIndicator';
 import { AnalyzedFile } from '../services/fileAnalysisService';
-import { useIntent } from '../hooks/useIntent';
+import { getIntent } from '../utils/intentUtils';
 import { api } from '../lib/api';
 import { ChatMessage } from '../hooks/useChat';
 
@@ -32,6 +36,7 @@ import { useChat } from '../hooks/useChat';
 import { useConversations } from '../hooks/useConversations';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../lib/supabase';
+import { SharkToggleIcon } from '../components/SharkToggleIcon';
 
 
 type ChatScreenNavigationProp = DrawerNavigationProp<any>;
@@ -60,6 +65,10 @@ export const ChatScreen: React.FC = () => {
   const [isRenameModalVisible, setIsRenameModalVisible] = useState(false);
   const [renamingSessionId, setRenamingSessionId] = useState<string | null>(null);
   const [renameInputValue, setRenameInputValue] = useState('');
+
+  // Delete confirmation modal state
+  const [isDeleteModalVisible, setIsDeleteModalVisible] = useState(false);
+  const [deletingConversation, setDeletingConversation] = useState<any>(null);
   
   const {
     messages,
@@ -82,7 +91,14 @@ export const ChatScreen: React.FC = () => {
   } = useChat();
 
   // 🔥 Use instant operations from useConversations for rename functionality
-  const { renameConversationInstant, updateMessage } = useConversations();
+  const { 
+    conversations, 
+    loading: conversationsLoading, 
+    renameConversationInstant, 
+    triggerRefreshAfterMessage,
+    updateMessage,
+    deleteConversationInstant
+  } = useConversations();
 
   const flatListRef = useRef<FlatList>(null);
 
@@ -93,6 +109,22 @@ export const ChatScreen: React.FC = () => {
     }
   }, [messages]);
 
+  // 🔥 FIX: Handle app state changes to prevent layout displacement from external UIs
+  useEffect(() => {
+    const handleAppStateChange = (nextAppState: string) => {
+      if (nextAppState === 'active') {
+        // When app becomes active after file picker, ensure keyboard is properly dismissed
+        Keyboard.dismiss();
+      }
+    };
+
+    const subscription = AppState.addEventListener('change', handleAppStateChange);
+    
+    return () => {
+      subscription?.remove();
+    };
+  }, []);
+
   // Handle session loading and initial message processing
   useEffect(() => {
     const initializeChat = async () => {
@@ -102,6 +134,15 @@ export const ChatScreen: React.FC = () => {
           console.log('🆕 [ChatScreen] Starting new conversation - clearing all state');
           clearMessages(); // This now also clears currentSession
           setIsEditingMessage(false);
+        } else {
+                  // When switching to a different session, clear previous state
+        if (currentSession && currentSession.id !== sessionId) {
+          console.log(`🔄 [ChatScreen] Switching from session ${currentSession.id} to ${sessionId} - clearing state`);
+          clearMessages();
+          setIsEditingMessage(false);
+          // 🔧 CRITICAL: Force clear any lingering optimistic messages
+          console.log('🧹 [ChatScreen] Force clearing any persistent optimistic messages');
+        }
         }
         
         // Reset processed state when route params change
@@ -111,8 +152,11 @@ export const ChatScreen: React.FC = () => {
         
         // If we have a sessionId, load that session
         if (sessionId) {
-          // Preserve current messages if we already have some (e.g., during streaming)
-          const preserveMessages = messages.length > 0;
+          // 🔧 CRITICAL: Never preserve optimistic messages during conversation switching
+          // Only preserve messages during active streaming/sending within the SAME session
+          const isSameSession = currentSession?.id === sessionId;
+          const preserveMessages = isSameSession && (isStreaming || isSending) && messages.length > 0;
+          console.log(`🔄 [ChatScreen] Loading session ${sessionId}, isSameSession: ${isSameSession}, preserveMessages: ${preserveMessages}`);
           await loadSession(sessionId, preserveMessages);
         }
         
@@ -141,7 +185,7 @@ export const ChatScreen: React.FC = () => {
 
     try {
       // Check intent before processing
-      const intent = useIntent(message);
+      const intent = getIntent(message);
       
       // Handle list_files intent
       if (intent.type === 'list_files' && currentSession?.id) {
@@ -223,6 +267,11 @@ export const ChatScreen: React.FC = () => {
       
       console.log(`📝 Sending message to session: ${currentSession?.id || 'new session'}`);
       await sendMessage(finalMessage, currentSession?.id, false); // Use non-streaming for better UX
+      
+      // 🔄 Trigger conversation refresh to update ordering after message sent
+      if (currentSession?.id) {
+        triggerRefreshAfterMessage(currentSession.id);
+      }
     } catch (error) {
       Alert.alert('Error', 'Failed to send message. Please try again.');
       console.error('Send message error:', error);
@@ -247,6 +296,11 @@ export const ChatScreen: React.FC = () => {
     try {
       console.log(`🔥 Starting unified RAG flow: "${text}" with file "${file.name}"`);
       await sendCombinedFileAndTextMessage(file, text, user.id, currentSession?.id, textMessageId, fileMessageId);
+      
+      // 🔄 Trigger conversation refresh to update ordering after file message sent
+      if (currentSession?.id) {
+        triggerRefreshAfterMessage(currentSession.id);
+      }
     } catch (error) {
       Alert.alert('Error', 'Failed to process file with your question. Please try again.');
       console.error('Combined file + text error:', error);
@@ -256,6 +310,32 @@ export const ChatScreen: React.FC = () => {
   const handleAddOptimisticMessage = (message: any) => {
     // Use the appendMessage helper from useChat
     appendMessage(message);
+  };
+
+  // Create session helper for Composer
+  const handleCreateSession = async (title?: string): Promise<{ id: string; title: string } | null> => {
+    try {
+      console.log('🆕 [ChatScreen] Creating new session for file upload:', title);
+      
+      // Use the sendMessage function with a dummy message to trigger session creation
+      // The sendMessage function has logic to create a new session if one doesn't exist
+      const dummyMessage = title || 'New conversation started';
+      await sendMessage(dummyMessage, undefined, false);
+      
+      // Return the newly created session
+      if (currentSession) {
+        console.log('✅ [ChatScreen] Session created:', currentSession.id);
+        return {
+          id: currentSession.id,
+          title: currentSession.title || title || 'New Conversation'
+        };
+      } else {
+        throw new Error('Failed to create session');
+      }
+    } catch (error) {
+      console.error('❌ [ChatScreen] Failed to create session:', error);
+      return null;
+    }
   };
 
 
@@ -323,6 +403,43 @@ export const ChatScreen: React.FC = () => {
     setIsRenameModalVisible(false);
     setRenamingSessionId(null);
     setRenameInputValue('');
+  };
+
+  const handleDeletePress = (conversation: any) => {
+    console.log('🔥 handleDeletePress called with:', conversation);
+    console.log('🔥 Conversation ID:', conversation.id);
+    console.log('🔥 Conversation title:', conversation.title);
+    
+    console.log('🚨 About to show confirmation dialog...');
+    setDeletingConversation(conversation);
+    setIsDeleteModalVisible(true);
+    console.log('🚨 Delete modal should be visible now');
+  };
+
+  const handleDeleteConfirm = async () => {
+    if (!deletingConversation) return;
+
+    try {
+      console.log('🔥 User confirmed deletion, proceeding...');
+      console.log('🔥 Calling deleteConversationInstant for:', deletingConversation.id);
+      
+      // Close modal first
+      setIsDeleteModalVisible(false);
+      setDeletingConversation(null);
+      
+      // 🔥 Use instant delete for immediate UI feedback
+      await deleteConversationInstant(deletingConversation.id);
+      console.log(`✨ Instant delete completed successfully for: ${deletingConversation.id}`);
+    } catch (error) {
+      console.error('❌ Failed to delete conversation:', error);
+      Alert.alert('Error', 'Failed to delete conversation. Please try again.');
+    }
+  };
+
+  const handleDeleteCancel = () => {
+    console.log('❌ User cancelled deletion');
+    setIsDeleteModalVisible(false);
+    setDeletingConversation(null);
   };
 
   // Helper function to regenerate AI response without creating new user message
@@ -519,87 +636,96 @@ export const ChatScreen: React.FC = () => {
             </Text>
           </View>
 
-          {/* Settings Button */}
-          <TouchableOpacity 
-            style={styles.settingsButton} 
-            onPress={() => setIsSettingsDrawerVisible(true)}
-          >
-            <Ionicons name="settings-outline" size={24} color={theme.semanticColors.textPrimary} />
-          </TouchableOpacity>
+          {/* Header Right: Shark Toggle + Settings */}
+          <View style={{ flexDirection: 'row', gap: 8, marginRight: -8 }}>
+            <SharkToggleIcon />
+            <TouchableOpacity 
+              style={styles.settingsButton} 
+              onPress={() => setIsSettingsDrawerVisible(true)}
+            >
+              <Ionicons name="settings-outline" size={24} color={theme.semanticColors.textPrimary} />
+            </TouchableOpacity>
+          </View>
         </View>
 
-        <KeyboardAvoidingView 
-          style={styles.keyboardContainer} 
-          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-          keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 0}
-        >
-          {/* Messages List */}
-          <FlatList
-            ref={flatListRef}
-            data={messages}
-            renderItem={renderMessage}
-            keyExtractor={(item) => item.id}
-            style={styles.messagesList}
-            contentContainerStyle={styles.messagesContent}
-            showsVerticalScrollIndicator={false}
-            ListFooterComponent={
-              isThinking ? (
-                <ThinkingIndicator visible={true} />
-              ) : isStreaming ? (
-                <TypingDots visible={true} />
-              ) : null
-            }
-            ListEmptyComponent={
-              <View style={{ padding: 20, alignItems: 'center' }}>
-                <Text style={{ color: '#666', fontSize: 16 }}>
-                  {isLoading ? 'Loading messages...' : 'Start your conversation'}
+        {/* Content - Wrap in proper container for bottom edge handling */}
+        <View style={styles.contentContainer}>
+          <KeyboardAvoidingView 
+            behavior={Platform.select({ ios: 'padding', android: 'height' })}
+            keyboardVerticalOffset={Platform.select({ ios: 0, android: 24 })}
+            style={{ flex: 1 }}
+          >
+            {/* Messages List */}
+            <View style={{ flex: 1, position: 'relative' }}>
+              <FlatList
+                ref={flatListRef}
+                data={messages}
+                renderItem={renderMessage}
+                keyExtractor={(item) => item.id}
+                style={styles.messagesList}
+                contentContainerStyle={styles.messagesContent}
+                showsVerticalScrollIndicator={false}
+                ListFooterComponent={
+                  isThinking ? (
+                    <ThinkingIndicator visible={true} />
+                  ) : isStreaming ? (
+                    <TypingDots visible={true} />
+                  ) : null
+                }
+                ListEmptyComponent={
+                  <View style={{ padding: 20, alignItems: 'center' }}>
+                    <Text style={{ color: '#666', fontSize: 16 }}>
+                      {isLoading ? 'Loading messages...' : 'Start your conversation'}
+                    </Text>
+                  </View>
+                }
+              />
+              
+
+            </View>
+
+            {/* Error Display */}
+            {error && (
+              <View style={[styles.errorContainer, { backgroundColor: '#FF6B6B' }]}>
+                <Text style={[styles.errorText, { color: '#FFFFFF' }]}>
+                  {error || 'Something went wrong'}
                 </Text>
               </View>
-            }
-          />
+            )}
 
-
-
-          {/* Error Display */}
-          {error && (
-            <View style={[styles.errorContainer, { backgroundColor: '#FF6B6B' }]}>
-              <Text style={[styles.errorText, { color: '#FFFFFF' }]}>
-                {error || 'Something went wrong'}
-              </Text>
+            {/* Composer with stable padding */}
+            <View 
+              style={[
+                styles.composerContainer, 
+                { 
+                  backgroundColor: theme.semanticColors.background,
+                  zIndex: isDrawerVisible || isSettingsDrawerVisible ? -1 : 1,
+                  opacity: isDrawerVisible || isSettingsDrawerVisible ? 0 : 1,
+                  paddingBottom: Math.max(insets.bottom, 16), // Ensure minimum padding, prevent displacement
+                }
+              ]}
+            >
+              <Composer
+                onSend={handleSendMessage}
+                onSendFile={user?.id ? (file) => sendFileMessage(file, user.id, currentSession?.id) : undefined}
+                onSendCombinedFileAndText={user?.id ? handleSendCombinedFileAndText : undefined}
+                onAddOptimisticMessage={handleAddOptimisticMessage}
+                onCreateSession={handleCreateSession}
+                placeholder={
+                  isSending
+                    ? "Sending message..."
+                    : isEditingMessage 
+                      ? "Saving edit..." 
+                      : isThinking
+                        ? "Xavo is thinking..."
+                        : "What's on your mind?"
+                }
+                disabled={!canMakeQuery || isEditingMessage || isSending || isThinking}
+                sessionId={currentSession?.id}
+              />
             </View>
-          )}
-
-          {/* Composer with proper keyboard handling */}
-          <View 
-            style={[
-              styles.composerContainer, 
-              { 
-                borderTopColor: theme.semanticColors.border,
-                zIndex: isDrawerVisible || isSettingsDrawerVisible ? -1 : 1,
-                opacity: isDrawerVisible || isSettingsDrawerVisible ? 0 : 1,
-                paddingBottom: Math.max(insets.bottom, 16),
-              }
-            ]}
-          >
-            <Composer
-              onSend={handleSendMessage}
-              onSendFile={user?.id ? (file) => sendFileMessage(file, user.id, currentSession?.id) : undefined}
-              onSendCombinedFileAndText={user?.id ? handleSendCombinedFileAndText : undefined}
-              onAddOptimisticMessage={handleAddOptimisticMessage}
-              placeholder={
-                isSending
-                  ? "Sending message..."
-                  : isEditingMessage 
-                    ? "Saving edit..." 
-                    : isLoading 
-                      ? "Starting conversation..." 
-                      : "What's on your mind?"
-              }
-              disabled={!canMakeQuery || isLoading || isEditingMessage || isSending}
-              sessionId={currentSession?.id}
-            />
-          </View>
-        </KeyboardAvoidingView>
+          </KeyboardAvoidingView>
+        </View>
       </SafeAreaView>
 
       {/* DRAWERS MOVED OUTSIDE SafeAreaView - ALWAYS STATIC */}
@@ -607,83 +733,72 @@ export const ChatScreen: React.FC = () => {
         isVisible={isDrawerVisible}
         onClose={() => setIsDrawerVisible(false)}
         title="Conversations"
-        stickyHeader={
-          /* NEW CONVERSATION BUTTON - ALWAYS VISIBLE */
+      >
+        <View style={styles.drawerContent}>
+          {/* NEW CONVERSATION BUTTON */}
           <TouchableOpacity
             style={[styles.newConversationButton, { backgroundColor: theme.semanticColors.surface, borderColor: theme.semanticColors.border }]}
             onPress={() => {
               setIsDrawerVisible(false);
               console.log('🆕 ChatScreen: Starting NEW EMPTY conversation from drawer');
-              
-              // Clear ALL session state but STAY on ChatScreen for empty experience
-              clearMessages(); // This now also clears currentSession
-              setCurrentSession(null); // Extra safety
-              
-              // Don't navigate - just clear the current session to show empty state
+              // Navigate to ChatScreen for empty "Start your conversation" experience
+              (navigation as any).navigate('Chat', {});
             }}
           >
-            <Ionicons name="add" size={20} color={theme.semanticColors.primary} />
-            <Text style={[styles.newConversationText, { color: theme.semanticColors.primary }]}>
+            <Ionicons name="add" size={20} color={theme.semanticColors.textPrimary} />
+            <Text style={[styles.newConversationText, { color: theme.semanticColors.textPrimary }]}>
               New Conversation
             </Text>
           </TouchableOpacity>
-        }
-      >
-        <View style={styles.drawerContent}>
-          {sessions.length === 0 ? (
-            <View style={styles.emptyState}>
-              <Text style={[styles.drawerText, { color: theme.semanticColors.textSecondary }]}>
-                Your conversations will appear here after you start chatting.
+          
+          {/* Existing conversation list */}
+          {conversationsLoading ? (
+            <View style={styles.conversationLoadingContainer}>
+              <ActivityIndicator size="large" color={theme.semanticColors.primary} />
+              <Text style={[styles.conversationLoadingText, { color: theme.semanticColors.textSecondary }]}>
+                Loading conversations...
               </Text>
             </View>
-          ) : (
-            <View style={styles.sessionsList}>
-              {sessions.map((session) => (
-                <TouchableOpacity
-                  key={session.id}
-                  style={[
-                    styles.sessionItem,
-                    { 
-                      backgroundColor: currentSession?.id === session.id 
-                        ? theme.semanticColors.primary + '20' 
-                        : 'transparent',
-                      borderColor: theme.semanticColors.border
-                    }
-                  ]}
-                  onPress={async () => {
-                    setIsDrawerVisible(false);
-                    try {
-                      console.log(`📱 User selected session: ${session.id}`);
-                      await loadSession(session.id);
-                    } catch (error) {
-                      console.error('Failed to load selected session:', error);
-                      Alert.alert('Error', 'Failed to load conversation. Please try again.');
-                    }
-                  }}
+          ) : conversations.length > 0 ? (
+            <ScrollView showsVerticalScrollIndicator={false}>
+              {conversations.map((conversation) => (
+                <View
+                  key={conversation.id}
+                  style={[styles.conversationItem, { borderBottomColor: theme.semanticColors.border }]}
                 >
-                  <View style={styles.sessionInfo}>
-                    <Text style={[styles.sessionTitle, { color: theme.semanticColors.textPrimary }]} numberOfLines={1}>
-                      {session.title || `Chat ${new Date(session.created_at).toLocaleDateString()}`}
-                    </Text>
-                    <Text style={[styles.sessionMeta, { color: theme.semanticColors.textSecondary }]}>
-                      {session.message_count} messages • {new Date(session.created_at).toLocaleDateString()}
-                    </Text>
-                    {session.last_message_at && (
-                      <Text style={[styles.sessionLastActivity, { color: theme.semanticColors.textSecondary }]}>
-                        Last activity: {new Date(session.last_message_at).toLocaleTimeString()}
+                  <TouchableOpacity
+                    style={styles.conversationMain}
+                    onPress={() => {
+                      setIsDrawerVisible(false);
+                      (navigation as any).navigate('Chat', { 
+                        sessionId: conversation.id,
+                        conversationId: conversation.id
+                      });
+                    }}
+                  >
+                    <View style={styles.conversationContent}>
+                      <Text style={[styles.conversationTitle, { color: theme.semanticColors.textPrimary }]} numberOfLines={1}>
+                        {conversation.title || 'Untitled Conversation'}
                       </Text>
-                    )}
-                  </View>
+                      <Text style={[styles.conversationDate, { color: theme.semanticColors.textSecondary }]}>
+                        {new Date(conversation.timestamp).toLocaleDateString()}
+                      </Text>
+                    </View>
+                    <Ionicons 
+                      name="chevron-forward" 
+                      size={16} 
+                      color={theme.semanticColors.textSecondary} 
+                    />
+                  </TouchableOpacity>
                   
                   {/* Action buttons */}
-                  <View style={styles.sessionActions}>
+                  <View style={styles.conversationActions}>
                     {/* Rename button */}
                     <TouchableOpacity
-                      style={styles.renameButton}
-                      onPress={(e) => {
-                        e.stopPropagation();
-                        console.log('🖱️ ChatScreen: Rename button pressed for:', session.id);
-                        handleRenamePress(session);
+                      style={styles.actionButton}
+                      onPress={() => {
+                        console.log('🖱️ Rename button pressed for:', conversation.id);
+                        handleRenamePress(conversation);
                       }}
                       hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                       activeOpacity={0.7}
@@ -693,47 +808,11 @@ export const ChatScreen: React.FC = () => {
                     
                     {/* Delete button */}
                     <TouchableOpacity
-                      style={[styles.deleteButton, styles.deleteActionButton]}
-                      onPress={(e) => {
-                        e.stopPropagation();
-                        console.log('🖱️ ChatScreen: DELETE button pressed for:', session.id);
-                        console.log('🖱️ ChatScreen: Session title:', session.title);
-                        Alert.alert(
-                          'Delete Conversation',
-                          'Are you sure you want to delete this conversation? This action cannot be undone.',
-                          [
-                            { text: 'Cancel', style: 'cancel' },
-                            { 
-                              text: 'Delete', 
-                              style: 'destructive',
-                              onPress: async () => {
-                                try {
-                                  console.log(`🔥 ChatScreen: Deleting conversation ${session.id}`);
-                                  
-                                  // Close drawer first for better UX
-                                  setIsDrawerVisible(false);
-                                  
-                                  // Check if we're deleting the currently active session
-                                  const isDeletingActiveSession = currentSession?.id === session.id;
-                                  
-                                  // 🔥 Use deleteSession from useChat to update drawer
-                                  await deleteSession(session.id);
-                                  
-                                  console.log(`✨ Instant delete completed in ChatScreen for: ${session.id}`);
-                                  
-                                  // 🔥 Navigate back to HomeScreen if we deleted the active session
-                                  if (isDeletingActiveSession) {
-                                    console.log('🏠 Navigating to HomeScreen after deleting active session');
-                                    navigation.navigate('Home' as never);
-                                  }
-                                } catch (error) {
-                                  console.error('Failed to delete conversation:', error);
-                                  Alert.alert('Error', 'Failed to delete conversation. Please try again.');
-                                }
-                              }
-                            }
-                          ]
-                        );
+                      style={[styles.actionButton, styles.deleteActionButton]}
+                      onPress={() => {
+                        console.log('🖱️ DELETE button pressed for:', conversation.id);
+                        console.log('🖱️ Conversation title:', conversation.title);
+                        handleDeletePress(conversation);
                       }}
                       hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                       activeOpacity={0.7}
@@ -741,9 +820,13 @@ export const ChatScreen: React.FC = () => {
                       <Ionicons name="trash-outline" size={18} color="#FF6B6B" />
                     </TouchableOpacity>
                   </View>
-                </TouchableOpacity>
+                </View>
               ))}
-            </View>
+            </ScrollView>
+          ) : (
+            <Text style={[styles.drawerText, { color: theme.semanticColors.textSecondary }]}>
+              Your conversations will appear here after you start chatting.
+            </Text>
           )}
         </View>
       </Drawer>
@@ -821,6 +904,54 @@ export const ChatScreen: React.FC = () => {
           </View>
         </View>
       </Modal>
+
+      {/* Delete Confirmation Modal */}
+      <Modal
+        visible={isDeleteModalVisible}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={handleDeleteCancel}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalContent, { backgroundColor: theme.semanticColors.background }]}>
+            <Text style={[styles.modalTitle, { color: theme.semanticColors.textPrimary }]}>
+              Delete Conversation
+            </Text>
+            
+            <Text style={[styles.modalMessage, { color: theme.semanticColors.textSecondary }]}>
+              Are you sure you want to delete "{deletingConversation?.title || 'Untitled Conversation'}"?{'\n\n'}This action cannot be undone.
+            </Text>
+            
+            <View style={styles.modalButtons}>
+              <TouchableOpacity
+                style={[
+                  styles.modalButton, 
+                  styles.cancelButton,
+                  { borderColor: theme.semanticColors.border }
+                ]}
+                onPress={handleDeleteCancel}
+              >
+                <Text style={[styles.buttonText, { color: theme.semanticColors.textSecondary }]}>
+                  Cancel
+                </Text>
+              </TouchableOpacity>
+              
+              <TouchableOpacity
+                style={[
+                  styles.modalButton,
+                  styles.deleteButton,
+                  { backgroundColor: '#FF6B6B' }
+                ]}
+                onPress={handleDeleteConfirm}
+              >
+                <Text style={[styles.buttonText, { color: '#FFFFFF' }]}>
+                  Delete
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </>
   );
 };
@@ -829,7 +960,7 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
   },
-  keyboardContainer: {
+  contentContainer: {
     flex: 1,
   },
   header: {
@@ -886,7 +1017,8 @@ const styles = StyleSheet.create({
   },
   composerContainer: {
     borderTopWidth: 1,
-    paddingHorizontal: 0,
+    borderTopColor: 'rgba(0,0,0,0.05)',
+    paddingTop: 8, // Add some top padding for visual separation
   },
   drawerContent: {
     paddingVertical: 20,
@@ -982,6 +1114,12 @@ const styles = StyleSheet.create({
     marginBottom: 16,
     textAlign: 'center',
   },
+  modalMessage: {
+    fontSize: 16,
+    lineHeight: 24,
+    marginBottom: 20,
+    textAlign: 'center',
+  },
   modalInput: {
     borderWidth: 1,
     borderRadius: 8,
@@ -1013,5 +1151,49 @@ const styles = StyleSheet.create({
   buttonText: {
     fontSize: 16,
     fontWeight: '600',
+  },
+  // 🔥 NEW: HomeScreen-matching conversation styles
+  conversationLoadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingVertical: 40,
+  },
+  conversationLoadingText: {
+    marginTop: 16,
+    fontSize: 16,
+    fontWeight: '500',
+  },
+  conversationItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 16,
+    paddingHorizontal: 0,
+    borderBottomWidth: 1,
+  },
+  conversationMain: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  conversationContent: {
+    flex: 1,
+  },
+  conversationDate: {
+    fontSize: 12,
+  },
+  conversationActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginLeft: 8,
+  },
+  actionButton: {
+    padding: 8,
+    borderRadius: 6,
+    marginLeft: 4,
+    minWidth: 32,
+    minHeight: 32,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
 }); 

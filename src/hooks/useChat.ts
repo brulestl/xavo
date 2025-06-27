@@ -6,6 +6,7 @@ import { supabase } from '../lib/supabase';
 import { appReviewService } from '../services/appReviewService';
 import { getMessageFingerprint, generateClientId } from '../utils/messageFingerprint';
 import { ragFileService, ProcessingProgress } from '../services/ragFileService';
+import { supabaseFileService } from '../services/supabaseFileService';
 
 export interface ChatMessage {
   id: string;
@@ -70,6 +71,7 @@ interface UseChatReturn {
   clearMessages: () => void;
   retryLastMessage: () => Promise<void>;
   setCurrentSession: (session: ChatSession | null) => void;
+  queryFile: (fileId: string, filename: string, question: string, sessionId: string) => Promise<void>;
   // Message helpers
   appendMessage: (message: ChatMessage) => void;
   updateMessage: (messageId: string, updates: Partial<ChatMessage>) => void;
@@ -159,8 +161,7 @@ export const useChat = (): UseChatReturn => {
     // 🔧 Add to pending messages and set sending state
     pendingMessages.current.add(messageFingerprint);
     setIsSending(true);
-    setIsLoading(true);
-    setIsThinking(true);
+    setIsThinking(true); // Only set thinking, not loading
     setError(null);
     lastUserMessageRef.current = content;
 
@@ -233,9 +234,9 @@ export const useChat = (): UseChatReturn => {
       // 🔧 Always cleanup pending state
       pendingMessages.current.delete(messageFingerprint);
       setIsSending(false);
-      setIsLoading(false);
       setIsStreaming(false);
       setIsThinking(false);
+      // Note: Don't reset isLoading here as it's for conversation loading only
     }
   };
 
@@ -502,8 +503,9 @@ export const useChat = (): UseChatReturn => {
                     // 🔥 Filter out loading/interim messages
                     if (!data.content || data.content === '[loading…]') break;
                     
-                    // 🎯 First real token received - stop thinking indicator
+                    // 🎯 First real token received - stop thinking indicator and start streaming
                     setIsThinking(false);
+                    setIsStreaming(true);
                     
                     // 🎯 Add to buffer and update display intelligently
                     tokenBuffer += data.content;
@@ -738,7 +740,7 @@ export const useChat = (): UseChatReturn => {
   // NEW: Enhanced message loading with file attachment grouping
   const loadMessagesWithAttachments = async (sessionId: string): Promise<ChatMessage[]> => {
     try {
-      console.log('📎 Loading enhanced messages with attachments for session:', sessionId);
+      console.log('📎 Loading messages with file attachments for session:', sessionId);
       
       // Get the current user
       const { data: { user } } = await supabase.auth.getUser();
@@ -756,65 +758,24 @@ export const useChat = (): UseChatReturn => {
         throw new Error(`Failed to load messages: ${messagesError.message}`);
       }
 
-      // Load documents for this session
-      const { data: documents, error: documentsError } = await supabase
-        .from('documents')
+      // Load all user files for this session to get file metadata
+      const { data: userFiles, error: filesError } = await supabase
+        .from('user_files')
         .select('*')
         .eq('user_id', user.id)
-        .eq('session_id', sessionId)
-        .order('uploaded_at', { ascending: true });
+        .eq('session_id', sessionId);
 
-      if (documentsError) {
-        console.warn('Failed to load documents:', documentsError);
+      if (filesError) {
+        console.warn('Failed to load user files:', filesError);
       }
 
-      const sessionDocuments = documents || [];
-      console.log(`📎 Found ${allMessages?.length || 0} messages and ${sessionDocuments.length} documents`);
+      const sessionFiles = userFiles || [];
+      console.log(`📎 Found ${allMessages?.length || 0} messages and ${sessionFiles.length} files`);
 
-      // Process messages and group file attachments with text messages
+      // Process messages and enrich with file data
       const processedMessages: ChatMessage[] = [];
-      const fileUploadMessages = new Map(); // Map of textMessageId -> file message
 
-      // First pass: identify file upload messages and their associations
       for (const msg of allMessages || []) {
-        if (msg.action_type === 'file_upload') {
-          const metadata = msg.metadata || {};
-          if (metadata.textMessageId) {
-            // This file is associated with a text message
-            fileUploadMessages.set(metadata.textMessageId, {
-              msg,
-              documentData: sessionDocuments.find(doc => doc.id === metadata.documentId)
-            });
-          } else {
-            // Standalone file upload - convert to file bubble
-            const doc = sessionDocuments.find(d => d.id === metadata.documentId);
-            const fileBubble: ChatMessage = {
-              id: msg.id,
-              content: doc ? `Document uploaded: ${doc.filename}` : 'File uploaded',
-              role: 'user',
-              session_id: sessionId,
-              created_at: msg.created_at,
-              type: 'file',
-              filename: doc?.filename || metadata.filename || 'Unknown file',
-              fileUrl: doc?.public_url || metadata.fileUrl,
-              fileSize: doc?.file_size || metadata.fileSize,
-              fileType: doc?.file_type || metadata.fileType,
-              documentId: doc?.id || metadata.documentId,
-              status: 'sent',
-              metadata: {
-                isStandaloneFile: true
-              }
-            };
-            processedMessages.push(fileBubble);
-          }
-        }
-      }
-
-      // Second pass: process regular messages and attach files where needed
-      for (const msg of allMessages || []) {
-        // Skip file upload messages - they're handled separately
-        if (msg.action_type === 'file_upload') continue;
-
         // Create the base message
         const baseMessage: ChatMessage = {
           id: msg.id,
@@ -826,41 +787,43 @@ export const useChat = (): UseChatReturn => {
           metadata: msg.metadata
         };
 
-        // Check if this message has an associated file upload
-        const associatedFileData = fileUploadMessages.get(msg.id);
-        if (associatedFileData) {
-          const { msg: fileMsg, documentData: doc } = associatedFileData;
-          const fileMetadata = fileMsg.metadata || {};
+        // Check if this message has a file attachment
+        if (msg.action_type === 'file_upload' && msg.metadata?.fileId) {
+          const fileId = msg.metadata.fileId;
+          const fileData = sessionFiles.find(f => f.id === fileId);
           
-          // Enhance the message with file attachment info
-          baseMessage.type = 'text_with_file';
-          baseMessage.metadata = {
-            ...baseMessage.metadata,
-            hasAttachment: true,
-            attachmentInfo: {
-              fileMessageId: fileMsg.id,
-              filename: doc?.filename || fileMetadata.filename || 'Unknown file',
-              fileUrl: doc?.public_url || fileMetadata.fileUrl,
-              fileSize: doc?.file_size || fileMetadata.fileSize,
-              fileType: doc?.file_type || fileMetadata.fileType,
-              documentId: doc?.id || fileMetadata.documentId,
-              status: 'sent'
-            }
-          };
-          console.log(`📎 Enhanced message ${msg.id} with attachment: ${doc?.filename || 'Unknown file'}`);
+          if (fileData) {
+            // This is a user message with file attachment
+            baseMessage.type = 'text_with_file';
+            baseMessage.filename = fileData.file_name;
+            baseMessage.fileUrl = fileData.file_url;
+            baseMessage.fileSize = fileData.file_size;
+            baseMessage.fileType = fileData.file_type;
+            baseMessage.status = 'sent';
+            baseMessage.metadata = {
+              ...baseMessage.metadata,
+              hasAttachment: true,
+              attachmentInfo: {
+                filename: fileData.file_name,
+                fileUrl: fileData.file_url,
+                fileSize: fileData.file_size,
+                fileType: fileData.file_type,
+                fileId: fileData.id,
+                status: 'sent'
+              }
+            };
+            console.log(`📎 Enriched message ${msg.id} with file: ${fileData.file_name}`);
+          }
         }
 
         processedMessages.push(baseMessage);
       }
 
-      // Sort by creation time to maintain chronological order
-      processedMessages.sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
-
-      console.log(`✅ Processed ${processedMessages.length} enhanced messages with proper file associations`);
+      console.log(`✅ Processed ${processedMessages.length} messages with file enrichment`);
       return processedMessages;
 
     } catch (error) {
-      console.error('❌ Error loading enhanced messages:', error);
+      console.error('❌ Error loading messages with attachments:', error);
       return [];
     }
   };
@@ -1497,6 +1460,77 @@ export const useChat = (): UseChatReturn => {
     }
   };
 
+  // NEW: Query a processed file with a question
+  const queryFile = async (
+    fileId: string,
+    filename: string,
+    question: string,
+    sessionId: string
+  ) => {
+    // Declare message IDs outside try block for error handling
+    const userMessageId = `temp-user-${Date.now()}`;
+    const assistantMessageId = `temp-assistant-${Date.now()}`;
+    
+    try {
+      console.log(`🔍 Querying file ${fileId} with question: ${question}`);
+      
+      // Add optimistic user message
+      const userMessage: ChatMessage = {
+        id: userMessageId,
+        content: question,
+        role: 'user',
+        session_id: sessionId,
+        created_at: new Date().toISOString(),
+        type: 'text'
+      };
+      setMessages(prev => [...prev, userMessage]);
+
+      // Add optimistic assistant typing message
+      const assistantMessage: ChatMessage = {
+        id: assistantMessageId,
+        content: '',
+        role: 'assistant',
+        session_id: sessionId,
+        created_at: new Date().toISOString(),
+        type: 'typing',
+        isStreaming: true
+      };
+      setMessages(prev => [...prev, assistantMessage]);
+
+      // Call the query-file edge function
+      const result = await supabaseFileService.queryFile(question, fileId, sessionId);
+      
+      if (!result.success) {
+        throw new Error(result.error || 'Query failed');
+      }
+
+      // Replace optimistic messages with real ones from the database
+      setMessages(prev => prev.filter(msg => 
+        msg.id !== userMessageId && msg.id !== assistantMessageId
+      ));
+
+      // Add the real messages (they should already be in the database)
+      await loadSession(sessionId, true);
+      
+      console.log(`✅ File query completed successfully`);
+      
+    } catch (error) {
+      console.error('File query error:', error);
+      
+      // Update assistant message to show error
+      setMessages(prev => prev.map(msg =>
+        msg.id === assistantMessageId ? {
+          ...msg,
+          content: 'Sorry, I encountered an error while processing your question about this file. Please try again.',
+          isStreaming: false,
+          type: 'text'
+        } : msg
+      ));
+      
+      Alert.alert('Query Failed', 'Failed to process your question about the file. Please try again.');
+    }
+  };
+
   // Cleanup on unmount
   useEffect(() => {
     return () => {
@@ -1528,6 +1562,7 @@ export const useChat = (): UseChatReturn => {
     clearMessages,
     retryLastMessage,
     setCurrentSession,
+    queryFile, // NEW: File query function
     // Message helpers
     appendMessage,
     updateMessage,

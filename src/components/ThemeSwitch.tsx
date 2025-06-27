@@ -1,5 +1,5 @@
-import React from 'react';
-import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
+import React, { useRef, useEffect } from 'react';
+import { View, Text, TouchableOpacity, StyleSheet, Animated } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../providers/ThemeProvider';
 
@@ -9,6 +9,28 @@ interface ThemeSwitchProps {
 
 export const ThemeSwitch: React.FC<ThemeSwitchProps> = ({ style }) => {
   const { theme, isDark, toggleTheme } = useTheme();
+  const translateX = useRef(new Animated.Value(isDark ? 38 : 2)).current;
+
+  // Animate switch position when theme changes
+  useEffect(() => {
+    Animated.timing(translateX, {
+      toValue: isDark ? 38 : 2,
+      duration: 200,
+      useNativeDriver: true,
+    }).start();
+  }, [isDark, translateX]);
+
+  const handleToggle = () => {
+    // Animate to new position immediately for responsive feel
+    Animated.timing(translateX, {
+      toValue: !isDark ? 38 : 2,
+      duration: 200,
+      useNativeDriver: true,
+    }).start();
+    
+    // Toggle theme
+    toggleTheme();
+  };
 
   return (
     <View style={[styles.container, style]}>
@@ -24,15 +46,15 @@ export const ThemeSwitch: React.FC<ThemeSwitchProps> = ({ style }) => {
             borderColor: theme.semanticColors.border,
           },
         ]}
-        onPress={toggleTheme}
+        onPress={handleToggle}
         activeOpacity={0.8}
       >
-        <View
+        <Animated.View
           style={[
             styles.switchThumb,
             {
               backgroundColor: theme.semanticColors.background,
-              transform: [{ translateX: isDark ? 28 : 2 }],
+              transform: [{ translateX }],
             },
           ]}
         >
@@ -41,7 +63,7 @@ export const ThemeSwitch: React.FC<ThemeSwitchProps> = ({ style }) => {
             size={16}
             color={isDark ? theme.getUserBubbleColor() : theme.getFileUploadBubbleColor()}
           />
-        </View>
+        </Animated.View>
         
         <View style={styles.switchLabels}>
           <Text style={[styles.switchLabel, { color: isDark ? 'rgba(255,255,255,0.6)' : theme.semanticColors.textPrimary }]}>

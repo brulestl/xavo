@@ -269,7 +269,7 @@ export const ChatBubble: React.FC<ChatBubbleProps> = ({
     const attachmentInfo = metadata?.attachmentInfo;
     if (!attachmentInfo) {
       // Fallback to regular text if no attachment info
-      return <ChatMessage text={message} />;
+      return <ChatMessage text={message} isUserMessage={isUser} />;
     }
 
     const handleAttachedFilePress = async () => {
@@ -303,7 +303,7 @@ export const ChatBubble: React.FC<ChatBubbleProps> = ({
       <View style={styles.textWithFileContainer}>
         {/* Text Content */}
         <View style={styles.textContent}>
-          <ChatMessage text={message} />
+          <ChatMessage text={message} isUserMessage={isUser} />
         </View>
         
         {/* File Attachment */}
@@ -478,7 +478,7 @@ export const ChatBubble: React.FC<ChatBubbleProps> = ({
           delayLongPress={500}
           activeOpacity={0.8}
         >
-          {type === 'file' ? renderFileContent() : type === 'text_with_file' ? renderTextWithFileContent() : <ChatMessage text={message} />}
+          {type === 'file' ? renderFileContent() : type === 'text_with_file' ? renderTextWithFileContent() : <ChatMessage text={message} isUserMessage={isUser} />}
         </TouchableOpacity>
       </Animated.View>
 

@@ -222,21 +222,26 @@ export function useConversations() {
         timestamp: newMessage.message_timestamp
       };
 
-      // Update local state
-      setConversations(prev => prev.map(conv => {
-        if (conv.id === conversationId) {
-          const updatedConv = {
-            ...conv,
-            messages: [...conv.messages, formattedMessage],
-            lastMessage: message.role === 'assistant' ? message.content : conv.lastMessage,
-            timestamp: timestamp
-          };
-          return updatedConv;
-        }
-        return conv;
-      }).sort((a, b) => 
-        new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
-      ));
+          // Update local state and re-sort by timestamp
+      setConversations(prev => {
+        const updated = prev.map(conv => {
+          if (conv.id === conversationId) {
+            const updatedConv = {
+              ...conv,
+              messages: [...conv.messages, formattedMessage],
+              lastMessage: message.role === 'assistant' ? message.content : conv.lastMessage,
+              timestamp: timestamp
+            };
+            return updatedConv;
+          }
+          return conv;
+        });
+        
+        // Sort by timestamp descending (most recent first)
+        return updated.sort((a, b) => 
+          new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
+        );
+      });
 
       console.log(`✅ Message added to conversation ${conversationId}`);
       return formattedMessage;
@@ -341,7 +346,17 @@ export function useConversations() {
   };
 
   const refreshConversations = () => {
+    console.log('🔄 [useConversations] Manual refresh triggered');
     loadConversations();
+  };
+
+  // Trigger conversation refresh when a conversation gets a new message
+  const triggerRefreshAfterMessage = (conversationId: string) => {
+    console.log(`🔄 [useConversations] Refreshing after message in conversation: ${conversationId}`);
+    // Delay refresh slightly to allow database trigger to complete
+    setTimeout(() => {
+      loadConversations();
+    }, 500);
   };
 
   // Update a specific message in the database
@@ -383,6 +398,7 @@ export function useConversations() {
     deleteConversation,
     clearAllConversations,
     refreshConversations,
+    triggerRefreshAfterMessage, // NEW: Trigger refresh after message
     renameConversationInstant,
     deleteConversationInstant,
     updateMessage

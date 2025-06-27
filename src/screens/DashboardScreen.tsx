@@ -51,7 +51,11 @@ export const DashboardScreen: React.FC = () => {
     messages,
     error,
     sendMessage,
+    isSending,
+    isTyping,
   } = useChat();
+
+  const canSendMessage = canMakeQuery;
 
   const { prompts, loading: promptsLoading, personalizationData } = usePersonalizationPrompts();
 

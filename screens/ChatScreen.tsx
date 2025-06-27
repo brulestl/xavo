@@ -427,8 +427,8 @@ export default function ChatScreen() {
               navigation.navigate('Home' as never);
             }}
           >
-            <Ionicons name="add" size={20} color={theme.semanticColors.primary} />
-            <Text style={[styles.newConversationText, { color: theme.semanticColors.primary }]}>
+            <Ionicons name="add" size={20} color={theme.semanticColors.textPrimary} />
+            <Text style={[styles.newConversationText, { color: theme.semanticColors.textPrimary }]}>
               New Conversation
             </Text>
           </TouchableOpacity>

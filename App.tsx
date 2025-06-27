@@ -15,6 +15,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 // Providers
 import { ThemeProvider } from './src/providers/ThemeProvider';
 import { AuthProvider, useAuth } from './src/providers/AuthProvider';
+import { TierProvider } from './src/contexts/TierContext';
 
 // Monitoring
 import { monitoring } from './src/services/monitoring';
@@ -122,9 +123,11 @@ export default function App() {
       <SafeAreaProvider>
         <ThemeProvider>
           <AuthProvider>
-            <NavigationContainer>
-              <AppNavigator />
-            </NavigationContainer>
+            <TierProvider>
+              <NavigationContainer>
+                <AppNavigator />
+              </NavigationContainer>
+            </TierProvider>
           </AuthProvider>
         </ThemeProvider>
       </SafeAreaProvider>

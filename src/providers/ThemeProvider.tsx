@@ -28,10 +28,6 @@ export interface ThemeSemanticColors {
   border: string;
   shadow: string;
   cta: string;
-  
-  // New chat-specific colors
-  composerBackground: string;
-  userMessageText: string;
 }
 
 export interface Theme {
@@ -45,11 +41,6 @@ export interface Theme {
   getSecondaryTextColor: () => string;
   getAccentColor: () => string;
   getCTAColor: () => string;
-  getComposerBackgroundColor: () => string;
-  getAssistantBubbleColor: () => string;
-  getUserBubbleColor: () => string;
-  getFileUploadBubbleColor: () => string;
-  getUserMessageTextColor: () => string;
   getPrimaryButtonStyle: () => {
     backgroundColor: string;
     opacity: number;
@@ -58,6 +49,13 @@ export interface Theme {
     backgroundColor: string;
     opacity: number;
   };
+  
+  // New theme-specific methods
+  getComposerBackgroundColor: () => string;
+  getUserBubbleColor: () => string;
+  getAssistantBubbleColor: () => string;
+  getFileUploadBubbleColor: () => string;
+  getUserMessageTextColor: () => string;
 }
 
 const createXavoColors = (isDark: boolean): XavoColors => ({
@@ -79,27 +77,16 @@ const createTheme = (isDark: boolean): Theme => {
   const colors = createXavoColors(isDark);
   
   const semanticColors: ThemeSemanticColors = {
-    primary: colors.userBubble, // Use user bubble color as primary
-    primaryDisabled: colors.userBubble + '66', // 40% opacity
-    
-    // Background colors based on mode
+    primary: colors.xavoBlue,
+    primaryDisabled: colors.xavoBlue + '66', // 40% opacity
     background: isDark ? '#242423' : '#FFFFFF',
     cardBackground: isDark ? '#242423' : '#FFFFFF',
-    
-    // Text colors - all white in dark mode
-    textPrimary: isDark ? '#FFFFFF' : '#000000',
-    textSecondary: isDark ? '#FFFFFF' : '#666666',
-    
-    // Composer background
-    composerBackground: isDark ? '#333533' : '#e8eddf',
-    
-    // User message text should be white
-    userMessageText: '#FFFFFF',
-    
-    accent: colors.fileUploadBubble,
-    surface: isDark ? '#333533' : '#FFFFFF',
-    border: isDark ? '#FFFFFF20' : '#00000010',
-    shadow: isDark ? '#000000' : '#00000020',
+    textPrimary: isDark ? '#FFFFFF' : colors.nearlyBlack,
+    textSecondary: isDark ? '#FFFFFF' + 'CC' : colors.nearlyBlack + 'AA',
+    accent: isDark ? colors.mutedAccent : colors.xavoBlue,
+    surface: isDark ? '#242423' : '#FFFFFF',
+    border: isDark ? '#FFFFFF' + '20' : colors.nearlyBlack + '10',
+    shadow: isDark ? colors.nearlyBlack : colors.nearlyBlack + '20',
     cta: colors.growthGreen,
   };
 
@@ -113,11 +100,6 @@ const createTheme = (isDark: boolean): Theme => {
     getSecondaryTextColor: () => semanticColors.textSecondary,
     getAccentColor: () => semanticColors.accent,
     getCTAColor: () => semanticColors.cta,
-    getComposerBackgroundColor: () => semanticColors.composerBackground,
-    getAssistantBubbleColor: () => colors.assistantBubble,
-    getUserBubbleColor: () => colors.userBubble,
-    getFileUploadBubbleColor: () => colors.fileUploadBubble,
-    getUserMessageTextColor: () => semanticColors.userMessageText,
     getPrimaryButtonStyle: () => ({
       backgroundColor: semanticColors.primary,
       opacity: 1,
@@ -126,6 +108,13 @@ const createTheme = (isDark: boolean): Theme => {
       backgroundColor: semanticColors.primary,
       opacity: 0.4,
     }),
+    
+    // New theme-specific methods
+    getComposerBackgroundColor: () => isDark ? '#333533' : '#e8eddf',
+    getUserBubbleColor: () => colors.userBubble,
+    getAssistantBubbleColor: () => colors.assistantBubble,
+    getFileUploadBubbleColor: () => colors.fileUploadBubble,
+    getUserMessageTextColor: () => '#FFFFFF',
   };
 };
 
@@ -189,12 +178,12 @@ export const ThemeProvider: React.FC<ThemeProviderProps> = ({ children }) => {
   const theme = createTheme(isDark);
 
   // Tailwind class helpers for NativeWind
-  const getBackgroundClass = () => isDark ? 'bg-[#242423]' : 'bg-white';
-  const getCardBackgroundClass = () => isDark ? 'bg-[#242423]' : 'bg-white';
-  const getTextPrimaryClass = () => isDark ? 'text-white' : 'text-black';
-  const getTextSecondaryClass = () => isDark ? 'text-white' : 'text-gray-600';
-  const getPrimaryButtonClass = () => 'bg-[#0071fc] rounded-xl';
-  const getCTAButtonClass = () => 'bg-[#1DB954] rounded-xl';
+  const getBackgroundClass = () => isDark ? 'bg-deep-navy' : 'bg-pure-white';
+  const getCardBackgroundClass = () => isDark ? 'bg-deep-navy' : 'bg-pure-white';
+  const getTextPrimaryClass = () => isDark ? 'text-pure-white' : 'text-nearly-black';
+  const getTextSecondaryClass = () => isDark ? 'text-pure-white/80' : 'text-nearly-black/70';
+  const getPrimaryButtonClass = () => 'bg-xavo-blue rounded-xl';
+  const getCTAButtonClass = () => 'bg-growth-green rounded-xl';
 
   return (
     <ThemeContext.Provider 

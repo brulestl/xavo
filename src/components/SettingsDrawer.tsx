@@ -15,6 +15,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../providers/ThemeProvider';
 import { useAuth } from '../providers/AuthProvider';
+import { useTier } from '../contexts/TierContext';
 import { TierBadge } from './ui/TierBadge';
 import { ThemeSwitch } from './ThemeSwitch';
 // import { ReviewDebugPanel } from './ReviewDebugPanel'; // Commented out
@@ -37,7 +38,8 @@ export const SettingsDrawer: React.FC<SettingsDrawerProps> = ({
 }) => {
   console.log('🔧 SettingsDrawer rendered - isVisible:', isVisible); // Debug log
   const { theme } = useTheme();
-  const { displayName, user, tier, updateDisplayName, logout } = useAuth();
+  const { displayName, user, updateDisplayName, logout } = useAuth();
+  const { tier } = useTier(); // Use tier from TierContext
   
   const [editingName, setEditingName] = useState(false);
   const [tempDisplayName, setTempDisplayName] = useState(displayName);
@@ -298,6 +300,11 @@ export const SettingsDrawer: React.FC<SettingsDrawerProps> = ({
               Personalization
             </Text>
             
+            {/* Theme Switch */}
+            <View style={[styles.actionButton, { borderColor: theme.semanticColors.border, flexDirection: 'column', alignItems: 'flex-start' }]}>
+              <ThemeSwitch />
+            </View>
+            
             <TouchableOpacity
               style={[styles.actionButton, { borderColor: theme.semanticColors.border }]}
               onPress={onNavigateToOnboardingEdit}
@@ -316,8 +323,6 @@ export const SettingsDrawer: React.FC<SettingsDrawerProps> = ({
                 color={theme.semanticColors.textSecondary}
               />
             </TouchableOpacity>
-            
-            <ThemeSwitch style={{ marginTop: 16 }} />
           </View>
 
           {/* Subscriptions */}

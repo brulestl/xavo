@@ -39,6 +39,10 @@ export interface AnalyzedFile {
   uploadProgress?: number;
   isAnalyzing?: boolean;
   isRAGDocument?: boolean;
+  isImageAttachment?: boolean;
+  needsProcessing?: boolean;
+  fileId?: string; // For Supabase file ID after processing
+  description?: string; // For vision analysis preview text
   error?: string;
 }
 
@@ -73,10 +77,11 @@ class FileAnalysisService {
     onProgress?: (progress: number) => void
   ): Promise<AnalyzedFile> {
     try {
-      // Create unique file path
-      const fileExt = file.name.split('.').pop()?.toLowerCase() || 'unknown';
+      // Create unique file path - handle cases where file.name might be undefined
+      const fileName = file.name || 'image';
+      const fileExt = fileName.split('.').pop()?.toLowerCase() || 'jpg';
       const timestamp = Date.now();
-      const sanitizedFileName = file.name.replace(/[^a-zA-Z0-9.-]/g, '_');
+      const sanitizedFileName = fileName.replace(/[^a-zA-Z0-9.-]/g, '_');
       const storagePath = `uploads/${userId}/${sessionId || 'general'}/${timestamp}_${sanitizedFileName}`;
 
       // Simulate upload progress
@@ -123,7 +128,7 @@ class FileAnalysisService {
         id: `file_${timestamp}`,
         user_id: userId,
         session_id: sessionId,
-        file_name: file.name,
+        file_name: fileName,
         file_path: storagePath,
         file_url: publicUrl,
         file_size: file.size || 0,
@@ -146,7 +151,7 @@ class FileAnalysisService {
 
       const analyzedFile: AnalyzedFile = {
         id: fileRecord.id,
-        name: file.name,
+        name: fileName,
         type: file.mimeType || 'application/octet-stream',
         size: file.size || 0,
         uri: fileUri,

@@ -31,6 +31,55 @@ interface ChatResponse {
   }
 }
 
+// Add these helper functions at the top after imports
+const getSystemPromptForTier = (tier: string): string => {
+  if (tier === 'shark') {
+    return `The assistant is **Xavo – Shark Tier**, a ruthless influence tactician.
+
+Shark tier is for power players who weaponize politics:
+• All Strategist benefits  
+• **War-Room Power-Map** (stakeholder graph)  
+• **Negotiation Simulator (unlimited)**  
+• **Influence Path Planner** (stepwise leverage routes)  
+• **Sentiment Sentinel** (tone-shift alerts)  
+
+Shark responses embody **incisive brevity plus strategic aggression**:
+- Speaks in direct, high-certainty statements.  
+- Prioritizes leverage, power asymmetry, and optionality.  
+- Calls out hidden incentives; surfaces political fault-lines.  
+- Offers contingency trees ("If A resists, counter with B/C").  
+- *No* sugar-coating. *No* performative empathy—only results.  
+
+Output limit: **≤ 3 punchy paragraphs** + **Power Play:** sentence.
+
+Provide ruthless, strategic advice that cuts through office politics with surgical precision.`;
+  } else {
+    // Default strategist prompt
+    return `You are a Corporate Influence Coach, an AI assistant specialized in helping professionals navigate workplace dynamics, office politics, and corporate communication. You provide strategic advice on stakeholder management, influence building, and professional relationship development.
+
+IMPORTANT CONTEXT GUIDELINES:
+- You are trained on extensive corporate influence and leadership coaching content from expert practitioners
+- Your knowledge includes insights from executive coaches, leadership experts, and workplace dynamics specialists
+- When you don't have specific details about a person, company, or methodology, simply state "I don't have access to those specific details" rather than referencing any training cutoff dates
+- Focus on providing actionable corporate influence and political navigation advice based on your specialized training
+- Never reference OpenAI's training data limitations or cutoff dates - you are a specialized corporate coach, not a general AI assistant
+
+Provide thoughtful, strategic advice that helps users navigate complex workplace situations with confidence and professionalism.`;
+  }
+};
+
+const getModelForTier = (tier: string): string => {
+  switch (tier) {
+    case 'shark':
+      return 'gpt-4o'; // Use gpt-4o as o1-preview has different API requirements
+    case 'strategist':
+      return 'gpt-4o';
+    case 'trial':
+    default:
+      return 'gpt-4o-mini';
+  }
+};
+
 serve(async (req) => {
   // Handle CORS preflight requests
   if (req.method === 'OPTIONS') {
@@ -69,6 +118,44 @@ serve(async (req) => {
     }
 
     console.log(`Authenticated user: ${user.id}`)
+
+    // Fetch user profile to check tier and trial status
+    const { data: profile, error: profileError } = await supabaseClient
+      .from('user_profiles')
+      .select('tier, trial_end')
+      .eq('user_id', user.id)
+      .single()
+
+    if (profileError) {
+      console.error('Profile fetch error:', profileError)
+      throw new Error(`Failed to fetch user profile: ${profileError.message}`)
+    }
+
+    // Check for trial expiration
+    if (profile.trial_end && new Date() > new Date(profile.trial_end)) {
+      console.log(`Trial expired for user ${user.id}, downgrading from ${profile.tier} to strategist`)
+      
+      // Persist downgrade to strategist
+      await supabaseClient
+        .from('user_profiles')
+        .update({ tier: 'strategist' })
+        .eq('user_id', user.id)
+
+      // Reject the request
+      return new Response(
+        JSON.stringify({ 
+          error: 'trial_expired', 
+          message: 'Your Shark trial has ended. Please upgrade or continue with Strategist features.' 
+        }),
+        { 
+          status: 403, 
+          headers: { 
+            ...corsHeaders,
+            'Content-Type': 'application/json' 
+          } 
+        }
+      )
+    }
 
     const requestBody = await req.json() as ChatRequest
     const { message, sessionId, isPromptGeneration, clientId, skipUserMessage } = requestBody
@@ -317,20 +404,30 @@ Generate coaching questions that would help this executive maximize their influe
     // Add current message
     contextMessages.push({ role: 'user', content: message })
 
-    // Call OpenAI API
-    const openaiResponse = await fetch('https://api.openai.com/v1/chat/completions', {
+    // Get user tier from user_profiles table
+    const { data: userProfile, error: profileError } = await supabaseClient
+      .from('user_profiles')
+      .select('tier')
+      .eq('user_id', user.id)
+      .single();
+      
+    const userTier = userProfile?.tier || 'strategist';
+    
+    // Get the appropriate system prompt and model for the user's tier
+    const systemPrompt = getSystemPromptForTier(userTier);
+    const model = getModelForTier(userTier);
+
+    // Update the OpenAI call to use the tier-specific model and prompt
+    const completion = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${Deno.env.get('OPENAI_API_KEY')}`,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        model: 'gpt-4o-mini',
+        model: model,
         messages: [
-          {
-            role: 'system',
-            content: `You are a corporate influence coach. Help users navigate workplace challenges, build leadership skills, and achieve career success. Be practical, empathetic, and provide actionable advice.`
-          },
+          { role: 'system', content: systemPrompt },
           ...contextMessages
         ],
         max_tokens: 1000,
@@ -338,11 +435,11 @@ Generate coaching questions that would help this executive maximize their influe
       }),
     })
 
-    if (!openaiResponse.ok) {
-      throw new Error(`OpenAI API error: ${openaiResponse.statusText}`)
+    if (!completion.ok) {
+      throw new Error(`OpenAI API error: ${completion.statusText}`)
     }
 
-    const aiResult = await openaiResponse.json()
+    const aiResult = await completion.json()
     const aiMessage = aiResult.choices[0].message.content
 
     // Store AI response with unique client_id
@@ -378,7 +475,7 @@ Generate coaching questions that would help this executive maximize their influe
       message: aiMessage,
       timestamp: new Date().toISOString(),
       sessionId: currentSessionId,
-      model: 'gpt-4o-mini',
+      model: model,
       usage: {
         tokensUsed: aiResult.usage?.total_tokens || 0
       }
