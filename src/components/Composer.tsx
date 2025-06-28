@@ -36,6 +36,9 @@ interface ComposerProps {
   sessionId?: string;
   isRecording?: boolean;
   liveTranscription?: string;
+  isProcessingFile?: boolean;
+  setFileProcessingState?: (isProcessing: boolean) => void;
+  onAutoAnalysisComplete?: (sessionId: string) => void;
 }
 
 export const Composer: React.FC<ComposerProps> = ({
@@ -49,6 +52,9 @@ export const Composer: React.FC<ComposerProps> = ({
   sessionId,
   isRecording,
   liveTranscription,
+  isProcessingFile,
+  setFileProcessingState,
+  onAutoAnalysisComplete,
 }) => {
   const { theme } = useTheme();
   const { user } = useAuth();
@@ -227,6 +233,9 @@ export const Composer: React.FC<ComposerProps> = ({
         // 🔧 CRITICAL FIX: Handle session creation when sessionId is missing
         const executeFileFlow = async (targetSessionId: string) => {
           try {
+            // Set file processing state at the start
+            setFileProcessingState?.(true);
+            
             // React Native compatible UUID generation function
             const generateUUID = (): string => {
               return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
@@ -255,7 +264,7 @@ export const Composer: React.FC<ComposerProps> = ({
               onAddOptimisticMessage(textMessage);
             }
             
-            // Add optimistic file bubble
+            // Add optimistic file bubble with uploading status
             const fileMessage = {
               id: fileMessageId,
               content: file.name,
@@ -296,6 +305,7 @@ export const Composer: React.FC<ComposerProps> = ({
             let result;
             try {
               console.log('🚀 CALLING supabaseFileService.processFile NOW...');
+              let lastStage: string | null = null;
               result = await supabaseFileService.processFile(
                 file.uri,
                 file.type,
@@ -303,8 +313,20 @@ export const Composer: React.FC<ComposerProps> = ({
                 targetSessionId,
                 (progress: FileProcessingProgress) => {
                   console.log(`📄 File processing: ${progress.stage} - ${progress.message}`);
-                  // Note: Progress updates would need to be handled by parent component
-                  // through a callback if real-time updates are needed
+                  // Only emit on actual stage changes to prevent duplicate messages
+                  if (progress.stage !== lastStage) {
+                    lastStage = progress.stage;
+                    if (onAddOptimisticMessage && progress.stage) {
+                      const updatedFileMessage = {
+                        id: fileMessageId, // Same ID to trigger update
+                        status:
+                          progress.stage === 'uploading'   ? 'uploading' :
+                          progress.stage === 'processing'  ? 'processing' :
+                          progress.stage === 'completed'   ? 'processed' : 'processing'
+                      };
+                      onAddOptimisticMessage(updatedFileMessage);
+                    }
+                  }
                 }
               );
               console.log('🎯 Service call completed, result:', result);
@@ -325,6 +347,16 @@ export const Composer: React.FC<ComposerProps> = ({
             
             console.log(`✅ File processed successfully: ${result.fileId}, chunks: ${result.chunksCreated || 'N/A'}`);
             
+            // Update file message to show processed state
+            if (onAddOptimisticMessage) {
+              const processedMessage = {
+                id: fileMessageId, // Same ID to trigger update
+                status: 'processed',
+                content: file.name // Reset to original filename
+              };
+              onAddOptimisticMessage(processedMessage);
+            }
+            
             // 🔧 CRITICAL: Check if we have chunks to trigger auto-analysis
             console.log('🔍 [Composer] Checking auto-analysis conditions:', {
               hasFileId: !!result.fileId,
@@ -338,55 +370,66 @@ export const Composer: React.FC<ComposerProps> = ({
             // 💾 SAVE USER MESSAGE: Now save the user's message with file attachment to database
             console.log('💾 Saving user message with file attachment to database...');
             try {
-              const userMessageData = {
-                session_id: targetSessionId,
-                user_id: user.id,
-                role: 'user',
-                content: textToSend.trim(),
-                action_type: 'file_upload',
-                metadata: {
-                  fileId: result.fileId,
-                  filename: file.name,
-                  fileSize: file.size,
-                  fileType: file.type,
-                  hasAttachment: true
-                },
-                created_at: new Date().toISOString(),
-                message_timestamp: new Date().toISOString(),
-                client_id: generateUUID() // ✅ Generate proper UUID instead of temp string
-              };
-
-              const { data: savedMessage, error: saveError } = await supabase
-                .from('conversation_messages')
-                .insert(userMessageData)
-                .select()
-                .single();
-
-              if (saveError) {
-                console.error('❌ Failed to save user message:', saveError);
-              } else {
-                console.log('✅ User message saved to database:', savedMessage.id);
-                
-                // Update optimistic message with real ID and file info
-                if (onAddOptimisticMessage) {
-                  const updatedMessage = {
-                    id: savedMessage.id,
-                    content: textToSend.trim(),
-                    role: 'user',
-                    session_id: targetSessionId,
-                    created_at: savedMessage.created_at,
-                    type: 'text_with_file',
+              // If we have text, save it and update the existing text message
+              if (textToSend.trim() && textMessageId) {
+                const userMessageData = {
+                  session_id: targetSessionId,
+                  user_id: user.id,
+                  role: 'user',
+                  content: textToSend.trim(),
+                  action_type: 'file_upload',
+                  metadata: {
+                    fileId: result.fileId,
                     filename: file.name,
-                    fileUrl: file.uri,
                     fileSize: file.size,
                     fileType: file.type,
-                    status: 'sent',
-                    metadata: {
-                      fileId: result.fileId,
-                      hasAttachment: true
-                    }
-                  };
-                  onAddOptimisticMessage(updatedMessage);
+                    hasAttachment: true
+                  },
+                  created_at: new Date().toISOString(),
+                  message_timestamp: new Date().toISOString(),
+                  client_id: textMessageId // Use the existing text message ID
+                };
+
+                const { data: savedMessage, error: saveError } = await supabase
+                  .from('conversation_messages')
+                  .insert(userMessageData)
+                  .select()
+                  .single();
+
+                if (saveError) {
+                  console.error('❌ Failed to save user message:', saveError);
+                } else {
+                  console.log('✅ User message saved to database:', savedMessage.id);
+                  
+                  // Update the existing text message to include file info (upsert)
+                  if (onAddOptimisticMessage) {
+                    const updatedTextMessage = {
+                      id: textMessageId, // Keep the same ID to trigger upsert
+                      content: textToSend.trim(),
+                      role: 'user',
+                      session_id: targetSessionId,
+                      created_at: savedMessage.created_at,
+                      type: 'text_with_file',
+                      filename: file.name,
+                      fileUrl: file.uri,
+                      fileSize: file.size,
+                      fileType: file.type,
+                      status: 'sent',
+                      metadata: {
+                        fileId: result.fileId,
+                        hasAttachment: true,
+                        attachmentInfo: {
+                          filename: file.name,
+                          fileUrl: file.uri,
+                          fileSize: file.size,
+                          fileType: file.type,
+                          fileId: result.fileId,
+                          status: 'sent'
+                        }
+                      }
+                    };
+                    onAddOptimisticMessage(updatedTextMessage);
+                  }
                 }
               }
             } catch (dbError) {
@@ -407,6 +450,20 @@ export const Composer: React.FC<ComposerProps> = ({
             
             if (shouldAutoAnalyze) {
               console.log('🚀 [Composer] AUTO-ANALYSIS TRIGGERED! Starting query-file function...');
+              
+              // Create streaming assistant message that will trigger thinking indicator
+              const assistantId = `assistant-${Date.now()}`;
+              const streamingAssistantMessage = {
+                id: assistantId,
+                content: '',
+                role: 'assistant',
+                session_id: targetSessionId,
+                created_at: new Date().toISOString(),
+                type: 'text',
+                isStreaming: true
+              };
+              onAddOptimisticMessage(streamingAssistantMessage);
+              
               try {
                 // Use appropriate question for auto-analysis
                 const analysisQuestion = textToSend.trim() || 
@@ -436,8 +493,25 @@ export const Composer: React.FC<ComposerProps> = ({
                   assistantMessageId: queryResult?.assistantMessageId
                 });
                 
-                // The query-file function already created the conversation messages
-                // so we don't need to manually add them here
+                // Replace the streaming message with the real assistant response
+                if (queryResult?.assistantMessageId && queryResult?.answer) {
+                  const assistantMessage = {
+                    id: assistantId, // Use the same ID to trigger upsert
+                    content: queryResult.answer,
+                    role: 'assistant',
+                    session_id: targetSessionId,
+                    created_at: new Date().toISOString(),
+                    type: 'text',
+                    isStreaming: false
+                  };
+                  onAddOptimisticMessage(assistantMessage);
+                  console.log('✅ [Composer] Assistant response replaced streaming message - no refresh needed!');
+                }
+                
+                // Trigger callback to notify completion (but no session reload)
+                if (onAutoAnalysisComplete) {
+                  onAutoAnalysisComplete(targetSessionId);
+                }
                 
               } catch (queryError: any) {
                 console.error('💥 [Composer] Auto-analysis failed with error:', queryError);
@@ -447,8 +521,21 @@ export const Composer: React.FC<ComposerProps> = ({
                   name: queryError?.name
                 });
                 
-                // Don't fail the whole upload - just show a warning
-                Alert.alert('Analysis Failed', 'File uploaded successfully, but auto-analysis failed. You can ask questions about the file manually.');
+                // Replace streaming message with error message
+                const errorMessage = {
+                  id: assistantId, // Use the same ID to trigger upsert
+                  content: 'I was unable to analyze this file automatically. You can still ask me questions about it manually.',
+                  role: 'assistant',
+                  session_id: targetSessionId,
+                  created_at: new Date().toISOString(),
+                  type: 'text',
+                  isStreaming: false
+                };
+                onAddOptimisticMessage(errorMessage);
+                console.log('✅ [Composer] Error message replaced streaming message');
+                
+                // Don't show alert - we've added error message to chat
+                // Alert.alert('Analysis Failed', 'File uploaded successfully, but auto-analysis failed. You can ask questions about the file manually.');
               }
             } else {
               console.log('❌ [Composer] Auto-analysis SKIPPED because conditions not met');
@@ -472,6 +559,9 @@ export const Composer: React.FC<ComposerProps> = ({
             
             // 🔧 CRITICAL: Clear optimistic messages on failure to prevent state corruption
             console.log('🧹 [Composer] Failed optimistic messages will be cleared by parent state management');
+          } finally {
+            // Always clear file processing state
+            setFileProcessingState?.(false);
           }
         };
         

@@ -9,7 +9,8 @@ import {
   TextInput, 
   Alert,
   ActivityIndicator,
-  Linking
+  Linking,
+  Image
 } from 'react-native';
 import * as Clipboard from 'expo-clipboard';
 import { useTheme } from '../providers/ThemeProvider';
@@ -191,6 +192,24 @@ export const ChatBubble: React.FC<ChatBubbleProps> = ({
 
   // Render file message
   const renderFileContent = () => {
+    // Show inline image thumbnail for image files
+    if (fileType?.startsWith('image/') && fileUrl) {
+      return (
+        <View style={styles.imagePreviewContainer}>
+          <Image
+            source={{ uri: fileUrl }}
+            style={{ width: 120, height: 120, borderRadius: 8 }}
+            resizeMode="cover"
+          />
+          {(status === 'uploading' || status === 'processing') && (
+            <View style={styles.statusOverlay}>
+              <ActivityIndicator size="small" color="#fff" />
+            </View>
+          )}
+        </View>
+      );
+    }
+
     return (
       <TouchableOpacity 
         style={styles.fileContainer}
@@ -614,5 +633,9 @@ const styles = StyleSheet.create({
   attachedFileSize: {
     fontSize: 12,
     opacity: 0.8,
+  },
+  imagePreviewContainer: {
+    position: 'relative',
+    marginVertical: 4,
   },
 });

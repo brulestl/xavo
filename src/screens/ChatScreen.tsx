@@ -78,6 +78,7 @@ export const ChatScreen: React.FC = () => {
     isStreaming,
     isThinking,
     isSending,
+    isProcessingFile,
     error,
     sendMessage,
     sendFileMessage,
@@ -88,6 +89,9 @@ export const ChatScreen: React.FC = () => {
     clearMessages,
     setCurrentSession,
     appendMessage,
+    updateMessage,
+    removeMessage,
+    setFileProcessingState,
   } = useChat();
 
   // 🔥 Use instant operations from useConversations for rename functionality
@@ -96,7 +100,7 @@ export const ChatScreen: React.FC = () => {
     loading: conversationsLoading, 
     renameConversationInstant, 
     triggerRefreshAfterMessage,
-    updateMessage,
+    updateMessage: updateConversationMessage,
     deleteConversationInstant
   } = useConversations();
 
@@ -105,7 +109,7 @@ export const ChatScreen: React.FC = () => {
   // Auto-scroll to bottom when new messages are added
   useEffect(() => {
     if (messages.length > 0 && flatListRef.current) {
-      flatListRef.current.scrollToEnd({ animated: true });
+      flatListRef.current.scrollToEnd({ animated: false });
     }
   }, [messages]);
 
@@ -269,9 +273,10 @@ export const ChatScreen: React.FC = () => {
       await sendMessage(finalMessage, currentSession?.id, false); // Use non-streaming for better UX
       
       // 🔄 Trigger conversation refresh to update ordering after message sent
-      if (currentSession?.id) {
-        triggerRefreshAfterMessage(currentSession.id);
-      }
+      // REMOVED: This was causing conversation jumping after image uploads
+      // if (currentSession?.id) {
+      //   triggerRefreshAfterMessage(currentSession.id);
+      // }
     } catch (error) {
       Alert.alert('Error', 'Failed to send message. Please try again.');
       console.error('Send message error:', error);
@@ -298,9 +303,10 @@ export const ChatScreen: React.FC = () => {
       await sendCombinedFileAndTextMessage(file, text, user.id, currentSession?.id, textMessageId, fileMessageId);
       
       // 🔄 Trigger conversation refresh to update ordering after file message sent
-      if (currentSession?.id) {
-        triggerRefreshAfterMessage(currentSession.id);
-      }
+      // REMOVED: This was causing conversation jumping after image uploads 
+      // if (currentSession?.id) {
+      //   triggerRefreshAfterMessage(currentSession.id);
+      // }
     } catch (error) {
       Alert.alert('Error', 'Failed to process file with your question. Please try again.');
       console.error('Combined file + text error:', error);
@@ -308,8 +314,35 @@ export const ChatScreen: React.FC = () => {
   };
 
   const handleAddOptimisticMessage = (message: any) => {
-    // Use the appendMessage helper from useChat
-    appendMessage(message);
+    // Check if this is a removal request
+    if (message.type === 'removed') {
+      removeMessage(message.id);
+      return;
+    }
+    
+    // Check if message already exists (for updates)
+    const existingMessage = messages.find(msg => msg.id === message.id);
+    
+    if (existingMessage) {
+      // Merge with existing message to preserve all properties and prevent key conflicts
+      const mergedMessage = { ...existingMessage, ...message };
+      updateMessage(message.id, mergedMessage);
+      console.log(`🔄 [ChatScreen] Updated existing message: ${message.id}`);
+    } else {
+      // Add new message
+      appendMessage(message);
+      console.log(`➕ [ChatScreen] Added new message: ${message.id}`);
+    }
+  };
+
+  // Handle auto-analysis completion to refresh session
+  const handleAutoAnalysisComplete = async (sessionId: string) => {
+    console.log('🔄 [ChatScreen] Auto-analysis completed for session:', sessionId);
+    // NOTE: We don't need to reload the session here because:
+    // 1. The query-file function already creates the assistant message in the database
+    // 2. Session reloading causes conversation jumping to the top
+    // 3. The live message syncing will handle showing new messages
+    console.log('✅ [ChatScreen] Auto-analysis complete - relying on live message syncing');
   };
 
   // Create session helper for Composer
@@ -559,7 +592,7 @@ export const ChatScreen: React.FC = () => {
       
       // 5. Update the edited message content in database
       console.log(`📝 [src/ChatScreen] Updating message content in database...`);
-      await updateMessage(currentSession.id, messageId, newContent);
+      await updateConversationMessage(currentSession.id, messageId, newContent);
       console.log(`✅ [src/ChatScreen] Message ${messageId} updated successfully in database`);
       
       // 6. Clear and reload to show updated conversation
@@ -593,7 +626,7 @@ export const ChatScreen: React.FC = () => {
         isUser={item.role === 'user'}
         timestamp={item.timestamp}
         onEditMessage={handleEditMessage}
-        isStreaming={isStreaming && item.role === 'assistant'}
+        isStreaming={item.isStreaming === true}
         type={item.type || 'text'}
         filename={item.filename}
         fileUrl={item.fileUrl}
@@ -665,8 +698,14 @@ export const ChatScreen: React.FC = () => {
                 style={styles.messagesList}
                 contentContainerStyle={styles.messagesContent}
                 showsVerticalScrollIndicator={false}
+                onContentSizeChange={() =>
+                  flatListRef.current?.scrollToEnd({ animated: false })
+                }
+                onLayout={() =>
+                  flatListRef.current?.scrollToEnd({ animated: false })
+                }
                 ListFooterComponent={
-                  isThinking ? (
+                  (isThinking || isProcessingFile) ? (
                     <ThinkingIndicator visible={true} />
                   ) : isStreaming ? (
                     <TypingDots visible={true} />
@@ -716,12 +755,17 @@ export const ChatScreen: React.FC = () => {
                     ? "Sending message..."
                     : isEditingMessage 
                       ? "Saving edit..." 
-                      : isThinking
-                        ? "Xavo is thinking..."
-                        : "What's on your mind?"
+                      : isProcessingFile
+                        ? "Processing file..."
+                        : isThinking
+                          ? "Xavo is thinking..."
+                          : "What's on your mind?"
                 }
-                disabled={!canMakeQuery || isEditingMessage || isSending || isThinking}
+                disabled={!canMakeQuery || isEditingMessage || isSending || isThinking || isProcessingFile}
                 sessionId={currentSession?.id}
+                isProcessingFile={isProcessingFile}
+                setFileProcessingState={setFileProcessingState}
+                onAutoAnalysisComplete={handleAutoAnalysisComplete}
               />
             </View>
           </KeyboardAvoidingView>
