@@ -150,74 +150,10 @@ export const Composer: React.FC<ComposerProps> = ({
         totalFiles: attachedFiles.length
       });
       
-      // 🔥 NEW: Unified RAG flow - Combined file + text
-      if (ragDocuments.length === 1 && textToSend.trim() && imageAttachments.length === 0 && otherFiles.length === 0 && onSendCombinedFileAndText && onAddOptimisticMessage && user?.id) {
-        const ragFile = ragDocuments[0];
-        try {
-          // Generate unique IDs for both bubbles
-          const textMessageId = `temp-text-${Date.now()}`;
-          const fileMessageId = `temp-file-${Date.now()}`;
-          
-          // 1. Create optimistic user text bubble
-          const textMessage = {
-            id: textMessageId,
-            content: textToSend.trim(),
-            role: 'user',
-            session_id: sessionId || 'temp-session',
-            created_at: new Date().toISOString(),
-            type: 'text',
-            status: 'sent'
-          };
-          
-          // 2. Create optimistic file bubble
-          const fileMessage = {
-            id: fileMessageId,
-            content: ragFile.name,
-            role: 'user',
-            session_id: sessionId || 'temp-session',
-            created_at: new Date().toISOString(),
-            type: 'file',
-            filename: ragFile.name,
-            fileUrl: ragFile.uri,
-            fileSize: ragFile.size,
-            fileType: ragFile.type,
-            status: 'uploading'
-          };
-          
-          // Add both bubbles to UI immediately
-          onAddOptimisticMessage(textMessage);
-          onAddOptimisticMessage(fileMessage);
-          
-          // Convert to the format expected by unified function
-          const fileForUpload = {
-            name: ragFile.name,
-            mimeType: ragFile.type,
-            size: ragFile.size,
-            uri: ragFile.uri,
-            type: ragFile.type
-          };
-          
-          // Clear attachments immediately
-          setAttachedFiles([]);
-          
-          // Use the unified file + text flow with existing message IDs
-          await onSendCombinedFileAndText(fileForUpload, textToSend.trim(), textMessageId, fileMessageId);
-          
-        } catch (error) {
-          console.error('Combined file + text error:', error);
-          // Use custom PDF error dialog for text extraction issues
-          handlePDFProcessingError(ragFile.name, error);
-        }
-        
-        setMessage('');
-        setLocalLiveTranscription('');
-        Keyboard.dismiss();
-        return;
-      }
-      
-      // 🆕 NEW SUPABASE FILE FLOW: Single file + text or file only
+      // 🔥 ENHANCED: Document flow now matches image flow - session creation first!
+      // 🆕 UNIFIED SUPABASE FILE FLOW: Handle ALL files (documents, images) with session creation first
       const allFiles = [...ragDocuments, ...imageAttachments];
-      console.log('🔍 [Composer] SUPABASE FILE FLOW conditions:', {
+      console.log('🔍 [Composer] ENHANCED DOCUMENT FLOW conditions:', {
         allFilesLength: allFiles.length,
         hasOnAddOptimisticMessage: !!onAddOptimisticMessage,
         hasUserId: !!user?.id,
@@ -227,7 +163,7 @@ export const Composer: React.FC<ComposerProps> = ({
       });
       
       if (allFiles.length === 1 && onAddOptimisticMessage && user?.id) {
-        console.log('✅ [Composer] Entering SUPABASE FILE FLOW (with session handling)');
+        console.log('✅ [Composer] Entering ENHANCED SUPABASE FILE FLOW (documents + images with session handling)');
         const file = allFiles[0];
         
         // 🔧 CRITICAL FIX: Ensure session exists BEFORE any optimistic messages or processing
@@ -242,7 +178,8 @@ export const Composer: React.FC<ComposerProps> = ({
           
           try {
             console.log('🆕 [Composer] Creating session BEFORE file processing...');
-            const newSession = await onCreateSession(`Image: ${file.name}`);
+            const fileTypeLabel = file.isRAGDocument ? 'Document' : 'Image';
+            const newSession = await onCreateSession(`${fileTypeLabel}: ${file.name}`);
             
             if (!newSession) {
               throw new Error('Failed to create new session');
@@ -257,7 +194,7 @@ export const Composer: React.FC<ComposerProps> = ({
           }
         }
         
-        // 🔧 CRITICAL FIX: Handle session creation when sessionId is missing
+        // 🔧 ENHANCED: Execute file flow with confirmed session ID
         const executeFileFlow = async (confirmedSessionId: string) => {
           try {
             // Set file processing state at the start
@@ -391,7 +328,8 @@ export const Composer: React.FC<ComposerProps> = ({
               chunksCreated: result.chunksCreated,
               textLength: textToSend.trim().length,
               fileType: file.type,
-              isImage: file.type.startsWith('image/')
+              isImage: file.type.startsWith('image/'),
+              isDocument: file.isRAGDocument
             });
             
             // 💾 SAVE USER MESSAGE: Now save the user's message with file attachment to database
@@ -472,7 +410,9 @@ export const Composer: React.FC<ComposerProps> = ({
               shouldAutoAnalyze,
               fileId: result.fileId,
               sessionId: confirmedSessionId,
-              chunksCreated: result.chunksCreated
+              chunksCreated: result.chunksCreated,
+              isDocument: file.isRAGDocument,
+              isImage: file.type.startsWith('image/')
             });
             
             if (shouldAutoAnalyze) {
@@ -492,16 +432,22 @@ export const Composer: React.FC<ComposerProps> = ({
               onAddOptimisticMessage(streamingAssistantMessage);
               
               try {
-                // Use appropriate question for auto-analysis
-                const analysisQuestion = textToSend.trim() || 
-                  (file.type.startsWith('image/') ? 
-                    'Please analyze this image and describe what you see, including any text content.' :
-                    'Please analyze this file and summarize its contents.');
+                // Use appropriate question for auto-analysis - enhanced for documents
+                let analysisQuestion: string;
+                if (file.isRAGDocument) {
+                  analysisQuestion = textToSend.trim() || 
+                    'Please analyze this document and provide a comprehensive summary of its contents, key points, and main themes.';
+                } else {
+                  analysisQuestion = textToSend.trim() || 
+                    'Please analyze this image and describe what you see, including any text content.';
+                }
                 
                 console.log('🔍 [Composer] Calling query-file function with:', {
                   question: analysisQuestion.substring(0, 50) + '...',
                   fileId: result.fileId,
-                  sessionId: confirmedSessionId
+                  sessionId: confirmedSessionId,
+                  fileType: file.type,
+                  isDocument: file.isRAGDocument
                 });
                 
                 console.log('🌐 [Composer] About to call supabaseFileService.callQueryFileFunction...');
@@ -520,9 +466,9 @@ export const Composer: React.FC<ComposerProps> = ({
                   assistantMessageId: queryResult?.assistantMessageId
                 });
                 
-                // Replace the streaming message with the real assistant response
-                if (queryResult?.assistantMessageId && queryResult?.answer) {
-                  const assistantMessage = {
+                // Replace streaming message with actual response
+                if (queryResult && queryResult.answer) {
+                  const completedAssistantMessage = {
                     id: assistantId, // Use the same ID to trigger upsert
                     content: queryResult.answer,
                     role: 'assistant',
@@ -531,13 +477,21 @@ export const Composer: React.FC<ComposerProps> = ({
                     type: 'text',
                     isStreaming: false
                   };
-                  onAddOptimisticMessage(assistantMessage);
-                  console.log('✅ [Composer] Assistant response replaced streaming message - no refresh needed!');
-                }
-                
-                // Trigger callback to notify completion (but no session reload)
-                if (onAutoAnalysisComplete) {
-                  onAutoAnalysisComplete(confirmedSessionId);
+                  onAddOptimisticMessage(completedAssistantMessage);
+                  console.log('✅ [Composer] Auto-analysis completed and response updated');
+                  
+                  // Trigger callback for session refresh
+                  if (onAutoAnalysisComplete) {
+                    onAutoAnalysisComplete(confirmedSessionId);
+                  }
+                } else {
+                  // Remove streaming message if no response
+                  const removedMessage = {
+                    id: assistantId,
+                    type: 'removed'
+                  };
+                  onAddOptimisticMessage(removedMessage);
+                  console.log('⚠️ [Composer] No response from auto-analysis, removed streaming message');
                 }
                 
               } catch (queryError: any) {
@@ -593,8 +547,100 @@ export const Composer: React.FC<ComposerProps> = ({
         };
         
         // Execute the file flow with the confirmed session ID
-        console.log('✅ [Composer] Executing file flow with confirmed session:', targetSessionId);
+        console.log('✅ [Composer] Executing enhanced file flow with confirmed session:', targetSessionId);
         await executeFileFlow(targetSessionId);
+        
+        setMessage('');
+        setLocalLiveTranscription('');
+        Keyboard.dismiss();
+        return;
+      }
+
+      // 🔥 OLD RAG FLOW: Unified RAG flow - Combined file + text (for compatibility)
+      if (ragDocuments.length === 1 && textToSend.trim() && imageAttachments.length === 0 && otherFiles.length === 0 && onSendCombinedFileAndText && onAddOptimisticMessage && user?.id) {
+        const ragFile = ragDocuments[0];
+        try {
+          // 🔧 CRITICAL FIX: Ensure session exists BEFORE any optimistic messages or processing
+          let targetSessionId = sessionId;
+          
+          if (!targetSessionId) {
+            if (!onCreateSession) {
+              console.error('💥 [Composer] No onCreateSession prop provided for RAG flow');
+              Alert.alert('Error', 'Cannot create new conversation. Missing session handler.');
+              return;
+            }
+            
+            try {
+              console.log('🆕 [Composer] Creating session BEFORE RAG processing...');
+              const newSession = await onCreateSession(`Document: ${ragFile.name}`);
+              
+              if (!newSession) {
+                throw new Error('Failed to create new session');
+              }
+              
+              targetSessionId = newSession.id;
+              console.log('✅ [Composer] RAG session created successfully:', targetSessionId);
+            } catch (sessionError) {
+              console.error('💥 [Composer] RAG session creation failed:', sessionError);
+              Alert.alert('Error', 'Failed to create new conversation. Please try again.');
+              return;
+            }
+          }
+          
+          // Generate unique IDs for both bubbles
+          const textMessageId = `temp-text-${Date.now()}`;
+          const fileMessageId = `temp-file-${Date.now()}`;
+          
+          // 1. Create optimistic user text bubble
+          const textMessage = {
+            id: textMessageId,
+            content: textToSend.trim(),
+            role: 'user',
+            session_id: targetSessionId,
+            created_at: new Date().toISOString(),
+            type: 'text',
+            status: 'sent'
+          };
+          
+          // 2. Create optimistic file bubble
+          const fileMessage = {
+            id: fileMessageId,
+            content: ragFile.name,
+            role: 'user',
+            session_id: targetSessionId,
+            created_at: new Date().toISOString(),
+            type: 'file',
+            filename: ragFile.name,
+            fileUrl: ragFile.uri,
+            fileSize: ragFile.size,
+            fileType: ragFile.type,
+            status: 'uploading'
+          };
+          
+          // Add both bubbles to UI immediately
+          onAddOptimisticMessage(textMessage);
+          onAddOptimisticMessage(fileMessage);
+          
+          // Convert to the format expected by unified function
+          const fileForUpload = {
+            name: ragFile.name,
+            mimeType: ragFile.type,
+            size: ragFile.size,
+            uri: ragFile.uri,
+            type: ragFile.type
+          };
+          
+          // Clear attachments immediately
+          setAttachedFiles([]);
+          
+          // Use the unified file + text flow with existing message IDs
+          await onSendCombinedFileAndText(fileForUpload, textToSend.trim(), textMessageId, fileMessageId);
+          
+        } catch (error) {
+          console.error('Combined file + text error:', error);
+          // Use custom PDF error dialog for text extraction issues
+          handlePDFProcessingError(ragFile.name, error);
+        }
         
         setMessage('');
         setLocalLiveTranscription('');

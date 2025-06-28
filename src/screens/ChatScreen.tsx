@@ -114,6 +114,19 @@ export const ChatScreen: React.FC = () => {
     }
   }, [messages]);
 
+  // 🔧 FIX 2: Auto-scroll to latest message when switching conversations
+  useEffect(() => {
+    if (currentSession?.id && messages.length > 0 && flatListRef.current) {
+      console.log('🔄 [ChatScreen] Conversation switched - auto-scrolling to latest message');
+      // Use a small delay to ensure FlatList has rendered the new messages
+      const scrollTimer = setTimeout(() => {
+        flatListRef.current?.scrollToEnd({ animated: false });
+      }, 100);
+      
+      return () => clearTimeout(scrollTimer);
+    }
+  }, [currentSession?.id]); // Trigger when conversation ID changes
+
   // 🔥 FIX: Handle app state changes to prevent layout displacement from external UIs
   useEffect(() => {
     const handleAppStateChange = (nextAppState: string) => {
@@ -705,12 +718,18 @@ export const ChatScreen: React.FC = () => {
                 style={styles.messagesList}
                 contentContainerStyle={styles.messagesContent}
                 showsVerticalScrollIndicator={false}
-                onContentSizeChange={() =>
-                  flatListRef.current?.scrollToEnd({ animated: false })
-                }
-                onLayout={() =>
-                  flatListRef.current?.scrollToEnd({ animated: false })
-                }
+                onContentSizeChange={() => {
+                  // Enhanced auto-scroll: ensure we always see the latest message
+                  if (messages.length > 0) {
+                    flatListRef.current?.scrollToEnd({ animated: false });
+                  }
+                }}
+                onLayout={() => {
+                  // Enhanced auto-scroll: handle layout changes during conversation switching
+                  if (messages.length > 0) {
+                    flatListRef.current?.scrollToEnd({ animated: false });
+                  }
+                }}
                 ListFooterComponent={
                   (isThinking || isProcessingFile) ? (
                     <ThinkingIndicator visible={true} />
