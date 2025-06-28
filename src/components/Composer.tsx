@@ -230,8 +230,35 @@ export const Composer: React.FC<ComposerProps> = ({
         console.log('✅ [Composer] Entering SUPABASE FILE FLOW (with session handling)');
         const file = allFiles[0];
         
+        // 🔧 CRITICAL FIX: Ensure session exists BEFORE any optimistic messages or processing
+        let targetSessionId = sessionId;
+        
+        if (!targetSessionId) {
+          if (!onCreateSession) {
+            console.error('💥 [Composer] No onCreateSession prop provided');
+            Alert.alert('Error', 'Cannot create new conversation. Missing session handler.');
+            return;
+          }
+          
+          try {
+            console.log('🆕 [Composer] Creating session BEFORE file processing...');
+            const newSession = await onCreateSession(`Image: ${file.name}`);
+            
+            if (!newSession) {
+              throw new Error('Failed to create new session');
+            }
+            
+            targetSessionId = newSession.id;
+            console.log('✅ [Composer] Session created successfully:', targetSessionId);
+          } catch (sessionError) {
+            console.error('💥 [Composer] Session creation failed:', sessionError);
+            Alert.alert('Error', 'Failed to create new conversation. Please try again.');
+            return;
+          }
+        }
+        
         // 🔧 CRITICAL FIX: Handle session creation when sessionId is missing
-        const executeFileFlow = async (targetSessionId: string) => {
+        const executeFileFlow = async (confirmedSessionId: string) => {
           try {
             // Set file processing state at the start
             setFileProcessingState?.(true);
@@ -248,7 +275,7 @@ export const Composer: React.FC<ComposerProps> = ({
             const textMessageId = textToSend.trim() ? generateUUID() : '';
             const fileMessageId = generateUUID();
             
-            console.log('🆔 [Composer] Generated UUIDs:', { textMessageId, fileMessageId, targetSessionId });
+            console.log('🆔 [Composer] Generated UUIDs:', { textMessageId, fileMessageId, confirmedSessionId });
             
             // Add optimistic text message if there's text
             if (textToSend.trim()) {
@@ -256,7 +283,7 @@ export const Composer: React.FC<ComposerProps> = ({
                 id: textMessageId,
                 content: textToSend.trim(),
                 role: 'user',
-                session_id: targetSessionId,
+                session_id: confirmedSessionId,
                 created_at: new Date().toISOString(),
                 type: 'text',
                 status: 'sent'
@@ -269,7 +296,7 @@ export const Composer: React.FC<ComposerProps> = ({
               id: fileMessageId,
               content: file.name,
               role: 'user',
-              session_id: targetSessionId,
+              session_id: confirmedSessionId,
               created_at: new Date().toISOString(),
               type: 'file',
               filename: file.name,
@@ -284,13 +311,13 @@ export const Composer: React.FC<ComposerProps> = ({
             setAttachedFiles([]);
             
             // Process file using new Supabase edge functions
-            console.log(`📄 Processing file: ${file.name} (${file.type}) with session: ${targetSessionId}`);
+            console.log(`📄 Processing file: ${file.name} (${file.type}) with session: ${confirmedSessionId}`);
             console.log('🔍 File details before processing:', {
               fileName: file.name,
               fileType: file.type,
               fileUri: file.uri.substring(0, 50) + '...',
               fileSize: file.size,
-              sessionId: targetSessionId,
+              sessionId: confirmedSessionId,
               uriLength: file.uri.length
             });
             
@@ -299,7 +326,7 @@ export const Composer: React.FC<ComposerProps> = ({
               fileUri: file.uri,
               fileType: file.type,
               fileName: file.name,
-              sessionId: targetSessionId
+              sessionId: confirmedSessionId
             });
             
             let result;
@@ -310,7 +337,7 @@ export const Composer: React.FC<ComposerProps> = ({
                 file.uri,
                 file.type,
                 file.name,
-                targetSessionId,
+                confirmedSessionId,
                 (progress: FileProcessingProgress) => {
                   console.log(`📄 File processing: ${progress.stage} - ${progress.message}`);
                   // Only emit on actual stage changes to prevent duplicate messages
@@ -360,7 +387,7 @@ export const Composer: React.FC<ComposerProps> = ({
             // 🔧 CRITICAL: Check if we have chunks to trigger auto-analysis
             console.log('🔍 [Composer] Checking auto-analysis conditions:', {
               hasFileId: !!result.fileId,
-              hasSessionId: !!targetSessionId,
+              hasSessionId: !!confirmedSessionId,
               chunksCreated: result.chunksCreated,
               textLength: textToSend.trim().length,
               fileType: file.type,
@@ -373,7 +400,7 @@ export const Composer: React.FC<ComposerProps> = ({
               // If we have text, save it and update the existing text message
               if (textToSend.trim() && textMessageId) {
                 const userMessageData = {
-                  session_id: targetSessionId,
+                  session_id: confirmedSessionId,
                   user_id: user.id,
                   role: 'user',
                   content: textToSend.trim(),
@@ -407,7 +434,7 @@ export const Composer: React.FC<ComposerProps> = ({
                       id: textMessageId, // Keep the same ID to trigger upsert
                       content: textToSend.trim(),
                       role: 'user',
-                      session_id: targetSessionId,
+                      session_id: confirmedSessionId,
                       created_at: savedMessage.created_at,
                       type: 'text_with_file',
                       filename: file.name,
@@ -438,13 +465,13 @@ export const Composer: React.FC<ComposerProps> = ({
             
             // 🤖 AUTO-ANALYZE: ALWAYS analyze files that have chunks created
             const hasValidChunks = result.chunksCreated && result.chunksCreated > 0;
-            const shouldAutoAnalyze = hasValidChunks && result.fileId && targetSessionId;
+            const shouldAutoAnalyze = hasValidChunks && result.fileId && confirmedSessionId;
             
             console.log('🔍 [Composer] Auto-analysis decision:', {
               hasValidChunks,
               shouldAutoAnalyze,
               fileId: result.fileId,
-              sessionId: targetSessionId,
+              sessionId: confirmedSessionId,
               chunksCreated: result.chunksCreated
             });
             
@@ -457,7 +484,7 @@ export const Composer: React.FC<ComposerProps> = ({
                 id: assistantId,
                 content: '',
                 role: 'assistant',
-                session_id: targetSessionId,
+                session_id: confirmedSessionId,
                 created_at: new Date().toISOString(),
                 type: 'text',
                 isStreaming: true
@@ -474,7 +501,7 @@ export const Composer: React.FC<ComposerProps> = ({
                 console.log('🔍 [Composer] Calling query-file function with:', {
                   question: analysisQuestion.substring(0, 50) + '...',
                   fileId: result.fileId,
-                  sessionId: targetSessionId
+                  sessionId: confirmedSessionId
                 });
                 
                 console.log('🌐 [Composer] About to call supabaseFileService.callQueryFileFunction...');
@@ -482,7 +509,7 @@ export const Composer: React.FC<ComposerProps> = ({
                 const queryResult = await supabaseFileService.callQueryFileFunction({
                   question: analysisQuestion,
                   fileId: result.fileId,
-                  sessionId: targetSessionId
+                  sessionId: confirmedSessionId
                 });
                 
                 console.log('🎉 [Composer] Query-file function completed!', {
@@ -499,7 +526,7 @@ export const Composer: React.FC<ComposerProps> = ({
                     id: assistantId, // Use the same ID to trigger upsert
                     content: queryResult.answer,
                     role: 'assistant',
-                    session_id: targetSessionId,
+                    session_id: confirmedSessionId,
                     created_at: new Date().toISOString(),
                     type: 'text',
                     isStreaming: false
@@ -510,7 +537,7 @@ export const Composer: React.FC<ComposerProps> = ({
                 
                 // Trigger callback to notify completion (but no session reload)
                 if (onAutoAnalysisComplete) {
-                  onAutoAnalysisComplete(targetSessionId);
+                  onAutoAnalysisComplete(confirmedSessionId);
                 }
                 
               } catch (queryError: any) {
@@ -526,7 +553,7 @@ export const Composer: React.FC<ComposerProps> = ({
                   id: assistantId, // Use the same ID to trigger upsert
                   content: 'I was unable to analyze this file automatically. You can still ask me questions about it manually.',
                   role: 'assistant',
-                  session_id: targetSessionId,
+                  session_id: confirmedSessionId,
                   created_at: new Date().toISOString(),
                   type: 'text',
                   isStreaming: false
@@ -565,33 +592,9 @@ export const Composer: React.FC<ComposerProps> = ({
           }
         };
         
-        // Check if we have a session, if not create one first
-        if (!sessionId) {
-          console.log('🚨 [Composer] No sessionId - creating new session first');
-          
-          if (!onCreateSession) {
-            console.error('💥 [Composer] No onCreateSession prop provided');
-            Alert.alert('Error', 'Cannot create new conversation. Missing session handler.');
-            return;
-          }
-          
-          try {
-            const newSession = await onCreateSession(`Image: ${file.name}`);
-            
-            if (!newSession) {
-              throw new Error('Failed to create new session');
-            }
-            
-            console.log('✅ [Composer] New session created:', newSession.id);
-            await executeFileFlow(newSession.id);
-          } catch (sessionError) {
-            console.error('💥 [Composer] Session creation failed:', sessionError);
-            Alert.alert('Error', 'Failed to create new conversation. Please try again.');
-          }
-        } else {
-          console.log('✅ [Composer] Using existing session:', sessionId);
-          await executeFileFlow(sessionId);
-        }
+        // Execute the file flow with the confirmed session ID
+        console.log('✅ [Composer] Executing file flow with confirmed session:', targetSessionId);
+        await executeFileFlow(targetSessionId);
         
         setMessage('');
         setLocalLiveTranscription('');

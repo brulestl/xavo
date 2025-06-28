@@ -101,10 +101,13 @@ export const useChat = (): UseChatReturn => {
       const idx = prev.findIndex(m => m.id === message.id);
       if (idx >= 0) {
         const copy = [...prev];
-        copy[idx] = { ...copy[idx], ...message };
+        // Ensure session_id is preserved during upsert
+        copy[idx] = { ...copy[idx], ...message, session_id: message.session_id || copy[idx].session_id };
         return copy;
       }
-      return [...prev, message];
+      // Ensure new messages have session_id
+      const messageWithSession = { ...message, session_id: message.session_id || currentSession?.id || 'temp-session' };
+      return [...prev, messageWithSession];
     });
   };
 
@@ -816,6 +819,12 @@ export const useChat = (): UseChatReturn => {
         setMessages(currentMessages => {
           if (currentMessages.length === 0) {
             return enhancedMessages;
+          }
+          
+          // 🔧 CRITICAL: Defer syncing until session exists
+          if (!sessionId) {
+            console.log('⏸️ [useChat] Deferring optimistic ID sync until session exists');
+            return currentMessages;
           }
           
           const syncedMessages = currentMessages.map((currentMsg, index) => {

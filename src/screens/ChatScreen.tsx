@@ -83,6 +83,7 @@ export const ChatScreen: React.FC = () => {
     sendMessage,
     sendFileMessage,
     sendCombinedFileAndTextMessage,
+    createSession,
     loadSession,
     deleteSession,
     renameSession,
@@ -350,23 +351,29 @@ export const ChatScreen: React.FC = () => {
     try {
       console.log('🆕 [ChatScreen] Creating new session for file upload:', title);
       
-      // Use the sendMessage function with a dummy message to trigger session creation
-      // The sendMessage function has logic to create a new session if one doesn't exist
-      const dummyMessage = title || 'New conversation started';
-      await sendMessage(dummyMessage, undefined, false);
+      // Use the useChat createSession function directly instead of sending a dummy message
+      const newSession = await createSession(title || 'New Conversation');
       
-      // Return the newly created session
-      if (currentSession) {
-        console.log('✅ [ChatScreen] Session created:', currentSession.id);
+      if (newSession) {
+        console.log('✅ [ChatScreen] Session created successfully:', newSession.id);
         return {
-          id: currentSession.id,
-          title: currentSession.title || title || 'New Conversation'
+          id: newSession.id,
+          title: newSession.title
         };
       } else {
-        throw new Error('Failed to create session');
+        throw new Error('Failed to create session - no session returned');
       }
     } catch (error) {
       console.error('❌ [ChatScreen] Failed to create session:', error);
+      
+      // Show user-friendly error feedback
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
+      if (errorMessage.includes('Authentication') || errorMessage.includes('401')) {
+        Alert.alert('Authentication Error', 'Please sign in again to continue.');
+      } else {
+        Alert.alert('Connection Error', 'Unable to start chat. Please check your connection and try again.');
+      }
+      
       return null;
     }
   };
