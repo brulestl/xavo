@@ -94,20 +94,6 @@ class SupabaseFileService {
       
       console.log('✅ Session valid, user ID:', session.user.id);
       
-      // 🔧 CRITICAL FIX: Set session on same Supabase client for authenticated uploads
-      console.log('🔐 Setting session token for authenticated storage operations...');
-      try {
-        // Attach user JWT to this Supabase client for storage operations
-        await supabase.auth.setSession({ 
-          access_token: session.access_token,
-          refresh_token: session.refresh_token
-        });
-        console.log('✅ Session token attached - storage operations now authenticated');
-      } catch (setSessionError) {
-        console.error('💥 Failed to set session token:', setSessionError);
-        throw new Error(`Failed to authenticate storage client: ${setSessionError instanceof Error ? setSessionError.message : 'Unknown error'}`);
-      }
-
       // Generate unique storage path
       const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
       const fileExtension = fileName.split('.').pop() || 'bin';
