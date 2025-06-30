@@ -46,9 +46,7 @@
         "android.permission.READ_EXTERNAL_STORAGE",
         "android.permission.WRITE_EXTERNAL_STORAGE",
         "android.permission.RECORD_AUDIO",
-        "android.permission.CAMERA",
-        "android.permission.CAMERA",
-        "android.permission.RECORD_AUDIO"
+        "android.permission.CAMERA"
       ],
       "intentFilters": [
         {
@@ -79,11 +77,29 @@
     },
     "description": "AI-powered coaching app",
     "plugins": [
+      "expo-dev-client",
       "expo-secure-store",
       "expo-web-browser",
       "expo-document-picker",
       "expo-camera",
-      "expo-image-picker"
+      "expo-image-picker",
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "extraMavenRepos": ["https://artifacts.revenuecat.com/android"],
+            "compileSdkVersion": 34,
+            "targetSdkVersion": 34,
+            "minSdkVersion": 23,
+            "buildToolsVersion": "34.0.0",
+            "enableProguardInReleaseBuilds": false,
+            "enableShrinkResourcesInReleaseBuilds": false
+          },
+          "ios": {
+            "deploymentTarget": "15.1"
+          }
+        }
+      ]
     ],
     "extra": {
       "eas": {

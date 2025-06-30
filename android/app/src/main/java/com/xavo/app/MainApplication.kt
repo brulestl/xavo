@@ -1,4 +1,4 @@
-package com.xavo.influence
+package com.xavo.app
 
 import android.app.Application
 import android.content.res.Configuration

@@ -6,8 +6,8 @@
   "main": "index.ts",
   "scripts": {
     "start": "expo start",
-    "android": "expo start --android",
-    "ios": "expo start --ios",
+    "android": "expo run:android",
+    "ios": "expo run:ios",
     "web": "expo start --web",
     "test": "jest",
     "test:watch": "jest --watch",
@@ -75,7 +75,9 @@
     "sonner-native": "^0.8.0",
     "swr": "^2.2.4",
     "use-sync-external-store": "^1.2.0",
-    "uuid": "^11.1.0"
+    "uuid": "^11.1.0",
+    "expo-build-properties": "~0.14.6",
+    "expo-dev-client": "~5.2.2"
   },
   "devDependencies": {
     "@babel/core": "^7.20.0",
