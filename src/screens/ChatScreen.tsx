@@ -215,20 +215,22 @@ export const ChatScreen: React.FC = () => {
                 // Update the optimistic message with progress
                 if (textMessageId || fileMessageId) {
                   const messageId = textMessageId || fileMessageId;
-                  const updatedMessage = {
-                    id: messageId,
-                    status: 
-                      progress.stage === 'uploading'   ? 'uploading' :
-                      progress.stage === 'processing'  ? 'processing' :
-                      progress.stage === 'completed'   ? 'processed' : 'processing',
-                    metadata: {
-                      hasAttachment: true,
-                      file_url: file.uri,
-                      fileType: file.type,
-                      processingStatus: progress.stage
-                    }
-                  };
-                  updateMessage(messageId, updatedMessage);
+                  if (messageId) {
+                    const updatedMessage = {
+                      id: messageId,
+                      status: 
+                        progress.stage === 'uploading'   ? 'uploading' as const :
+                        progress.stage === 'processing'  ? 'processing' as const :
+                        progress.stage === 'completed'   ? 'processed' as const : 'processing' as const,
+                      metadata: {
+                        hasAttachment: true,
+                        file_url: file.uri,
+                        fileType: file.type,
+                        processingStatus: progress.stage
+                      }
+                    };
+                    updateMessage(messageId, updatedMessage);
+                  }
                 }
               }
             );
@@ -239,18 +241,20 @@ export const ChatScreen: React.FC = () => {
               // Update the message to show processed state
               if (textMessageId || fileMessageId) {
                 const messageId = textMessageId || fileMessageId;
-                const processedMessage = {
-                  id: messageId,
-                  status: 'processed',
-                  metadata: {
-                    hasAttachment: true,
-                    file_url: file.uri,
-                    fileType: file.type,
-                    processingStatus: 'completed',
-                    fileId: result.fileId
-                  }
-                };
-                updateMessage(messageId, processedMessage);
+                if (messageId) {
+                  const processedMessage = {
+                    id: messageId,
+                    status: 'processed' as const,
+                    metadata: {
+                      hasAttachment: true,
+                      file_url: file.uri,
+                      fileType: file.type,
+                      processingStatus: 'completed',
+                      fileId: result.fileId
+                    }
+                  };
+                  updateMessage(messageId, processedMessage);
+                }
               }
               
               // Auto-analyze if file has chunks

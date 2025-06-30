@@ -565,19 +565,31 @@ export const HomeScreen: React.FC = () => {
                       ]}
                     >
                       <Text style={[styles.aiPromptsLabel, { color: theme.semanticColors.textSecondary }]}>
-                        AI Suggestions
+                        XAVO SUGGESTIONS
                       </Text>
                       <View style={styles.aiPromptsContainer}>
-                        {morePrompts.slice(0, 5).map((prompt, index) => (
-                          <Pill
-                            key={`ai-${index}`}
-                            title={prompt}
-                            variant={selectedPrompt === prompt ? 'selected' : 'default'}
-                            onPress={() => handlePromptPress(prompt)}
-                            style={[styles.prompt, styles.aiPill]}
-                            disabled={isSendingMessage}
-                          />
-                        ))}
+                        {morePrompts.slice(0, 5).map((prompt, index) => {
+                          // Define the border colors for each pill in the specified order
+                          const borderColors = ['#F55D3E', '#878E88', '#F7CB15', '#76BED0', '#22AAA1'];
+                          const xavoPillStyle = {
+                            borderWidth: 1,
+                            borderColor: borderColors[index % 5], // Use modulo to handle edge cases
+                            backgroundColor: 'transparent', // Outline only, no background fill
+                            borderStyle: 'solid' as 'solid',
+                          };
+                          
+                          return (
+                            <Pill
+                              key={`ai-${index}`}
+                              title={prompt}
+                              variant={selectedPrompt === prompt ? 'selected' : 'default'}
+                              onPress={() => handlePromptPress(prompt)}
+                              style={[styles.prompt, xavoPillStyle]}
+                              numberOfLines={3}
+                              disabled={isSendingMessage}
+                            />
+                          );
+                        })}
                       </View>
                     </Animated.View>
                   )}
@@ -971,20 +983,14 @@ const styles = StyleSheet.create({
     marginBottom: 12,
     textAlign: 'center',
   },
-  aiPill: {
-    borderWidth: 1,
-    borderColor: '#4A90E2',
-    backgroundColor: 'rgba(74, 144, 226, 0.1)',
-    borderStyle: 'solid',
-  },
+
   aiPromptsContainer: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     justifyContent: 'center',
     gap: 12,
     marginBottom: 16,
-    paddingHorizontal: '20%',
-    width: '100%',
+    marginHorizontal: 16,
     alignItems: 'flex-start', // Ensure pills align properly when heights vary
   },
   loadMoreIcon: {

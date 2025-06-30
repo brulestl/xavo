@@ -6,12 +6,14 @@ interface PillProps extends TouchableOpacityProps {
   title: string;
   variant?: 'default' | 'selected';
   size?: 'small' | 'medium';
+  numberOfLines?: number;
 }
 
 export const Pill: React.FC<PillProps> = ({
   title,
   variant = 'default',
   size = 'medium',
+  numberOfLines = 2,
   disabled = false,
   style,
   ...props
@@ -104,7 +106,7 @@ export const Pill: React.FC<PillProps> = ({
     >
       <Text 
         style={getTextStyle()} 
-        numberOfLines={2}
+        numberOfLines={numberOfLines}
         ellipsizeMode="tail"
       >
         {title}
