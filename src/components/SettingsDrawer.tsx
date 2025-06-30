@@ -11,12 +11,14 @@ import {
   Animated,
   ScrollView,
   Linking,
+  Modal,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../providers/ThemeProvider';
 import { useAuth } from '../providers/AuthProvider';
 import { useTier } from '../contexts/TierContext';
 import { TierBadge } from './ui/TierBadge';
+import { TierToggle, type TierOption } from './ui/TierToggle';
 import { ThemeSwitch } from './ThemeSwitch';
 // import { ReviewDebugPanel } from './ReviewDebugPanel'; // Commented out
 
@@ -45,6 +47,10 @@ export const SettingsDrawer: React.FC<SettingsDrawerProps> = ({
   const [tempDisplayName, setTempDisplayName] = useState(displayName);
   const [saving, setSaving] = useState(false);
   // const [showReviewDebug, setShowReviewDebug] = useState(false); // Commented out
+  
+  // Tier toggle modals
+  const [showDowngradeModal, setShowDowngradeModal] = useState(false);
+  const [showComingSoonModal, setShowComingSoonModal] = useState(false);
 
   // Animation setup with NATIVE DRIVER - Initialize based on isVisible
   const slideAnim = useRef(new Animated.Value(isVisible ? 1 : 0)).current;
@@ -167,6 +173,61 @@ export const SettingsDrawer: React.FC<SettingsDrawerProps> = ({
     }
   };
 
+  // Map tier types between TierContext and TierToggle
+  const mapTierToToggleOption = (contextTier: string): TierOption => {
+    switch (contextTier) {
+      case 'shark': return 'shark';
+      case 'strategist': return 'strategist';
+      default: return 'agent'; // Map 'trial' to 'agent'
+    }
+  };
+
+  const handleTierSelect = (selectedTier: TierOption) => {
+    const currentTierOption = mapTierToToggleOption(tier);
+    
+    if (selectedTier === currentTierOption) {
+      // No action if already on this tier
+      return;
+    }
+
+    switch (selectedTier) {
+      case 'strategist':
+        if (currentTierOption === 'shark') {
+          // Show downgrade confirmation
+          setShowDowngradeModal(true);
+        } else {
+          // Navigate to strategist subscription
+          Linking.openURL('https://xavo.app/subscription?plan=strategist');
+        }
+        break;
+      
+      case 'shark':
+        if (currentTierOption !== 'shark') {
+          // Navigate to shark subscription
+          Linking.openURL('https://xavo.app/subscription?plan=shark');
+        }
+        break;
+      
+      case 'agent':
+        // Always show coming soon
+        setShowComingSoonModal(true);
+        break;
+    }
+  };
+
+  const handleConfirmDowngrade = () => {
+    setShowDowngradeModal(false);
+    Linking.openURL('https://xavo.app/subscription?plan=strategist');
+  };
+
+  const handleCancelDowngrade = () => {
+    setShowDowngradeModal(false);
+  };
+
+  const handleCloseComingSoon = () => {
+    setShowComingSoonModal(false);
+  };
+
   // FIXED TRANSLATION CALCULATION
   const translateX = slideAnim.interpolate({
     inputRange: [0, 1],
@@ -279,13 +340,11 @@ export const SettingsDrawer: React.FC<SettingsDrawerProps> = ({
             </Text>
           </View>
 
-          {/* Tier */}
-          <View style={styles.settingItem}>
-            <Text style={[styles.settingLabel, { color: theme.semanticColors.textSecondary }]}>
-              Plan
-            </Text>
-            <TierBadge tier={tier} size="small" />
-          </View>
+          {/* Tier Toggle */}
+          <TierToggle
+            selectedTier={mapTierToToggleOption(tier)}
+            onTierSelect={handleTierSelect}
+          />
         </View>
 
         {/* SCROLLABLE CONTENT with KEYBOARD PERSISTENCE */}
@@ -425,6 +484,80 @@ export const SettingsDrawer: React.FC<SettingsDrawerProps> = ({
         onClose={() => setShowReviewDebug(false)}
       />
       */}
+
+      {/* Downgrade Confirmation Modal */}
+      <Modal
+        visible={showDowngradeModal}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={handleCancelDowngrade}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalContent, { backgroundColor: theme.semanticColors.background }]}>
+            <Text style={[styles.modalTitle, { color: theme.semanticColors.textPrimary }]}>
+              Confirm Downgrade
+            </Text>
+            <Text style={[styles.modalMessage, { color: theme.semanticColors.textSecondary }]}>
+              Are you sure you want to downgrade from Shark to Strategist?
+            </Text>
+            <View style={styles.modalButtons}>
+              <TouchableOpacity
+                style={[
+                  styles.modalButton,
+                  styles.modalCancelButton,
+                  { borderColor: theme.semanticColors.border }
+                ]}
+                onPress={handleCancelDowngrade}
+              >
+                <Text style={[styles.modalButtonText, { color: theme.semanticColors.textPrimary }]}>
+                  No
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.modalButton, styles.modalConfirmButton]}
+                onPress={handleConfirmDowngrade}
+              >
+                <Text style={[styles.modalButtonText, { color: theme.colors.pureWhite }]}>
+                  Yes
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Coming Soon Modal */}
+      <Modal
+        visible={showComingSoonModal}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={handleCloseComingSoon}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalContent, { backgroundColor: theme.semanticColors.background }]}>
+            <Text style={[styles.modalTitle, { color: theme.semanticColors.textPrimary }]}>
+              Coming Soon
+            </Text>
+            <Text style={[styles.modalMessage, { color: theme.semanticColors.textSecondary }]}>
+              The Agent tier is coming soon! Stay tuned for updates.
+            </Text>
+            <View style={styles.modalButtons}>
+              <TouchableOpacity
+                style={[
+                  styles.modalButton,
+                  styles.modalConfirmButton,
+                  { backgroundColor: '#FF3131' }
+                ]}
+                onPress={handleCloseComingSoon}
+              >
+                <Text style={[styles.modalButtonText, { color: theme.colors.pureWhite }]}>
+                  OK
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </Animated.View>
   );
 };
@@ -585,5 +718,64 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
     color: '#FF3B30', // Red color for sign out
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  modalContent: {
+    margin: 20,
+    borderRadius: 12,
+    padding: 24,
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+    elevation: 5,
+    minWidth: 280,
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    marginBottom: 12,
+    textAlign: 'center',
+  },
+  modalMessage: {
+    fontSize: 16,
+    textAlign: 'center',
+    marginBottom: 24,
+    lineHeight: 22,
+  },
+  modalButtons: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    width: '100%',
+    gap: 12,
+  },
+  modalButton: {
+    flex: 1,
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: 44,
+  },
+  modalCancelButton: {
+    borderWidth: 1,
+    backgroundColor: 'transparent',
+  },
+  modalConfirmButton: {
+    backgroundColor: '#007AFF',
+  },
+  modalButtonText: {
+    fontSize: 16,
+    fontWeight: '600',
   },
 }); 

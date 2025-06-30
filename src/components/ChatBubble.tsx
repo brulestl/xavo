@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { 
   View, 
   Text, 
@@ -17,6 +17,13 @@ import { useTheme } from '../providers/ThemeProvider';
 import { Ionicons } from '@expo/vector-icons';
 import { MessageActionMenu } from './MessageActionMenu';
 import { ChatMessage } from './ChatMessage';
+import { 
+  generateThumbnailUrl, 
+  supportsThumbnail, 
+  getFileTypeIcon, 
+  getFileTypeColor, 
+  formatFileSize 
+} from '../utils/thumbnailUtils';
 
 interface ChatBubbleProps {
   message: string;
@@ -60,8 +67,40 @@ export const ChatBubble: React.FC<ChatBubbleProps> = ({
   const [isSaving, setIsSaving] = useState(false);
   const [showActionMenu, setShowActionMenu] = useState(false);
   const [menuPosition, setMenuPosition] = useState({ x: 0, y: 0 });
+  const [imageLoadError, setImageLoadError] = useState(false);
+  const [processingOverlay, setProcessingOverlay] = useState<'spinner' | 'checkmark' | 'hidden'>('hidden');
   const inputRef = useRef<TextInput>(null);
   const bubbleRef = useRef<View>(null);
+  const overlayOpacity = useRef(new Animated.Value(0)).current;
+
+  // Handle in-place processing indicator animations
+  useEffect(() => {
+    if (status === 'uploading' || status === 'processing') {
+      setProcessingOverlay('spinner');
+      Animated.timing(overlayOpacity, {
+        toValue: 1,
+        duration: 200,
+        useNativeDriver: true,
+      }).start();
+    } else if (status === 'processed' || status === 'sent') {
+      if (processingOverlay === 'spinner') {
+        setProcessingOverlay('checkmark');
+        // Show checkmark for 500ms, then fade out
+        setTimeout(() => {
+          Animated.timing(overlayOpacity, {
+            toValue: 0,
+            duration: 300,
+            useNativeDriver: true,
+          }).start(() => {
+            setProcessingOverlay('hidden');
+          });
+        }, 500);
+      }
+    } else if (status === 'failed') {
+      setProcessingOverlay('hidden');
+      overlayOpacity.setValue(0);
+    }
+  }, [status, processingOverlay, overlayOpacity]);
 
   const dynamicBubbleStyle: ViewStyle = {
     backgroundColor: isUser 
@@ -173,214 +212,94 @@ export const ChatBubble: React.FC<ChatBubbleProps> = ({
     }
   };
 
-  const getFileIcon = () => {
-    if (!fileType) return 'document-outline';
+  // Render real 128×128 thumbnail with processing overlay
+  const renderThumbnailWithOverlay = (imageUrl: string, fileType: string) => {
+    const thumbnailUrl = supportsThumbnail(fileType) ? generateThumbnailUrl(imageUrl) : null;
     
-    if (fileType.includes('pdf')) return 'document-text-outline';
-    if (fileType.includes('image')) return 'image-outline';
-    if (fileType.includes('word') || fileType.includes('document')) return 'document-outline';
-    if (fileType.includes('text')) return 'document-text-outline';
-    return 'attach-outline';
-  };
-
-  const formatFileSize = (bytes?: number) => {
-    if (!bytes) return '';
-    if (bytes < 1024) return `${bytes} B`;
-    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-  };
-
-  // Render file message
-  const renderFileContent = () => {
-    // Show inline image thumbnail for image files
-    if (fileType?.startsWith('image/') && fileUrl) {
-      return (
-        <View style={styles.imagePreviewContainer}>
+    return (
+      <View style={styles.thumbnailContainer}>
+        {thumbnailUrl && !imageLoadError ? (
           <Image
-            source={{ uri: fileUrl }}
-            style={{ width: 120, height: 120, borderRadius: 8 }}
+            source={{ uri: thumbnailUrl }}
+            style={styles.realThumbnail}
+            onError={() => setImageLoadError(true)}
             resizeMode="cover"
           />
-          {(status === 'uploading' || status === 'processing') && (
-            <View style={styles.statusOverlay}>
-              <ActivityIndicator size="small" color="#fff" />
-            </View>
-          )}
-        </View>
-      );
-    }
-
-    return (
-      <TouchableOpacity 
-        style={styles.fileContainer}
-        onPress={handleFilePress}
-        disabled={status !== 'sent'}
-      >
-        <View style={styles.fileIconContainer}>
-          <Ionicons 
-            name={getFileIcon()} 
-            size={24} 
-            color={isUser ? '#FFFFFF' : theme.semanticColors.primary} 
-          />
-          {(status === 'uploading' || status === 'processing') && (
-            <View style={styles.statusOverlay}>
-              <ActivityIndicator 
-                size="small" 
-                color={isUser ? '#FFFFFF' : theme.semanticColors.primary} 
-              />
-            </View>
-          )}
-          {status === 'failed' && (
-            <View style={styles.statusOverlay}>
-              <Ionicons 
-                name="warning-outline" 
-                size={16} 
-                color="#FF3B30" 
-              />
-            </View>
-          )}
-        </View>
-        
-        <View style={styles.fileDetails}>
-          <Text 
-            style={[
-              styles.filename, 
-              { 
-                color: isUser ? '#FFFFFF' : theme.semanticColors.textPrimary,
-                opacity: status === 'failed' ? 0.6 : 1
-              }
-            ]}
-            numberOfLines={2}
-          >
-            {filename || 'Unknown file'}
-          </Text>
-          <Text 
-            style={[
-              styles.fileMetadata, 
-              { 
-                color: isUser ? 'rgba(255,255,255,0.7)' : theme.semanticColors.textSecondary,
-                opacity: status === 'failed' ? 0.6 : 1
-              }
-            ]}
-          >
-            {formatFileSize(fileSize)}
-            {status === 'uploading' && ' • Uploading...'}
-            {status === 'processing' && ' • Processing...'}
-            {status === 'processed' && ' • Processed'}
-            {status === 'querying' && ' • Querying...'}
-            {status === 'failed' && ' • Upload failed'}
-          </Text>
-        </View>
-
-        {status === 'sent' && (
-          <Ionicons 
-            name="chevron-forward" 
-            size={16} 
-            color={isUser ? 'rgba(255,255,255,0.5)' : theme.semanticColors.textSecondary} 
-          />
+        ) : (
+          <View style={[
+            styles.iconThumbnail,
+            { backgroundColor: getFileTypeColor(fileType) + '20' }
+          ]}>
+            <Ionicons 
+              name={getFileTypeIcon(fileType) as any} 
+              size={24} 
+              color={getFileTypeColor(fileType)} 
+            />
+          </View>
         )}
-      </TouchableOpacity>
+        
+        {/* In-place processing overlay */}
+        {processingOverlay !== 'hidden' && (
+          <Animated.View 
+            style={[
+              styles.processingOverlay,
+              { opacity: overlayOpacity }
+            ]}
+          >
+            {processingOverlay === 'spinner' ? (
+              <ActivityIndicator size="small" color="#fff" />
+            ) : (
+              <Ionicons name="checkmark" size={14} color="#fff" />
+            )}
+          </Animated.View>
+        )}
+      </View>
     );
   };
 
-  // Render text with attached file content
-  const renderTextWithFileContent = () => {
-    const attachmentInfo = metadata?.attachmentInfo;
-    if (!attachmentInfo) {
-      // Fallback to regular text if no attachment info
-      return <ChatMessage text={message} isUserMessage={isUser} />;
-    }
-
-    const handleAttachedFilePress = async () => {
-      if (attachmentInfo.fileUrl && attachmentInfo.status === 'sent') {
-        try {
-          const supported = await Linking.canOpenURL(attachmentInfo.fileUrl);
-          if (supported) {
-            await Linking.openURL(attachmentInfo.fileUrl);
-          } else {
-            Alert.alert('Cannot open file', 'No app available to open this file type');
-          }
-        } catch (error) {
-          Alert.alert('Error', 'Failed to open file');
-          console.error('File open error:', error);
-        }
-      }
-    };
-
-    const getAttachedFileIcon = () => {
-      const fileType = attachmentInfo.fileType;
-      if (!fileType) return 'document-outline';
-      
-      if (fileType.includes('pdf')) return 'document-text-outline';
-      if (fileType.includes('image')) return 'image-outline';
-      if (fileType.includes('word') || fileType.includes('document')) return 'document-outline';
-      if (fileType.includes('text')) return 'document-text-outline';
-      return 'attach-outline';
-    };
-
+  // Render single unified bubble - ALWAYS text + optional 64×64 thumbnail
+  const renderUnifiedContent = () => {
+    const hasFileAttachment = metadata?.hasAttachment || metadata?.file_url || fileUrl;
+    const attachmentFileUrl = metadata?.file_url || fileUrl;
+    const attachmentFileType = metadata?.fileType || fileType;
+    const isImageAttachment = attachmentFileType?.startsWith('image/');
+    
     return (
-      <View style={styles.textWithFileContainer}>
-        {/* Text Content */}
+      <View style={styles.textWithThumbnailContainer}>
+        {/* Main text content - ALWAYS present */}
         <View style={styles.textContent}>
           <ChatMessage text={message} isUserMessage={isUser} />
         </View>
         
-        {/* File Attachment */}
-        <TouchableOpacity 
-          style={[
-            styles.attachedFileContainer,
-            {
-              backgroundColor: isUser 
-                ? 'rgba(255,255,255,0.15)' 
-                : (isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)'),
-              borderColor: isUser 
-                ? 'rgba(255,255,255,0.3)' 
-                : theme.semanticColors.border
-            }
-          ]}
-          onPress={handleAttachedFilePress}
-          disabled={attachmentInfo.status !== 'sent'}
-        >
-          <View style={styles.attachedFileIcon}>
-            <Ionicons 
-              name={getAttachedFileIcon()} 
-              size={20} 
-              color={isUser ? 'rgba(255,255,255,0.8)' : theme.semanticColors.primary} 
-            />
+        {/* Compact 64×64 thumbnail attachment */}
+        {hasFileAttachment && attachmentFileUrl && attachmentFileType && (
+          <View style={styles.inlineThumbnailContainer}>
+            {renderThumbnailWithOverlay(attachmentFileUrl, attachmentFileType)}
+            
+            {/* Only show file details for non-image attachments */}
+            {!isImageAttachment && (
+              <View style={styles.thumbnailFileDetails}>
+                <Text 
+                  style={[
+                    styles.thumbnailFilename, 
+                    { color: isUser ? 'rgba(255,255,255,0.9)' : theme.semanticColors.textPrimary }
+                  ]}
+                  numberOfLines={1}
+                >
+                  📎 {filename || metadata?.attachmentInfo?.filename || 'File'}
+                </Text>
+                <Text 
+                  style={[
+                    styles.thumbnailFileSize, 
+                    { color: isUser ? 'rgba(255,255,255,0.7)' : theme.semanticColors.textSecondary }
+                  ]}
+                >
+                  {fileSize ? formatFileSize(fileSize) : (metadata?.attachmentInfo?.fileSize ? formatFileSize(metadata.attachmentInfo.fileSize) : '')}
+                </Text>
+              </View>
+            )}
           </View>
-          
-          <View style={styles.attachedFileDetails}>
-            <Text 
-              style={[
-                styles.attachedFilename, 
-                { 
-                  color: isUser ? 'rgba(255,255,255,0.9)' : theme.semanticColors.textPrimary
-                }
-              ]}
-              numberOfLines={1}
-            >
-              📎 {attachmentInfo.filename}
-            </Text>
-            <Text 
-              style={[
-                styles.attachedFileSize, 
-                { 
-                  color: isUser ? 'rgba(255,255,255,0.7)' : theme.semanticColors.textSecondary
-                }
-              ]}
-            >
-              {formatFileSize(attachmentInfo.fileSize)}
-            </Text>
-          </View>
-
-          {attachmentInfo.status === 'sent' && (
-            <Ionicons 
-              name="download-outline" 
-              size={16} 
-              color={isUser ? 'rgba(255,255,255,0.5)' : theme.semanticColors.textSecondary} 
-            />
-          )}
-        </TouchableOpacity>
+        )}
       </View>
     );
   };
@@ -497,7 +416,7 @@ export const ChatBubble: React.FC<ChatBubbleProps> = ({
           delayLongPress={500}
           activeOpacity={0.8}
         >
-          {type === 'file' ? renderFileContent() : type === 'text_with_file' ? renderTextWithFileContent() : <ChatMessage text={message} isUserMessage={isUser} />}
+          {renderUnifiedContent()}
         </TouchableOpacity>
       </Animated.View>
 
@@ -637,5 +556,63 @@ const styles = StyleSheet.create({
   imagePreviewContainer: {
     position: 'relative',
     marginVertical: 4,
+  },
+  // Compact 64×64 thumbnail styles for unified content
+  thumbnailContainer: {
+    position: 'relative',
+    width: 64,
+    height: 64,
+    borderRadius: 6,
+    overflow: 'hidden',
+    marginRight: 10,
+  },
+  realThumbnail: {
+    width: 64,
+    height: 64,
+    borderRadius: 6,
+  },
+  iconThumbnail: {
+    width: 64,
+    height: 64,
+    borderRadius: 6,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  processingOverlay: {
+    position: 'absolute',
+    top: 2,
+    right: 2,
+    backgroundColor: 'rgba(0,0,0,0.7)',
+    borderRadius: 10,
+    width: 20,
+    height: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  textWithThumbnailContainer: {
+    flexDirection: 'column',
+  },
+  inlineThumbnailContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 8,
+    padding: 6,
+    backgroundColor: 'rgba(255,255,255,0.05)',
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.1)',
+  },
+  thumbnailFileDetails: {
+    flex: 1,
+    marginLeft: 8,
+  },
+  thumbnailFilename: {
+    fontSize: 13,
+    fontWeight: '500',
+    marginBottom: 1,
+  },
+  thumbnailFileSize: {
+    fontSize: 11,
+    opacity: 0.8,
   },
 });

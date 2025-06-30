@@ -54,6 +54,18 @@ export const FilePreview: React.FC<FilePreviewProps> = ({
     return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
   };
 
+  const getFileSizeDisplay = (file: AnalyzedFile) => {
+    const isImage = file.type.startsWith('image/');
+    
+    // For images with no size info, show a more appropriate message
+    if (isImage && (file.size === 0 || file.size === undefined)) {
+      return 'Image file';
+    }
+    
+    // For non-images or images with valid size, show the actual size
+    return formatFileSize(file.size);
+  };
+
   if (compact) {
     return (
       <View style={[styles.compactContainer, { backgroundColor: theme.semanticColors.surface, borderColor: theme.semanticColors.border }]}>
@@ -67,7 +79,7 @@ export const FilePreview: React.FC<FilePreviewProps> = ({
               {file.name}
             </Text>
             <Text style={[styles.compactFileSize, { color: theme.semanticColors.textSecondary }]}>
-              {formatFileSize(file.size)}
+              {getFileSizeDisplay(file)}
             </Text>
           </View>
 
@@ -123,7 +135,7 @@ export const FilePreview: React.FC<FilePreviewProps> = ({
               {file.name}
             </Text>
             <Text style={[styles.fileSize, { color: theme.semanticColors.textSecondary }]}>
-              {formatFileSize(file.size)}
+              {getFileSizeDisplay(file)}
             </Text>
             
             {file.isAnalyzing && (

@@ -37,6 +37,7 @@ import { useConversations } from '../hooks/useConversations';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../lib/supabase';
 import { SharkToggleIcon } from '../components/SharkToggleIcon';
+import { supabaseFileService } from '../services/supabaseFileService';
 
 
 type ChatScreenNavigationProp = DrawerNavigationProp<any>;
@@ -46,12 +47,15 @@ type ChatScreenNavigationProp = DrawerNavigationProp<any>;
 interface RouteParams {
   sessionId?: string;
   initialMessage?: string;
+  initialAttachments?: any[];
+  textMessageId?: string;
+  fileMessageId?: string;
+  isProcessingFile?: boolean;
 }
 
 export const ChatScreen: React.FC = () => {
   const navigation = useNavigation<ChatScreenNavigationProp>();
   const route = useRoute();
-  const { sessionId, initialMessage } = (route.params as RouteParams) || {};
   const { theme, isDark } = useTheme();
   const { user, tier, canMakeQuery } = useAuth();
   const insets = useSafeAreaInsets();
@@ -143,6 +147,15 @@ export const ChatScreen: React.FC = () => {
     };
   }, []);
 
+  // @ts-ignore - navigation params
+  const routeParams = route.params as RouteParams;
+  const sessionId = routeParams?.sessionId;
+  const initialMessage = routeParams?.initialMessage;
+  const initialAttachments = routeParams?.initialAttachments;
+  const textMessageId = routeParams?.textMessageId;
+  const fileMessageId = routeParams?.fileMessageId;
+  const isProcessingFileFromRoute = routeParams?.isProcessingFile;
+
   // Handle session loading and initial message processing
   useEffect(() => {
     const initializeChat = async () => {
@@ -164,7 +177,7 @@ export const ChatScreen: React.FC = () => {
         }
         
         // Reset processed state when route params change
-        if (initialMessage) {
+        if (initialMessage || initialAttachments) {
           setHasProcessedInitialMessage(false);
         }
         
@@ -178,6 +191,115 @@ export const ChatScreen: React.FC = () => {
           await loadSession(sessionId, preserveMessages);
         }
         
+        // 🔥 ENHANCED: Handle initial attachments with Enhanced File Flow
+        if (initialAttachments && initialAttachments.length > 0 && !hasProcessedInitialMessage && user?.id && sessionId) {
+          console.log('🚀 [ChatScreen] Processing initial attachments with Enhanced File Flow');
+          setHasProcessedInitialMessage(true);
+          setFileProcessingState(true);
+          
+          try {
+            const file = initialAttachments[0];
+            
+            // Continue the Enhanced File Flow started in HomeScreen
+            console.log('🔧 [ChatScreen] Continuing Enhanced File Flow from HomeScreen');
+            
+            // Start file processing using supabaseFileService
+            const result = await supabaseFileService.processFile(
+              file.uri,
+              file.type,
+              file.name,
+              sessionId!,
+              (progress) => {
+                console.log(`📄 File processing: ${progress.stage} - ${progress.message}`);
+                
+                // Update the optimistic message with progress
+                if (textMessageId || fileMessageId) {
+                  const messageId = textMessageId || fileMessageId;
+                  const updatedMessage = {
+                    id: messageId,
+                    status: 
+                      progress.stage === 'uploading'   ? 'uploading' :
+                      progress.stage === 'processing'  ? 'processing' :
+                      progress.stage === 'completed'   ? 'processed' : 'processing',
+                    metadata: {
+                      hasAttachment: true,
+                      file_url: file.uri,
+                      fileType: file.type,
+                      processingStatus: progress.stage
+                    }
+                  };
+                  updateMessage(messageId, updatedMessage);
+                }
+              }
+            );
+            
+            if (result.success) {
+              console.log(`✅ File processed successfully: ${result.fileId}`);
+              
+              // Update the message to show processed state
+              if (textMessageId || fileMessageId) {
+                const messageId = textMessageId || fileMessageId;
+                const processedMessage = {
+                  id: messageId,
+                  status: 'processed',
+                  metadata: {
+                    hasAttachment: true,
+                    file_url: file.uri,
+                    fileType: file.type,
+                    processingStatus: 'completed',
+                    fileId: result.fileId
+                  }
+                };
+                updateMessage(messageId, processedMessage);
+              }
+              
+              // Auto-analyze if file has chunks
+              const hasValidChunks = result.chunksCreated && result.chunksCreated > 0;
+              if (hasValidChunks && result.fileId) {
+                console.log('🚀 [ChatScreen] Starting auto-analysis...');
+                
+                try {
+                  // Use appropriate question for auto-analysis
+                  let analysisQuestion: string;
+                  if (file.isRAGDocument) {
+                    analysisQuestion = initialMessage || 
+                      'Please analyze this document and provide a comprehensive summary of its contents, key points, and main themes.';
+                  } else {
+                    analysisQuestion = initialMessage || 
+                      'Please analyze this image and describe what you see, including any text content.';
+                  }
+                  
+                  const queryResult = await supabaseFileService.callQueryFileFunction({
+                    question: analysisQuestion,
+                    fileId: result.fileId,
+                    sessionId: sessionId!
+                  });
+                  
+                  if (queryResult && queryResult.answer) {
+                    console.log('✅ [ChatScreen] Auto-analysis completed');
+                    // Reload session to show the new assistant message
+                    await loadSession(sessionId!, false);
+                  }
+                  
+                } catch (queryError) {
+                  console.error('💥 [ChatScreen] Auto-analysis failed:', queryError);
+                }
+              }
+              
+            } else {
+              throw new Error(result.error || 'File processing failed');
+            }
+            
+          } catch (error) {
+            console.error('❌ [ChatScreen] Enhanced File Flow failed:', error);
+            Alert.alert('Error', 'Failed to process file. Please try again.');
+          } finally {
+            setFileProcessingState(false);
+          }
+          
+          return; // Don't process regular initial message
+        }
+        
         // If we have an initial message and haven't processed it yet, send it
         if (initialMessage && !hasProcessedInitialMessage) {
           setHasProcessedInitialMessage(true);
@@ -189,7 +311,7 @@ export const ChatScreen: React.FC = () => {
     };
 
     initializeChat();
-  }, [sessionId, initialMessage]);
+  }, [sessionId, initialMessage, initialAttachments]);
 
   const handleSendMessage = async (message: string, attachments?: AnalyzedFile[]) => {
     if (!canMakeQuery) {

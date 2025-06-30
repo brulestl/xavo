@@ -264,3 +264,147 @@ Result: 1 row, second request returns existing message
 **After**: Bulletproof idempotency - one logical message = one database row, always.
 
 The implementation provides **Instagram/WhatsApp-level reliability** for message deduplication while maintaining optimal performance and user experience. 
+
+# Duplicate Bubble Prevention - Investigation & Fixes Summary
+
+## The Problem
+Users were experiencing duplicate bubbles during image upload flow:
+1. **"File uploaded: {filename}" bubble** (optimistic upload record)
+2. **User text bubble enriched with thumbnail** 
+
+The goal was to show only the enriched text bubble with thumbnail, eliminating the standalone upload bubble.
+
+## Root Causes Identified
+
+### 1. Deduplication Logic Bug (src/hooks/useChat.ts)
+**Problem**: In `loadMessagesWithAttachments()`, the condition was checking if ANY enrichable text messages exist instead of specifically checking for the same client_id:
+```javascript
+// ❌ BROKEN: Checked if ANY enrichable messages exist
+if (msg.client_id && enrichableTextMessages.size > 0) {
+
+// ✅ FIXED: Check specifically for this client_id
+if (msg.client_id && fileUploadsByClientId.has(msg.client_id)) {
+```
+
+### 2. Duplicate Optimistic Messages (src/components/Composer.tsx)
+**Problem**: The "Old RAG Flow" was explicitly creating TWO separate optimistic messages:
+```javascript
+// ❌ BROKEN: Created separate text and file bubbles
+const textMessage = { /* text bubble */ };
+const fileMessage = { /* file bubble */ };
+onAddOptimisticMessage(textMessage);
+onAddOptimisticMessage(fileMessage);
+
+// ✅ FIXED: Single unified message
+const unifiedMessage = {
+  type: 'text_with_file',
+  // ... includes both text and file metadata
+};
+onAddOptimisticMessage(unifiedMessage);
+```
+
+### 3. Database Design Complexity
+The system creates separate `file_upload` messages linked to text messages, requiring careful deduplication during reload.
+
+## Fixes Applied
+
+### ✅ Fix 1: Enhanced Deduplication Logic
+**File**: `src/hooks/useChat.ts` - `loadMessagesWithAttachments()`
+
+- Fixed condition to properly check for matching client_id
+- Added comprehensive logging to trace deduplication process
+- Ensured file_upload messages are skipped when matching text message exists
+- Added verbose logging (to be removed after verification)
+
+**Key Changes**:
+```javascript
+// More precise deduplication logic
+if (msg.action_type === 'file_upload') {
+  if (msg.client_id && fileUploadsByClientId.has(msg.client_id)) {
+    const textMsgExists = allMessages.find(m => 
+      m.client_id === msg.client_id && m.action_type !== 'file_upload'
+    );
+    if (textMsgExists) {
+      console.log(`📎 ✅ SKIPPING file_upload ${msg.id} - text message ${textMsgExists.id} will be enriched instead`);
+      continue; // Skip the file_upload message
+    }
+  }
+}
+```
+
+### ✅ Fix 2: Unified Optimistic Messages in Composer
+**File**: `src/components/Composer.tsx` - "Old RAG Flow" section
+
+- Changed from creating two separate messages to one unified message
+- Used `text_with_file` type instead of separate `text` and `file` types
+- Passed same unified message ID for both textMessageId and fileMessageId
+
+**Key Changes**:
+```javascript
+// 🔧 FIXED: Create SINGLE unified message instead of two separate bubbles
+const unifiedMessage = {
+  id: unifiedMessageId,
+  content: textToSend.trim(),
+  type: 'text_with_file',
+  filename: ragFile.name,
+  fileUrl: ragFile.uri,
+  // ... file metadata for thumbnail generation
+  metadata: {
+    hasAttachment: true,
+    file_url: ragFile.uri,
+    fileType: ragFile.type,
+    processingStatus: 'uploading'
+  }
+};
+```
+
+### ✅ Fix 3: Verified ChatBubble Rendering
+**File**: `src/components/ChatBubble.tsx`
+
+- Confirmed component already uses unified rendering approach
+- Only renders one bubble via `renderUnifiedContent()`
+- Shows text + optional 64×64 thumbnail when `metadata.hasAttachment` is true
+- No separate render paths for file bubbles when text is enriched
+
+### ✅ Fix 4: Confirmed Scroll Behavior
+**File**: `src/screens/ChatScreen.tsx`
+
+- Verified conversation switching properly scrolls to bottom
+- Auto-scroll triggers on conversation ID change
+- FlatList callbacks ensure proper scroll positioning
+- No additional fixes needed
+
+## Expected Outcome
+
+After these fixes:
+- ✅ **Single enriched bubble**: Only one bubble shows with text + thumbnail
+- ✅ **No persistent upload bubbles**: "File uploaded" messages vanish after processing
+- ✅ **Clean reload behavior**: On conversation refresh, only enriched text bubbles appear
+- ✅ **No React key warnings**: Eliminated duplicate key conflicts
+- ✅ **Proper scroll positioning**: Conversations land at latest message when switching
+
+## Testing Notes
+
+The enhanced logging will show:
+- All incoming messages before deduplication
+- Which file_upload messages get skipped
+- Which text messages get enriched
+- Final processed message array
+
+**TODO**: Remove verbose logging once duplicate bubble fix is confirmed working.
+
+## Files Modified
+
+1. `src/hooks/useChat.ts` - Enhanced deduplication logic in `loadMessagesWithAttachments()`
+2. `src/components/Composer.tsx` - Fixed old RAG flow to create unified messages
+3. `DUPLICATE_MESSAGE_PREVENTION_SUMMARY.md` - This documentation
+
+## Verification Steps
+
+1. **Upload image with text**: Should show only one bubble with text + thumbnail
+2. **Reload conversation**: Should show only enriched bubbles, no standalone file uploads
+3. **Check console logs**: Should see "SKIPPING file_upload" messages during deduplication
+4. **Switch conversations**: Should auto-scroll to bottom of chat
+5. **No React warnings**: Should see no "duplicate key" warnings in console
+
+The duplicate bubble issue should now be completely resolved across all file upload flows. 

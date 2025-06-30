@@ -105,11 +105,15 @@ export const HomeScreen: React.FC = () => {
   } = useConversations();
 
   // Use chat hook for session management
-  const { deleteSession, renameSession } = useChat();
+  const { deleteSession, renameSession, sendFileMessage, sendCombinedFileAndTextMessage, appendMessage, updateMessage, removeMessage, createSession } = useChat();
 
   // State for voice recording
   const [isRecording, setIsRecording] = useState(false);
   const [transcription, setTranscription] = useState('');
+  const [isProcessingFile, setIsProcessingFile] = useState(false);
+  
+  // Add state to track attached files from Composer
+  const [attachedFiles, setAttachedFiles] = useState<any[]>([]);
 
   // Use chat hook for session management
   useEffect(() => {
@@ -139,7 +143,7 @@ export const HomeScreen: React.FC = () => {
     return unsubscribe;
   }, [navigation, refreshConversations]);
 
-  const startConversation = async (message: string) => {
+  const startConversation = async (message: string, attachments?: any[]) => {
     if (!user?.id || isSendingMessage) return;
     
     setIsSendingMessage(true);
@@ -148,7 +152,8 @@ export const HomeScreen: React.FC = () => {
       // No need to refresh conversations here - ChatScreen will create the session
       // and useConversations will automatically pick it up
       (navigation as any).navigate('Chat', { 
-        initialMessage: message 
+        initialMessage: message,
+        initialAttachments: attachments
       });
 
     } catch (error) {
@@ -161,8 +166,90 @@ export const HomeScreen: React.FC = () => {
     }
   };
 
-  const handleSendMessage = async (message: string) => {
-    if (!message.trim()) return;
+  const handleSendMessage = async (message: string, attachments?: any[]) => {
+    if (!message.trim() && !attachments?.length) return;
+    
+    // 🔥 CRITICAL: Detect file attachments and handle Enhanced File Flow BEFORE navigation
+    const hasAttachments = attachments && attachments.length > 0;
+    
+    if (hasAttachments && user?.id) {
+      console.log('🚀 [HomeScreen] Detected file attachments, starting Enhanced File Flow');
+      setIsSendingMessage(true);
+      setIsProcessingFile(true);
+      
+      try {
+        // Step 1: Create session FIRST
+        console.log('🆕 [HomeScreen] Creating session for file upload...');
+        const file = attachments[0];
+        const fileTypeLabel = file.isRAGDocument ? 'Document' : 'Image';
+        const sessionTitle = message.trim() ? `${message.trim().substring(0, 30)}...` : `${fileTypeLabel}: ${file.name}`;
+        
+        const newSession = await createSession(sessionTitle);
+        if (!newSession) {
+          throw new Error('Failed to create session');
+        }
+        
+        console.log('✅ [HomeScreen] Session created:', newSession.id);
+        
+        // Step 2: Generate UUIDs for optimistic messages
+        const generateUUID = (): string => {
+          return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+            const r = Math.random() * 16 | 0;
+            const v = c === 'x' ? r : (r & 0x3 | 0x8);
+            return v.toString(16);
+          });
+        };
+        
+        const textMessageId = message.trim() ? generateUUID() : '';
+        const fileMessageId = generateUUID();
+        
+        // Step 3: Add optimistic user message with file attachment
+        const optimisticMessage = {
+          id: message.trim() ? textMessageId : fileMessageId,
+          content: message.trim() || `Uploading ${file.name}...`,
+          role: 'user' as 'user',
+          session_id: newSession.id,
+          created_at: new Date().toISOString(),
+          type: message.trim() ? 'text_with_file' as 'text_with_file' : 'file' as 'file',
+          filename: file.name,
+          fileUrl: file.uri,
+          fileSize: file.size,
+          fileType: file.type,
+          status: 'uploading' as 'uploading',
+          metadata: {
+            hasAttachment: true,
+            file_url: file.uri,
+            fileType: file.type,
+            processingStatus: 'uploading'
+          }
+        };
+        
+        // Add optimistic message to store
+        appendMessage(optimisticMessage);
+        
+        // Step 4: Navigate to ChatScreen with session and processing state
+        console.log('🚀 [HomeScreen] Navigating to ChatScreen with Enhanced File Flow state');
+        (navigation as any).navigate('Chat', { 
+          sessionId: newSession.id,
+          initialAttachments: attachments,
+          initialMessage: message.trim(),
+          textMessageId,
+          fileMessageId,
+          isProcessingFile: true
+        });
+        
+      } catch (error) {
+        console.error('❌ [HomeScreen] Enhanced File Flow failed:', error);
+        Alert.alert('Error', 'Failed to start conversation with file. Please try again.');
+        setIsProcessingFile(false);
+      } finally {
+        setIsSendingMessage(false);
+      }
+      
+      return;
+    }
+    
+    // Regular text-only conversation
     await startConversation(message.trim());
   };
 
@@ -346,6 +433,11 @@ export const HomeScreen: React.FC = () => {
     setDeletingConversation(null);
   };
 
+  // Callback to receive attached files from Composer
+  const handleAttachedFilesChange = (files: any[]) => {
+    setAttachedFiles(files);
+  };
+
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: theme.semanticColors.background }]} edges={['top']}>
       <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} backgroundColor={theme.semanticColors.background} />
@@ -508,16 +600,19 @@ export const HomeScreen: React.FC = () => {
           ]}
         >
           <Composer
-            onSend={handleSendMessage}
+            onSend={(message: string, attachments?: any[]) => handleSendMessage(message, attachments || attachedFiles)}
+            onAttachedFilesChange={handleAttachedFilesChange}
             placeholder={
               transcription 
                 ? `🎙️ ${transcription}` 
                 : (isSendingMessage ? "Starting conversation..." : "What's on your mind?")
             }
-            disabled={isSendingMessage}
+            disabled={isSendingMessage || isProcessingFile}
             sessionId={undefined} // Will be updated when we have active session
             isRecording={isRecording}
             liveTranscription={transcription}
+            isProcessingFile={isProcessingFile}
+            setFileProcessingState={setIsProcessingFile}
           />
         </View>
       </View>

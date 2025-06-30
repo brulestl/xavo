@@ -705,33 +705,105 @@ export const useChat = (): UseChatReturn => {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return [];
 
-      const { data: allMessages, error: messagesError } = await supabase
-        .from('conversation_messages')
-        .select('*')
-        .eq('session_id', sessionId)
-        .eq('user_id', user.id)
-        .order('created_at', { ascending: true });
+      // Load all messages and file upload records
+      const [messagesQuery, fileMessagesQuery, userFilesQuery] = await Promise.all([
+        supabase
+          .from('conversation_messages')
+          .select('*')
+          .eq('session_id', sessionId)
+          .eq('user_id', user.id)
+          .order('created_at', { ascending: true }),
+        
+        supabase
+          .from('conversation_messages')
+          .select('*')
+          .eq('session_id', sessionId)
+          .eq('user_id', user.id)
+          .eq('action_type', 'file_upload')
+          .order('created_at', { ascending: true }),
+          
+        supabase
+          .from('user_files')
+          .select('*')
+          .eq('user_id', user.id)
+          .eq('session_id', sessionId)
+      ]);
 
-      if (messagesError) {
-        throw new Error(`Failed to load messages: ${messagesError.message}`);
+      if (messagesQuery.error) {
+        throw new Error(`Failed to load messages: ${messagesQuery.error.message}`);
       }
 
-      const { data: userFiles, error: filesError } = await supabase
-        .from('user_files')
-        .select('*')
-        .eq('user_id', user.id)
-        .eq('session_id', sessionId);
+      const allMessages = messagesQuery.data || [];
+      const fileMessages = fileMessagesQuery.data || [];
+      const userFiles = userFilesQuery.data || [];
+      
+      console.log(`📎 Found ${allMessages.length} messages, ${fileMessages.length} file uploads, ${userFiles.length} user files`);
 
-      if (filesError) {
-        console.warn('Failed to load user files:', filesError);
+      // 🔍 INVESTIGATION: Log every incoming message type BEFORE dedupe
+      // TODO: Remove this verbose logging once duplicate bubble issue is confirmed fixed
+      console.log('🔍 ALL INCOMING MESSAGES:');
+      allMessages.forEach((msg, index) => {
+        console.log(`  ${index}: id=${msg.id}, action_type=${msg.action_type}, client_id=${msg.client_id}, content="${msg.content?.substring(0, 50)}..."`);
+      });
+
+      // Create a map for file data lookup
+      const fileDataMap = new Map(userFiles.map(f => [f.id, f]));
+      
+      // First pass: Map file uploads by client_id and identify what can be enriched
+      const fileUploadsByClientId = new Map<string, any>();
+      const enrichableTextMessages = new Set<string>();
+      
+      for (const msg of allMessages) {
+        if (msg.action_type === 'file_upload' && msg.metadata?.fileId && msg.client_id) {
+          fileUploadsByClientId.set(msg.client_id, msg);
+          console.log(`📎 MAPPED file_upload by client_id: ${msg.client_id} -> fileId: ${msg.metadata.fileId}`);
+        }
+      }
+      
+      // Identify text messages that can be enriched with file data
+      for (const msg of allMessages) {
+        if (msg.action_type !== 'file_upload' && msg.client_id && fileUploadsByClientId.has(msg.client_id)) {
+          enrichableTextMessages.add(msg.id);
+          console.log(`📎 ENRICHABLE text message found: id=${msg.id}, client_id=${msg.client_id}, content="${msg.content?.substring(0, 30)}..."`);
+        }
       }
 
-      const sessionFiles = userFiles || [];
-      console.log(`📎 Found ${allMessages?.length || 0} messages and ${sessionFiles.length} files`);
+      console.log(`🔍 SUMMARY: ${fileUploadsByClientId.size} file uploads by client_id, ${enrichableTextMessages.size} enrichable text messages`);
 
+      // 🔧 FIXES APPLIED:
+      // 1. Fixed deduplication logic to properly skip file_upload messages when matching text message exists
+      // 2. Fixed Composer to create single unified message instead of separate text + file bubbles
+      // 3. ChatBubble.tsx already uses unified rendering approach
+      
+      // Process messages - ELIMINATE duplicate file bubbles
       const processedMessages: ChatMessage[] = [];
 
-      for (const msg of allMessages || []) {
+      for (const msg of allMessages) {
+        console.log(`🔍 PROCESSING message: id=${msg.id}, action_type=${msg.action_type}, client_id=${msg.client_id}`);
+        
+        // 🔧 FIXED: More precise deduplication logic
+        if (msg.action_type === 'file_upload') {
+          // Skip if there's a text message with same client_id that can be enriched
+          if (msg.client_id && fileUploadsByClientId.has(msg.client_id)) {
+            const textMsgExists = allMessages.find(m => 
+              m.client_id === msg.client_id && m.action_type !== 'file_upload'
+            );
+            if (textMsgExists) {
+              console.log(`📎 ✅ SKIPPING file_upload ${msg.id} - text message ${textMsgExists.id} will be enriched instead`);
+              continue;
+            }
+          }
+          
+          // Skip linked file uploads that reference a text message
+          if (msg.metadata?.textMessageId) {
+            console.log(`📎 ✅ SKIPPING linked file_upload ${msg.id} - already linked to text message ${msg.metadata.textMessageId}`);
+            continue;
+          }
+          
+          // Only process truly standalone file uploads
+          console.log(`📎 ✅ PROCESSING standalone file_upload ${msg.id}`);
+        }
+
         const baseMessage: ChatMessage = {
           id: msg.id,
           content: msg.content,
@@ -739,12 +811,13 @@ export const useChat = (): UseChatReturn => {
           session_id: sessionId,
           created_at: msg.created_at || msg.message_timestamp,
           type: 'text',
-          metadata: msg.metadata
+          metadata: msg.metadata || {}
         };
 
-        if (msg.action_type === 'file_upload' && msg.metadata?.fileId) {
-          const fileId = msg.metadata.fileId;
-          const fileData = sessionFiles.find(f => f.id === fileId);
+        // CRITICAL: Enrich text messages with file attachment metadata
+        if (msg.client_id && fileUploadsByClientId.has(msg.client_id)) {
+          const fileUploadMsg = fileUploadsByClientId.get(msg.client_id);
+          const fileData = fileDataMap.get(fileUploadMsg.metadata?.fileId);
           
           if (fileData) {
             baseMessage.type = 'text_with_file';
@@ -756,6 +829,10 @@ export const useChat = (): UseChatReturn => {
             baseMessage.metadata = {
               ...baseMessage.metadata,
               hasAttachment: true,
+              file_url: fileData.file_url, // For 64×64 thumbnail generation
+              fileType: fileData.file_type, // For thumbnail generation
+              processingStatus: 'completed',
+              fileId: fileData.id,
               attachmentInfo: {
                 filename: fileData.file_name,
                 fileUrl: fileData.file_url,
@@ -765,15 +842,53 @@ export const useChat = (): UseChatReturn => {
                 status: 'sent'
               }
             };
-            console.log(`📎 Enriched message ${msg.id} with file: ${fileData.file_name}`);
+            console.log(`📎 ✅ ENRICHED text message ${msg.id} with file: ${fileData.file_name}`);
+          }
+        }
+        
+        // Handle pure file uploads (no text counterpart)
+        else if (msg.action_type === 'file_upload' && msg.metadata?.fileId) {
+          const fileData = fileDataMap.get(msg.metadata.fileId);
+          
+          if (fileData) {
+            baseMessage.type = 'file';
+            baseMessage.content = `Document uploaded: ${fileData.file_name}`;
+            baseMessage.filename = fileData.file_name;
+            baseMessage.fileUrl = fileData.file_url;
+            baseMessage.fileSize = fileData.file_size;
+            baseMessage.fileType = fileData.file_type;
+            baseMessage.status = 'sent';
+            baseMessage.metadata = {
+              ...baseMessage.metadata,
+              hasAttachment: true,
+              file_url: fileData.file_url, // For 64×64 thumbnail generation
+              fileType: fileData.file_type, // For thumbnail generation
+              processingStatus: 'completed',
+              fileId: fileData.id,
+              isStandaloneFile: true
+            };
+            console.log(`📎 ✅ PROCESSED standalone file ${msg.id}: ${fileData.file_name}`);
           }
         }
 
         processedMessages.push(baseMessage);
+        console.log(`📎 ✅ ADDED to processed: id=${baseMessage.id}, type=${baseMessage.type}, hasAttachment=${!!baseMessage.metadata?.hasAttachment}`);
       }
 
-      console.log(`✅ Processed ${processedMessages.length} messages with file enrichment`);
-      return processedMessages;
+      // Deduplicate based on ID (not client_id since database messages have real IDs)
+      const uniqueMessages = processedMessages.filter((msg, index, arr) => 
+        arr.findIndex(m => m.id === msg.id) === index
+      );
+
+      // 🔍 FINAL INVESTIGATION: Log final message array
+      // TODO: Remove this verbose logging once duplicate bubble issue is confirmed fixed
+      console.log(`🔍 FINAL MESSAGES ARRAY (${uniqueMessages.length} messages):`);
+      uniqueMessages.forEach((msg, index) => {
+        console.log(`  ${index}: id=${msg.id}, type=${msg.type}, hasAttachment=${!!msg.metadata?.hasAttachment}, content="${msg.content?.substring(0, 50)}..."`);
+      });
+
+      console.log(`✅ Processed ${uniqueMessages.length} unique messages with file enrichment`);
+      return uniqueMessages;
 
     } catch (error) {
       console.error('❌ Error loading messages with attachments:', error);

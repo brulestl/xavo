@@ -31,6 +31,7 @@ interface ComposerProps {
   onSendCombinedFileAndText?: (file: any, text: string, textMessageId: string, fileMessageId: string) => void;
   onAddOptimisticMessage?: (message: any) => void;
   onCreateSession?: (title?: string) => Promise<{ id: string; title: string } | null>;
+  onAttachedFilesChange?: (files: AnalyzedFile[]) => void;
   placeholder?: string;
   disabled?: boolean;
   sessionId?: string;
@@ -47,6 +48,7 @@ export const Composer: React.FC<ComposerProps> = ({
   onSendCombinedFileAndText,
   onAddOptimisticMessage,
   onCreateSession,
+  onAttachedFilesChange,
   placeholder = "What's on your mind?",
   disabled = false,
   sessionId,
@@ -214,38 +216,35 @@ export const Composer: React.FC<ComposerProps> = ({
             
             console.log('🆔 [Composer] Generated UUIDs:', { textMessageId, fileMessageId, confirmedSessionId });
             
-            // Add optimistic text message if there's text
-            if (textToSend.trim()) {
-              const textMessage = {
-                id: textMessageId,
-                content: textToSend.trim(),
-                role: 'user',
-                session_id: confirmedSessionId,
-                created_at: new Date().toISOString(),
-                type: 'text',
-                status: 'sent'
-              };
-              onAddOptimisticMessage(textMessage);
-            }
-            
-            // Add optimistic file bubble with uploading status
-            const fileMessage = {
-              id: fileMessageId,
-              content: file.name,
+            // UNIFIED APPROACH: Single message with text + file metadata
+            const unifiedMessage = {
+              id: textToSend.trim() ? textMessageId : fileMessageId,
+              content: textToSend.trim() || `Uploading ${file.name}...`,
               role: 'user',
               session_id: confirmedSessionId,
               created_at: new Date().toISOString(),
-              type: 'file',
+              type: textToSend.trim() ? 'text_with_file' : 'file',
               filename: file.name,
               fileUrl: file.uri,
               fileSize: file.size,
               fileType: file.type,
-              status: 'uploading'
+              status: 'uploading',
+              metadata: {
+                hasAttachment: true,
+                file_url: file.uri, // For thumbnail generation
+                fileType: file.type, // For thumbnail generation
+                processingStatus: 'uploading'
+              }
             };
-            onAddOptimisticMessage(fileMessage);
+            onAddOptimisticMessage(unifiedMessage);
             
             // Clear attachments immediately 
             setAttachedFiles([]);
+            
+            // Notify parent component that files were cleared
+            if (onAttachedFilesChange) {
+              onAttachedFilesChange([]);
+            }
             
             // Process file using new Supabase edge functions
             console.log(`📄 Processing file: ${file.name} (${file.type}) with session: ${confirmedSessionId}`);
@@ -281,14 +280,20 @@ export const Composer: React.FC<ComposerProps> = ({
                   if (progress.stage !== lastStage) {
                     lastStage = progress.stage;
                     if (onAddOptimisticMessage && progress.stage) {
-                      const updatedFileMessage = {
-                        id: fileMessageId, // Same ID to trigger update
-                        status:
+                      const updatedUnifiedMessage = {
+                        id: textToSend.trim() ? textMessageId : fileMessageId, // Same ID to trigger upsert
+                        status: 
                           progress.stage === 'uploading'   ? 'uploading' :
                           progress.stage === 'processing'  ? 'processing' :
-                          progress.stage === 'completed'   ? 'processed' : 'processing'
+                          progress.stage === 'completed'   ? 'processed' : 'processing',
+                        metadata: {
+                          hasAttachment: true,
+                          file_url: file.uri,
+                          fileType: file.type,
+                          processingStatus: progress.stage
+                        }
                       };
-                      onAddOptimisticMessage(updatedFileMessage);
+                      onAddOptimisticMessage(updatedUnifiedMessage);
                     }
                   }
                 }
@@ -311,12 +316,20 @@ export const Composer: React.FC<ComposerProps> = ({
             
             console.log(`✅ File processed successfully: ${result.fileId}, chunks: ${result.chunksCreated || 'N/A'}`);
             
-            // Update file message to show processed state
+            // Update unified message to show processed state with real file URL
             if (onAddOptimisticMessage) {
               const processedMessage = {
-                id: fileMessageId, // Same ID to trigger update
+                id: textToSend.trim() ? textMessageId : fileMessageId, // Same ID to trigger upsert
                 status: 'processed',
-                content: file.name // Reset to original filename
+                content: textToSend.trim() || `Document processed: ${file.name}`,
+                fileUrl: file.uri, // Use original file URI for now
+                metadata: {
+                  hasAttachment: true,
+                  file_url: file.uri, // For thumbnail generation
+                  fileType: file.type,
+                  processingStatus: 'completed',
+                  fileId: result.fileId
+                }
               };
               onAddOptimisticMessage(processedMessage);
             }
@@ -337,38 +350,38 @@ export const Composer: React.FC<ComposerProps> = ({
             try {
               // If we have text, save it and update the existing text message
               if (textToSend.trim() && textMessageId) {
-                const userMessageData = {
+              const userMessageData = {
                   session_id: confirmedSessionId,
-                  user_id: user.id,
-                  role: 'user',
-                  content: textToSend.trim(),
-                  action_type: 'file_upload',
-                  metadata: {
-                    fileId: result.fileId,
-                    filename: file.name,
-                    fileSize: file.size,
-                    fileType: file.type,
-                    hasAttachment: true
-                  },
-                  created_at: new Date().toISOString(),
-                  message_timestamp: new Date().toISOString(),
+                user_id: user.id,
+                role: 'user',
+                content: textToSend.trim(),
+                action_type: 'file_upload',
+                metadata: {
+                  fileId: result.fileId,
+                  filename: file.name,
+                  fileSize: file.size,
+                  fileType: file.type,
+                  hasAttachment: true
+                },
+                created_at: new Date().toISOString(),
+                message_timestamp: new Date().toISOString(),
                   client_id: textMessageId // Use the existing text message ID
-                };
+              };
 
-                const { data: savedMessage, error: saveError } = await supabase
-                  .from('conversation_messages')
-                  .insert(userMessageData)
-                  .select()
-                  .single();
+              const { data: savedMessage, error: saveError } = await supabase
+                .from('conversation_messages')
+                .insert(userMessageData)
+                .select()
+                .single();
 
-                if (saveError) {
-                  console.error('❌ Failed to save user message:', saveError);
-                } else {
-                  console.log('✅ User message saved to database:', savedMessage.id);
-                  
-                  // Update the existing text message to include file info (upsert)
-                  if (onAddOptimisticMessage) {
-                    const updatedTextMessage = {
+              if (saveError) {
+                console.error('❌ Failed to save user message:', saveError);
+              } else {
+                console.log('✅ User message saved to database:', savedMessage.id);
+                
+                  // Update the unified message with database ID and final metadata
+                if (onAddOptimisticMessage) {
+                    const finalUnifiedMessage = {
                       id: textMessageId, // Keep the same ID to trigger upsert
                       content: textToSend.trim(),
                       role: 'user',
@@ -381,8 +394,11 @@ export const Composer: React.FC<ComposerProps> = ({
                       fileType: file.type,
                       status: 'sent',
                       metadata: {
-                        fileId: result.fileId,
                         hasAttachment: true,
+                        file_url: file.uri, // For thumbnail generation
+                        fileType: file.type, // For thumbnail generation
+                        processingStatus: 'completed',
+                        fileId: result.fileId,
                         attachmentInfo: {
                           filename: file.name,
                           fileUrl: file.uri,
@@ -393,7 +409,7 @@ export const Composer: React.FC<ComposerProps> = ({
                         }
                       }
                     };
-                    onAddOptimisticMessage(updatedTextMessage);
+                    onAddOptimisticMessage(finalUnifiedMessage);
                   }
                 }
               }
@@ -422,13 +438,13 @@ export const Composer: React.FC<ComposerProps> = ({
               const assistantId = `assistant-${Date.now()}`;
               const streamingAssistantMessage = {
                 id: assistantId,
-                content: '',
-                role: 'assistant',
+                  content: '',
+                  role: 'assistant',
                 session_id: confirmedSessionId,
-                created_at: new Date().toISOString(),
+                  created_at: new Date().toISOString(),
                 type: 'text',
-                isStreaming: true
-              };
+                  isStreaming: true
+                };
               onAddOptimisticMessage(streamingAssistantMessage);
               
               try {
@@ -479,9 +495,9 @@ export const Composer: React.FC<ComposerProps> = ({
                   };
                   onAddOptimisticMessage(completedAssistantMessage);
                   console.log('✅ [Composer] Auto-analysis completed and response updated');
-                  
+                
                   // Trigger callback for session refresh
-                  if (onAutoAnalysisComplete) {
+                if (onAutoAnalysisComplete) {
                     onAutoAnalysisComplete(confirmedSessionId);
                   }
                 } else {
@@ -503,16 +519,16 @@ export const Composer: React.FC<ComposerProps> = ({
                 });
                 
                 // Replace streaming message with error message
-                const errorMessage = {
+                  const errorMessage = {
                   id: assistantId, // Use the same ID to trigger upsert
-                  content: 'I was unable to analyze this file automatically. You can still ask me questions about it manually.',
-                  role: 'assistant',
+                    content: 'I was unable to analyze this file automatically. You can still ask me questions about it manually.',
+                    role: 'assistant',
                   session_id: confirmedSessionId,
-                  created_at: new Date().toISOString(),
+                    created_at: new Date().toISOString(),
                   type: 'text',
                   isStreaming: false
-                };
-                onAddOptimisticMessage(errorMessage);
+                  };
+                  onAddOptimisticMessage(errorMessage);
                 console.log('✅ [Composer] Error message replaced streaming message');
                 
                 // Don't show alert - we've added error message to chat
@@ -564,62 +580,54 @@ export const Composer: React.FC<ComposerProps> = ({
           let targetSessionId = sessionId;
           
           if (!targetSessionId) {
-            if (!onCreateSession) {
+          if (!onCreateSession) {
               console.error('💥 [Composer] No onCreateSession prop provided for RAG flow');
-              Alert.alert('Error', 'Cannot create new conversation. Missing session handler.');
-              return;
-            }
-            
-            try {
-              console.log('🆕 [Composer] Creating session BEFORE RAG processing...');
-              const newSession = await onCreateSession(`Document: ${ragFile.name}`);
-              
-              if (!newSession) {
-                throw new Error('Failed to create new session');
-              }
-              
-              targetSessionId = newSession.id;
-              console.log('✅ [Composer] RAG session created successfully:', targetSessionId);
-            } catch (sessionError) {
-              console.error('💥 [Composer] RAG session creation failed:', sessionError);
-              Alert.alert('Error', 'Failed to create new conversation. Please try again.');
-              return;
-            }
+            Alert.alert('Error', 'Cannot create new conversation. Missing session handler.');
+            return;
           }
           
-          // Generate unique IDs for both bubbles
-          const textMessageId = `temp-text-${Date.now()}`;
-          const fileMessageId = `temp-file-${Date.now()}`;
+          try {
+              console.log('🆕 [Composer] Creating session BEFORE RAG processing...');
+              const newSession = await onCreateSession(`Document: ${ragFile.name}`);
+            
+            if (!newSession) {
+              throw new Error('Failed to create new session');
+            }
+            
+              targetSessionId = newSession.id;
+              console.log('✅ [Composer] RAG session created successfully:', targetSessionId);
+          } catch (sessionError) {
+              console.error('💥 [Composer] RAG session creation failed:', sessionError);
+            Alert.alert('Error', 'Failed to create new conversation. Please try again.');
+              return;
+          }
+          }
           
-          // 1. Create optimistic user text bubble
-          const textMessage = {
-            id: textMessageId,
+          // 🔧 FIXED: Create SINGLE unified message instead of two separate bubbles
+          const unifiedMessageId = `temp-unified-${Date.now()}`;
+          
+          const unifiedMessage = {
+            id: unifiedMessageId,
             content: textToSend.trim(),
             role: 'user',
             session_id: targetSessionId,
             created_at: new Date().toISOString(),
-            type: 'text',
-            status: 'sent'
-          };
-          
-          // 2. Create optimistic file bubble
-          const fileMessage = {
-            id: fileMessageId,
-            content: ragFile.name,
-            role: 'user',
-            session_id: targetSessionId,
-            created_at: new Date().toISOString(),
-            type: 'file',
+            type: 'text_with_file',
             filename: ragFile.name,
             fileUrl: ragFile.uri,
             fileSize: ragFile.size,
             fileType: ragFile.type,
-            status: 'uploading'
+            status: 'uploading',
+            metadata: {
+              hasAttachment: true,
+              file_url: ragFile.uri, // For thumbnail generation
+              fileType: ragFile.type, // For thumbnail generation
+              processingStatus: 'uploading'
+            }
           };
           
-          // Add both bubbles to UI immediately
-          onAddOptimisticMessage(textMessage);
-          onAddOptimisticMessage(fileMessage);
+          // Add SINGLE unified bubble to UI
+          onAddOptimisticMessage(unifiedMessage);
           
           // Convert to the format expected by unified function
           const fileForUpload = {
@@ -633,8 +641,13 @@ export const Composer: React.FC<ComposerProps> = ({
           // Clear attachments immediately
           setAttachedFiles([]);
           
-          // Use the unified file + text flow with existing message IDs
-          await onSendCombinedFileAndText(fileForUpload, textToSend.trim(), textMessageId, fileMessageId);
+          // Notify parent component that files were cleared
+          if (onAttachedFilesChange) {
+            onAttachedFilesChange([]);
+          }
+          
+          // Use the unified file + text flow with unified message ID
+          await onSendCombinedFileAndText(fileForUpload, textToSend.trim(), unifiedMessageId, unifiedMessageId);
           
         } catch (error) {
           console.error('Combined file + text error:', error);
@@ -663,6 +676,11 @@ export const Composer: React.FC<ComposerProps> = ({
           
           // Clear attachments immediately
           setAttachedFiles([]);
+          
+          // Notify parent component that files were cleared
+          if (onAttachedFilesChange) {
+            onAttachedFilesChange([]);
+          }
           
           // Use the ChatGPT-style file upload
           await onSendFile(fileForUpload);
@@ -715,8 +733,7 @@ export const Composer: React.FC<ComposerProps> = ({
             // Remove processed file from attachments
             setAttachedFiles(prev => prev.filter(f => f.id !== ragFile.id));
             
-            // Show success message
-            Alert.alert('Document Processed', `${ragFile.name} has been processed and is ready for questions!`);
+            // File processed successfully - no dialog needed in Enhanced File Flow
             
           } catch (error) {
             console.error('RAG document processing error:', error);
@@ -779,10 +796,18 @@ export const Composer: React.FC<ComposerProps> = ({
         mediaTypes: ImagePicker.MediaTypeOptions.Images,
         allowsEditing: false,
         quality: 0.8,
+        // Request additional metadata including file size when available
+        exif: false, // We don't need EXIF data
       });
 
       if (!result.canceled && result.assets[0]) {
-        await handleFileSelected(result.assets[0]);
+        const asset = result.assets[0];
+        // Expo ImagePicker sometimes provides file size in the asset object
+        const enhancedAsset = {
+          ...asset,
+          size: (asset as any).fileSize || (asset as any).size || 0, // Try multiple size properties with type assertion
+        };
+        await handleFileSelected(enhancedAsset);
       }
     } catch (error) {
       console.error('Camera error:', error);
@@ -820,10 +845,18 @@ export const Composer: React.FC<ComposerProps> = ({
         mediaTypes: ImagePicker.MediaTypeOptions.Images,
         allowsEditing: false,
         quality: 0.8,
+        // Request additional metadata including file size when available
+        exif: false, // We don't need EXIF data
       });
 
       if (!result.canceled && result.assets[0]) {
-        await handleFileSelected(result.assets[0]);
+        const asset = result.assets[0];
+        // Expo ImagePicker sometimes provides file size in the asset object
+        const enhancedAsset = {
+          ...asset,
+          size: (asset as any).fileSize || (asset as any).size || 0, // Try multiple size properties with type assertion
+        };
+        await handleFileSelected(enhancedAsset);
       }
     } catch (error) {
       console.error('Photo picker error:', error);
@@ -909,9 +942,30 @@ export const Composer: React.FC<ComposerProps> = ({
     const isPDF = fileType === 'application/pdf';
     const isDocument = fileType.includes('document') || fileType.includes('text');
     
-    // Basic size validation (10MB limit)
+    // Enhanced file size detection - especially important for images
+    let fileSize = file.size || file.fileSize || 0;
+    
+    // For images with missing size, try to estimate or get actual size
+    if (isImage && (fileSize === 0 || fileSize === undefined)) {
+      try {
+        // Try to get file size from URI using fetch (works for some file URIs)
+        if (file.uri && file.uri.startsWith('file://')) {
+          // For local files, we can't easily get size without native modules
+          // So we'll use a reasonable placeholder for images
+          fileSize = 0; // Will be handled in FilePreview component
+        } else if (file.uri && (file.uri.startsWith('http://') || file.uri.startsWith('https://'))) {
+          // For network files, we could try a HEAD request, but for now use 0
+          fileSize = 0;
+        }
+      } catch (error) {
+        console.log('Could not determine file size, using 0');
+        fileSize = 0;
+      }
+    }
+    
+    // Basic size validation (10MB limit) - only if we have a valid size
     const maxSize = 10 * 1024 * 1024;
-    if (file.size && file.size > maxSize) {
+    if (fileSize > 0 && fileSize > maxSize) {
       Alert.alert('File Too Large', 'File size must be less than 10MB.');
       return;
     }
@@ -936,7 +990,7 @@ export const Composer: React.FC<ComposerProps> = ({
       id: `temp_${Date.now()}`,
       name: fileName,
       type: file.mimeType || file.type || 'application/octet-stream',
-      size: file.size || 0,
+      size: fileSize,
       uri: file.uri,
       uploadProgress: 100, // Mark as ready to send
       isAnalyzing: false,
@@ -946,13 +1000,26 @@ export const Composer: React.FC<ComposerProps> = ({
     };
 
     // Add to attachments - ready to send (no immediate processing)
-    setAttachedFiles(prev => [...prev, tempFile]);
+    const newFiles = [...attachedFiles, tempFile];
+    setAttachedFiles(newFiles);
+    
+    // Notify parent component about the file changes
+    if (onAttachedFilesChange) {
+      onAttachedFilesChange(newFiles);
+    }
+    
     return;
   };
 
   // Remove file attachment
   const handleRemoveFile = (fileId: string) => {
-    setAttachedFiles(prev => prev.filter(f => f.id !== fileId));
+    const newFiles = attachedFiles.filter(f => f.id !== fileId);
+    setAttachedFiles(newFiles);
+    
+    // Notify parent component about the file changes
+    if (onAttachedFilesChange) {
+      onAttachedFilesChange(newFiles);
+    }
   };
 
   const borderColor = focusAnim.interpolate({
