@@ -16,7 +16,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../providers/ThemeProvider';
 import { useAuth } from '../providers/AuthProvider';
-import { useTier } from '../contexts/TierContext';
+
 import { TierBadge } from './ui/TierBadge';
 import { TierToggle, type TierOption } from './ui/TierToggle';
 import { ThemeSwitch } from './ThemeSwitch';
@@ -41,7 +41,7 @@ export const SettingsDrawer: React.FC<SettingsDrawerProps> = ({
   console.log('🔧 SettingsDrawer rendered - isVisible:', isVisible); // Debug log
   const { theme } = useTheme();
   const { displayName, user, updateDisplayName, logout } = useAuth();
-  const { tier } = useTier(); // Use tier from TierContext
+  const { tier } = useAuth(); // Use tier from AuthProvider
   
   const [editingName, setEditingName] = useState(false);
   const [tempDisplayName, setTempDisplayName] = useState(displayName);
