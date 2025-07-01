@@ -1,11 +1,16 @@
 import * as FileSystem from 'expo-file-system';
 import * as DocumentPicker from 'expo-document-picker';
 import { supabase } from '../lib/supabase';
+import Constants from 'expo-constants';
 
-// Get OpenAI API key from environment variables only
+// Get OpenAI API key from Expo config (loaded from environment)
 const getOpenAIApiKey = () => {
   try {
-    return process.env.EXPO_PUBLIC_OPENAI_API_KEY ?? process.env.OPENAI_API_KEY ?? null;
+    const openaiKey = Constants.expoConfig?.extra?.openaiApiKey;
+    if (!openaiKey) {
+      console.warn('⚠️ OpenAI API key not found in Expo config');
+    }
+    return openaiKey || null;
   } catch (error) {
     console.warn('⚠️ Unable to get OpenAI API key:', error);
     return null;
