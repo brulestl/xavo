@@ -15,7 +15,6 @@ import { useTheme } from '../providers/ThemeProvider';
 interface AttachmentMenuProps {
   visible: boolean;
   onClose: () => void;
-  onTakePhoto: () => void;
   onChoosePhoto: () => void;
   onChooseFile: () => void;
   anchorPosition?: { x: number; y: number };
@@ -24,7 +23,6 @@ interface AttachmentMenuProps {
 export const AttachmentMenu: React.FC<AttachmentMenuProps> = ({
   visible,
   onClose,
-  onTakePhoto,
   onChoosePhoto,
   onChooseFile,
   anchorPosition = { x: 0, y: 0 },
@@ -73,12 +71,6 @@ export const AttachmentMenu: React.FC<AttachmentMenuProps> = ({
   if (!visible) return null;
 
   const menuItems = [
-    {
-      icon: 'camera-outline',
-      label: 'Take Photo',
-      action: () => handleMenuItemPress(onTakePhoto),
-      color: '#4CAF50',
-    },
     {
       icon: 'image-outline',
       label: 'Choose Photo',

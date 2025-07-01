@@ -374,7 +374,7 @@ export const SettingsDrawer: React.FC<SettingsDrawerProps> = ({
                 color={theme.semanticColors.textPrimary}
               />
               <Text style={[styles.actionButtonText, { color: theme.semanticColors.textPrimary }]}>
-                Edit profile answers
+                Edit personalization
               </Text>
               <Ionicons
                 name="chevron-forward"

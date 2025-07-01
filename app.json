@@ -109,7 +109,7 @@
       "supabaseAnonKey": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6IndkaG1seW5tYnJodW5pemJkaGR0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDkzMDQ2NjgsImV4cCI6MjA2NDg4MDY2OH0.ORKN6Ryiz4Yo_BFhE_CS2yHMGPJDncKtYWKTwwI98N4",
       "amplitudeApiKey": "YOUR_AMPLITUDE_API_KEY_HERE",
       "sentryDsn": "YOUR_SENTRY_DSN_HERE",
-      "openaiApiKey": "YOUR_OPENAI_API_KEY_HERE",
+      "openaiApiKey": "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",
       "apiUrl": {
         "development": {
           "web": "https://wdhmlynmbrhunizbdhdt.supabase.co/functions/v1",

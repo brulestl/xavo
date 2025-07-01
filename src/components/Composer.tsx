@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { View, TextInput, TouchableOpacity, StyleSheet, Animated, Keyboard, Alert, Pressable, Text, ScrollView } from 'react-native';
 import * as DocumentPicker from 'expo-document-picker';
 import * as ImagePicker from 'expo-image-picker';
@@ -13,6 +13,7 @@ import { AttachmentMenu } from './AttachmentMenu';
 import { FilePreview } from './FilePreview';
 import { PDFProcessingErrorDialog } from './PDFProcessingErrorDialog';
 import { monitoring } from '../services/monitoring';
+import { voiceTranscriptionService, VoiceRecordingProgress } from '../services/voiceTranscriptionService';
 
 // Safely import constants
 let Constants: any = null;
@@ -67,12 +68,28 @@ export const Composer: React.FC<ComposerProps> = ({
   const [localLiveTranscription, setLocalLiveTranscription] = useState('');
   const [showPDFErrorDialog, setShowPDFErrorDialog] = useState(false);
   const [failedFileName, setFailedFileName] = useState<string>('');
+  
+  // Voice recording state
+  const [isVoiceRecording, setIsVoiceRecording] = useState(false);
+  const [isTranscribing, setIsTranscribing] = useState(false);
+  const [recordingDuration, setRecordingDuration] = useState(0);
+  
   const focusAnim = useRef(new Animated.Value(0)).current;
   const textInputRef = useRef<TextInput>(null);
+  const recordingTimer = useRef<NodeJS.Timeout | null>(null);
 
   // Use live transcription if provided, otherwise use message state
   const displayText = liveTranscription || localLiveTranscription || message;
-  const isCurrentlyRecording = isRecording || false;
+  const isCurrentlyRecording = isRecording || isVoiceRecording;
+
+  // Clean up timer on unmount
+  useEffect(() => {
+    return () => {
+      if (recordingTimer.current) {
+        clearInterval(recordingTimer.current);
+      }
+    };
+  }, []);
 
   // Check if error is related to PDF text extraction
   const isPDFTextExtractionError = (error: any): boolean => {
@@ -104,7 +121,7 @@ export const Composer: React.FC<ComposerProps> = ({
   };
 
   const handleInputAreaPress = () => {
-    if (textInputRef.current && !disabled && !liveTranscription && !localLiveTranscription) {
+    if (textInputRef.current && !disabled && !liveTranscription && !localLiveTranscription && !isVoiceRecording) {
       textInputRef.current.focus();
     }
   };
@@ -125,6 +142,168 @@ export const Composer: React.FC<ComposerProps> = ({
       duration: 250,
       useNativeDriver: false,
     }).start();
+  };
+
+  // Voice recording functionality
+  const handleVoiceRecording = async () => {
+    if (disabled) return;
+
+    if (!voiceTranscriptionService.isAvailable()) {
+      Alert.alert(
+        'Voice Recording Unavailable',
+        'Voice transcription requires an OpenAI API key to be configured.',
+        [{ text: 'OK' }]
+      );
+      return;
+    }
+
+    if (isVoiceRecording) {
+      // Stop recording
+      await stopVoiceRecording();
+    } else {
+      // Start recording
+      await startVoiceRecording();
+    }
+  };
+
+  const startVoiceRecording = async () => {
+    try {
+      console.log('🎙️ Starting voice recording...');
+      
+      // Initialize and start recording
+      const started = await voiceTranscriptionService.startRecording();
+      if (!started) {
+        Alert.alert(
+          'Recording Failed',
+          'Could not start voice recording. Please check your microphone permissions.',
+          [{ text: 'OK' }]
+        );
+        return;
+      }
+
+      setIsVoiceRecording(true);
+      setRecordingDuration(0);
+      setLocalLiveTranscription('');
+
+      // Start timer to track recording duration
+      recordingTimer.current = setInterval(() => {
+        setRecordingDuration(prev => prev + 1);
+      }, 1000);
+
+      console.log('✅ Voice recording started successfully');
+    } catch (error) {
+      console.error('❌ Failed to start voice recording:', error);
+      Alert.alert(
+        'Recording Error',
+        'An error occurred while starting the recording. Please try again.',
+        [{ text: 'OK' }]
+      );
+    }
+  };
+
+  const stopVoiceRecording = async () => {
+    try {
+      console.log('🛑 Stopping voice recording...');
+      
+      // Clear timer
+      if (recordingTimer.current) {
+        clearInterval(recordingTimer.current);
+        recordingTimer.current = null;
+      }
+
+      // Stop recording and get URI
+      const audioUri = await voiceTranscriptionService.stopRecording();
+      setIsVoiceRecording(false);
+
+      if (!audioUri) {
+        Alert.alert(
+          'Recording Failed',
+          'No audio was recorded. Please try again.',
+          [{ text: 'OK' }]
+        );
+        setRecordingDuration(0);
+        return;
+      }
+
+      console.log('✅ Voice recording stopped, starting transcription...');
+      
+      // Show transcribing state
+      setIsTranscribing(true);
+      
+      // Transcribe audio
+      const transcriptionResult = await voiceTranscriptionService.transcribeAudio(audioUri);
+      
+      setIsTranscribing(false);
+      setRecordingDuration(0);
+
+      if (transcriptionResult.success && transcriptionResult.text) {
+        console.log('✅ Transcription successful:', transcriptionResult.text);
+        
+        // Append transcribed text to existing message (continuation)
+        const transcribedText = transcriptionResult.text;
+        const currentText = message.trim();
+        const newText = currentText ? `${currentText} ${transcribedText}` : transcribedText;
+        setMessage(newText);
+        
+        // Clear live transcription state so it becomes regular message text
+        setLocalLiveTranscription('');
+        
+        // Focus the text input so user can see the result and edit if needed
+        setTimeout(() => {
+          textInputRef.current?.focus();
+        }, 100);
+      } else {
+        console.error('❌ Transcription failed:', transcriptionResult.error);
+        Alert.alert(
+          'Transcription Failed',
+          transcriptionResult.error || 'Could not transcribe the audio. Please try typing your message instead.',
+          [{ text: 'OK' }]
+        );
+      }
+    } catch (error) {
+      console.error('❌ Error stopping voice recording:', error);
+      setIsVoiceRecording(false);
+      setIsTranscribing(false);
+      setRecordingDuration(0);
+      
+      if (recordingTimer.current) {
+        clearInterval(recordingTimer.current);
+        recordingTimer.current = null;
+      }
+      
+      Alert.alert(
+        'Recording Error',
+        'An error occurred while processing the recording. Please try again.',
+        [{ text: 'OK' }]
+      );
+    }
+  };
+
+  // Cancel voice recording
+  const cancelVoiceRecording = async () => {
+    try {
+      if (recordingTimer.current) {
+        clearInterval(recordingTimer.current);
+        recordingTimer.current = null;
+      }
+      
+      await voiceTranscriptionService.cancelRecording();
+      setIsVoiceRecording(false);
+      setIsTranscribing(false);
+      setRecordingDuration(0);
+      setLocalLiveTranscription('');
+      
+      console.log('✅ Voice recording canceled');
+    } catch (error) {
+      console.error('❌ Error canceling voice recording:', error);
+    }
+  };
+
+  // Format recording duration for display
+  const formatDuration = (seconds: number): string => {
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${mins}:${secs.toString().padStart(2, '0')}`;
   };
 
   const handleSend = async () => {
@@ -498,72 +677,40 @@ export const Composer: React.FC<ComposerProps> = ({
                 
                   // Trigger callback for session refresh
                 if (onAutoAnalysisComplete) {
+                    console.log('🔄 [Composer] Triggering auto-analysis complete callback');
                     onAutoAnalysisComplete(confirmedSessionId);
                   }
                 } else {
-                  // Remove streaming message if no response
-                  const removedMessage = {
-                    id: assistantId,
-                    type: 'removed'
-                  };
-                  onAddOptimisticMessage(removedMessage);
-                  console.log('⚠️ [Composer] No response from auto-analysis, removed streaming message');
+                  throw new Error('No response from query-file function');
                 }
-                
-              } catch (queryError: any) {
-                console.error('💥 [Composer] Auto-analysis failed with error:', queryError);
-                console.error('💥 [Composer] Error details:', {
-                  message: queryError?.message,
-                  stack: queryError?.stack,
-                  name: queryError?.name
-                });
+              } catch (queryError) {
+                console.error('💥 [Composer] Auto-analysis failed:', queryError);
                 
                 // Replace streaming message with error message
-                  const errorMessage = {
+                const errorAssistantMessage = {
                   id: assistantId, // Use the same ID to trigger upsert
-                    content: 'I was unable to analyze this file automatically. You can still ask me questions about it manually.',
-                    role: 'assistant',
+                  content: 'I processed your file but encountered an issue analyzing it. The file has been uploaded successfully.',
+                  role: 'assistant',
                   session_id: confirmedSessionId,
-                    created_at: new Date().toISOString(),
+                  created_at: new Date().toISOString(),
                   type: 'text',
                   isStreaming: false
-                  };
-                  onAddOptimisticMessage(errorMessage);
-                console.log('✅ [Composer] Error message replaced streaming message');
-                
-                // Don't show alert - we've added error message to chat
-                // Alert.alert('Analysis Failed', 'File uploaded successfully, but auto-analysis failed. You can ask questions about the file manually.');
+                };
+                onAddOptimisticMessage(errorAssistantMessage);
               }
-            } else {
-              console.log('❌ [Composer] Auto-analysis SKIPPED because conditions not met');
             }
             
           } catch (error) {
-            console.error('💥 [Composer] Supabase file processing error:', error);
-            
-            // Provide specific error messaging based on error type
-            let errorMessage = 'Failed to process file. Please try again.';
-            if (error instanceof Error) {
-              if (error.message.includes('uuid')) {
-                errorMessage = 'Database error: Invalid ID format. Please try again.';
-              } else if (error.message.includes('network') || error.message.includes('fetch')) {
-                errorMessage = 'Network error. Please check your connection and try again.';
-              }
-              console.error('💥 [Composer] Detailed error:', error.message);
-            }
-            
-            Alert.alert('Processing Failed', errorMessage);
-            
-            // 🔧 CRITICAL: Clear optimistic messages on failure to prevent state corruption
-            console.log('🧹 [Composer] Failed optimistic messages will be cleared by parent state management');
+            console.error('💥 [Composer] File processing failed:', error);
+            // Use custom PDF error dialog for text extraction issues
+            handlePDFProcessingError(file.name, error);
           } finally {
             // Always clear file processing state
             setFileProcessingState?.(false);
           }
         };
         
-        // Execute the file flow with the confirmed session ID
-        console.log('✅ [Composer] Executing enhanced file flow with confirmed session:', targetSessionId);
+        // Execute the file flow
         await executeFileFlow(targetSessionId);
         
         setMessage('');
@@ -700,60 +847,7 @@ export const Composer: React.FC<ComposerProps> = ({
       // Regular message sending with attachments
       onSend(textToSend.trim(), otherFiles.length > 0 ? otherFiles : undefined);
       
-      // Process RAG documents after sending (legacy flow)
-      if (ragDocuments.length > 0 && user?.id) {
-        // Process each RAG document
-        for (const ragFile of ragDocuments) {
-          try {
-            // Update file status to show processing
-            setAttachedFiles(prev => 
-              prev.map(f => f.id === ragFile.id ? { ...f, isAnalyzing: true, uploadProgress: 0 } : f)
-            );
-
-            // Upload and process the document
-            await ragFileService.uploadAndProcessDocument(
-              {
-                name: ragFile.name,
-                mimeType: ragFile.type,
-                size: ragFile.size,
-                uri: ragFile.uri
-              } as any,
-              user.id,
-              (progress) => {
-                setAttachedFiles(prev => 
-                  prev.map(f => f.id === ragFile.id ? { 
-                    ...f, 
-                    uploadProgress: progress.progress,
-                    isAnalyzing: progress.stage === 'processing' 
-                  } : f)
-                );
-              }
-            );
-
-            // Remove processed file from attachments
-            setAttachedFiles(prev => prev.filter(f => f.id !== ragFile.id));
-            
-            // File processed successfully - no dialog needed in Enhanced File Flow
-            
-          } catch (error) {
-            console.error('RAG document processing error:', error);
-            
-            // Update file to show error
-            setAttachedFiles(prev => 
-              prev.map(f => f.id === ragFile.id ? { 
-                ...f, 
-                error: 'Processing failed',
-                isAnalyzing: false,
-                uploadProgress: 0
-              } : f)
-            );
-            
-            // Use custom PDF error dialog for text extraction issues
-            handlePDFProcessingError(ragFile.name, error);
-          }
-        }
-      }
-      
+      // Clear states
       setMessage('');
       setLocalLiveTranscription('');
       // Only clear files that are still processing
@@ -762,65 +856,7 @@ export const Composer: React.FC<ComposerProps> = ({
     }
   };
 
-  // Voice recording disabled for now
-  const handleVoiceRecording = () => {
-    if (disabled) return;
-    
-    Alert.alert(
-      'Voice Recording', 
-      'Voice recording feature will be available in the next update.',
-      [{ text: 'OK' }]
-    );
-  };
 
-  // Camera photo capture
-  const handleTakePhoto = async () => {
-    if (disabled) return;
-
-    // Save focus state and dismiss keyboard
-    const wasFocused = isFocused;
-    textInputRef.current?.blur();
-    Keyboard.dismiss();
-    
-    // Small delay to ensure keyboard is dismissed
-    await new Promise(resolve => setTimeout(resolve, 100));
-
-    try {
-      const permission = await ImagePicker.requestCameraPermissionsAsync();
-      if (!permission.granted) {
-        Alert.alert('Permission Required', 'Camera permission is needed to take photos.');
-        return;
-      }
-
-      const result = await ImagePicker.launchCameraAsync({
-        mediaTypes: ImagePicker.MediaTypeOptions.Images,
-        allowsEditing: false,
-        quality: 0.8,
-        // Request additional metadata including file size when available
-        exif: false, // We don't need EXIF data
-      });
-
-      if (!result.canceled && result.assets[0]) {
-        const asset = result.assets[0];
-        // Expo ImagePicker sometimes provides file size in the asset object
-        const enhancedAsset = {
-          ...asset,
-          size: (asset as any).fileSize || (asset as any).size || 0, // Try multiple size properties with type assertion
-        };
-        await handleFileSelected(enhancedAsset);
-      }
-    } catch (error) {
-      console.error('Camera error:', error);
-      Alert.alert('Camera Error', 'Failed to open camera. Please try again.');
-    }
-    
-    // Restore focus if it was previously focused (small delay to ensure camera is closed)
-    if (wasFocused) {
-      setTimeout(() => {
-        textInputRef.current?.focus();
-      }, 300);
-    }
-  };
 
   // Photo library picker
   const handleChoosePhoto = async () => {
@@ -1079,7 +1115,7 @@ export const Composer: React.FC<ComposerProps> = ({
             onBlur={handleBlur}
             onSubmitEditing={handleSend}
             blurOnSubmit={false}
-            editable={!disabled && !liveTranscription && !localLiveTranscription}
+            editable={!disabled && !liveTranscription && !isVoiceRecording && !isTranscribing}
           />
           
           {/* Send Button */}
@@ -1098,61 +1134,95 @@ export const Composer: React.FC<ComposerProps> = ({
             </TouchableOpacity>
           )}
 
-          {/* Live Transcription Indicator */}
-          {(liveTranscription || localLiveTranscription) && (
-            <View style={styles.transcriptionIndicator}>
-              <Text style={styles.transcriptionLabel}>🎙️ Live</Text>
-            </View>
-          )}
+
         </Animated.View>
       </Pressable>
 
-      {/* Action Buttons Area */}
-      <View style={styles.actionsContainer}>
-        {/* File Attach Button */}
-        <TouchableOpacity
-          style={[
-            styles.actionButton,
-            {
-              backgroundColor: theme.semanticColors.surface,
-              borderColor: theme.semanticColors.border,
-            },
-          ]}
-          onPress={() => setShowAttachmentMenu(true)}
-          disabled={disabled}
-        >
-          <Ionicons 
-            name="attach-outline" 
-            size={20} 
-            color={theme.semanticColors.textPrimary} 
-          />
-        </TouchableOpacity>
+      {/* Voice Recording Overlay */}
+      {(isVoiceRecording || isTranscribing) && (
+        <View style={styles.recordingOverlay}>
+          <View style={styles.recordingContainer}>
+            {isTranscribing ? (
+              <>
+                <View style={styles.transcribingIndicator}>
+                  <Ionicons name="cloud-upload-outline" size={24} color="#007AFF" />
+                  <Text style={styles.transcribingText}>Transcribing...</Text>
+                </View>
+              </>
+            ) : (
+              <>
+                <View style={styles.recordingIndicator}>
+                  <View style={styles.recordingDot} />
+                  <Text style={styles.recordingText}>Recording</Text>
+                  <Text style={styles.recordingDuration}>{formatDuration(recordingDuration)}</Text>
+                </View>
+                <View style={styles.recordingControls}>
+                  <TouchableOpacity 
+                    style={styles.cancelButton} 
+                    onPress={cancelVoiceRecording}
+                  >
+                    <Ionicons name="close" size={20} color="#FF3B30" />
+                  </TouchableOpacity>
+                  <TouchableOpacity 
+                    style={styles.stopButton} 
+                    onPress={stopVoiceRecording}
+                  >
+                    <Ionicons name="checkmark" size={20} color="#34C759" />
+                  </TouchableOpacity>
+                </View>
+              </>
+            )}
+          </View>
+        </View>
+      )}
 
-        {/* Voice Recording Button */}
-        <TouchableOpacity
-          style={[
-            styles.actionButton,
-            {
-              backgroundColor: isCurrentlyRecording ? '#FF3B30' : theme.semanticColors.surface,
-              borderColor: isCurrentlyRecording ? '#FF3B30' : theme.semanticColors.border,
-            },
-          ]}
-          onPress={handleVoiceRecording}
-          disabled={disabled}
-        >
-          <Ionicons 
-            name={isCurrentlyRecording ? "stop" : "mic-outline"} 
-            size={20} 
-            color={isCurrentlyRecording ? '#fff' : theme.semanticColors.textPrimary} 
-          />
-        </TouchableOpacity>
-      </View>
+      {/* Action Buttons Area */}
+      {!isVoiceRecording && !isTranscribing && (
+        <View style={styles.actionsContainer}>
+          {/* File Attach Button */}
+          <TouchableOpacity
+            style={[
+              styles.actionButton,
+              {
+                backgroundColor: theme.semanticColors.surface,
+                borderColor: theme.semanticColors.border,
+              },
+            ]}
+            onPress={() => setShowAttachmentMenu(true)}
+            disabled={disabled}
+          >
+            <Ionicons 
+              name="attach-outline" 
+              size={20} 
+              color={theme.semanticColors.textPrimary} 
+            />
+          </TouchableOpacity>
+
+          {/* Voice Recording Button */}
+          <TouchableOpacity
+            style={[
+              styles.actionButton,
+              {
+                backgroundColor: theme.semanticColors.surface,
+                borderColor: theme.semanticColors.border,
+              },
+            ]}
+            onPress={handleVoiceRecording}
+            disabled={disabled}
+          >
+            <Ionicons 
+              name="mic-outline" 
+              size={20} 
+              color={theme.semanticColors.textPrimary} 
+            />
+          </TouchableOpacity>
+        </View>
+      )}
 
       {/* Attachment Menu */}
       <AttachmentMenu
         visible={showAttachmentMenu}
         onClose={() => setShowAttachmentMenu(false)}
-        onTakePhoto={handleTakePhoto}
         onChoosePhoto={handleChoosePhoto}
         onChooseFile={handleChooseFile}
       />
@@ -1256,5 +1326,80 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 10,
     fontWeight: '600',
+  },
+  recordingOverlay: {
+    backgroundColor: 'rgba(0, 0, 0, 0.05)',
+    borderRadius: 12,
+    marginBottom: 12,
+    padding: 16,
+  },
+  recordingContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  recordingIndicator: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  recordingDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: '#FF3B30',
+    marginRight: 8,
+  },
+  recordingText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#FF3B30',
+    marginRight: 8,
+  },
+  recordingDuration: {
+    fontSize: 16,
+    fontWeight: '400',
+    color: '#666',
+  },
+  recordingControls: {
+    flexDirection: 'row',
+    gap: 24,
+  },
+  cancelButton: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: '#FFF',
+    borderWidth: 2,
+    borderColor: '#FF3B30',
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  stopButton: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: '#FFF',
+    borderWidth: 2,
+    borderColor: '#34C759',
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  transcribingIndicator: {
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  transcribingText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#007AFF',
+    marginTop: 8,
   },
 }); 

@@ -7,6 +7,7 @@ import {
   Animated,
   Dimensions,
 } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../../providers/ThemeProvider';
 
 export type TierOption = 'strategist' | 'shark' | 'agent';
@@ -41,18 +42,21 @@ export const TierToggle: React.FC<TierToggleProps> = ({
       case 'strategist':
         return {
           label: 'Strategist',
+          icon: 'briefcase-outline' as const,
           backgroundColor: theme.colors.xavoBlue,
           textColor: theme.colors.pureWhite,
         };
       case 'shark':
         return {
           label: 'Shark',
+          icon: 'flash-outline' as const,
           backgroundColor: theme.colors.growthGreen,
           textColor: theme.colors.pureWhite,
         };
       case 'agent':
         return {
           label: 'Agent',
+          icon: 'chatbubble-ellipses-outline' as const,
           backgroundColor: '#FF3131',
           textColor: theme.colors.pureWhite,
         };
@@ -80,17 +84,25 @@ export const TierToggle: React.FC<TierToggleProps> = ({
         onPress={() => onTierSelect(tier)}
         activeOpacity={0.7}
       >
-        <Text
-          style={[
-            styles.segmentText,
-            {
-              color: isSelected ? config.textColor : theme.semanticColors.textSecondary,
-              fontWeight: isSelected ? '700' : '500',
-            },
-          ]}
-        >
-          {config.label}
-        </Text>
+        <View style={styles.segmentContent}>
+          <Ionicons
+            name={config.icon}
+            size={16}
+            color={isSelected ? config.textColor : theme.semanticColors.textSecondary}
+            style={styles.segmentIcon}
+          />
+          <Text
+            style={[
+              styles.segmentText,
+              {
+                color: isSelected ? config.textColor : theme.semanticColors.textSecondary,
+                fontWeight: isSelected ? '700' : '500',
+              },
+            ]}
+          >
+            {config.label}
+          </Text>
+        </View>
       </TouchableOpacity>
     );
   };
@@ -149,7 +161,7 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     position: 'relative',
     overflow: 'hidden',
-    height: 44,
+    height: 48,
   },
   slidingBackground: {
     position: 'absolute',
@@ -170,8 +182,16 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingVertical: 12,
   },
+  segmentContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  segmentIcon: {
+    marginRight: 4,
+  },
   segmentText: {
-    fontSize: 14,
+    fontSize: 12,
     textAlign: 'center',
   },
 }); 
