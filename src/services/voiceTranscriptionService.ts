@@ -1,12 +1,10 @@
 import { Audio } from 'expo-av';
 import * as FileSystem from 'expo-file-system';
-import Constants from 'expo-constants';
 
-// Get OpenAI API key from app configuration
+// Get OpenAI API key from environment variables only
 const getOpenAIApiKey = (): string | null => {
   try {
-    const extra = (Constants.expoConfig as any)?.extra || {};
-    return extra?.openaiApiKey ?? process.env.EXPO_PUBLIC_OPENAI_API_KEY ?? process.env.OPENAI_API_KEY ?? null;
+    return process.env.EXPO_PUBLIC_OPENAI_API_KEY ?? process.env.OPENAI_API_KEY ?? null;
   } catch (error) {
     console.warn('⚠️ Unable to get OpenAI API key:', error);
     return null;

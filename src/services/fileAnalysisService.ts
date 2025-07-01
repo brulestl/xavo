@@ -2,19 +2,10 @@ import * as FileSystem from 'expo-file-system';
 import * as DocumentPicker from 'expo-document-picker';
 import { supabase } from '../lib/supabase';
 
-// Safely import constants
-let Constants: any = null;
-try {
-  Constants = require('expo-constants').default;
-} catch (error) {
-  console.warn('⚠️ expo-constants not available:', error);
-}
-
-// Get OpenAI API key
+// Get OpenAI API key from environment variables only
 const getOpenAIApiKey = () => {
   try {
-    const extra = (Constants?.expoConfig as any)?.extra || {};
-    return extra.openaiApiKey ?? process.env.EXPO_PUBLIC_OPENAI_API_KEY ?? process.env.OPENAI_API_KEY;
+    return process.env.EXPO_PUBLIC_OPENAI_API_KEY ?? process.env.OPENAI_API_KEY ?? null;
   } catch (error) {
     console.warn('⚠️ Unable to get OpenAI API key:', error);
     return null;
