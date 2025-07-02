@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { View, TextInput, TouchableOpacity, StyleSheet, Animated, Keyboard, Alert, Pressable, Text, ScrollView } from 'react-native';
+import { View, TextInput, TouchableOpacity, StyleSheet, Animated, Keyboard, Alert, Pressable, Text, ScrollView, Platform, KeyboardAvoidingView } from 'react-native';
 import * as DocumentPicker from 'expo-document-picker';
 import * as ImagePicker from 'expo-image-picker';
 import { Ionicons } from '@expo/vector-icons';
@@ -1066,181 +1066,190 @@ export const Composer: React.FC<ComposerProps> = ({
   });
 
   return (
-    <View style={styles.container}>
-      {/* File Attachments Preview */}
-      {attachedFiles.length > 0 && (
-        <ScrollView 
-          horizontal 
-          style={styles.attachmentsContainer}
-          showsHorizontalScrollIndicator={false}
-        >
-          {attachedFiles.map((file) => (
-            <View key={file.id} style={styles.attachmentWrapper}>
-              <FilePreview
-                file={file}
-                onRemove={() => handleRemoveFile(file.id)}
-                compact
-              />
-            </View>
-          ))}
-        </ScrollView>
-      )}
+    <KeyboardAvoidingView
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 0}
+      style={styles.keyboardContainer}
+    >
+      <View style={styles.container}>
+        {/* File Attachments Preview */}
+        {attachedFiles.length > 0 && (
+          <ScrollView 
+            horizontal 
+            style={styles.attachmentsContainer}
+            showsHorizontalScrollIndicator={false}
+          >
+            {attachedFiles.map((file) => (
+              <View key={file.id} style={styles.attachmentWrapper}>
+                <FilePreview
+                  file={file}
+                  onRemove={() => handleRemoveFile(file.id)}
+                  compact
+                />
+              </View>
+            ))}
+          </ScrollView>
+        )}
 
-      {/* Text Input Area */}
-      <Pressable onPress={handleInputAreaPress}>
-        <Animated.View
-          style={[
-            styles.textContainer,
-            {
-              backgroundColor: theme.getComposerBackgroundColor(),
-              borderColor,
-              shadowColor: theme.semanticColors.shadow,
-            },
-          ]}
-        >
-          <TextInput
-            ref={textInputRef}
+        {/* Text Input Area */}
+        <Pressable onPress={handleInputAreaPress}>
+          <Animated.View
             style={[
-              styles.textInput,
+              styles.textContainer,
               {
-                color: isCurrentlyRecording ? '#007AFF' : theme.semanticColors.textPrimary,
-                paddingRight: 45, // Space for send button
+                backgroundColor: theme.getComposerBackgroundColor(),
+                borderColor,
+                shadowColor: theme.semanticColors.shadow,
               },
             ]}
-            value={displayText}
-            onChangeText={liveTranscription || localLiveTranscription ? undefined : setMessage}
-            placeholder={placeholder}
-            placeholderTextColor={theme.semanticColors.textSecondary}
-            multiline
-            maxLength={500}
-            onFocus={handleFocus}
-            onBlur={handleBlur}
-            onSubmitEditing={handleSend}
-            blurOnSubmit={false}
-            editable={!disabled && !liveTranscription && !isVoiceRecording && !isTranscribing}
-          />
-          
-          {/* Send Button */}
-          {(displayText.trim().length > 0 || attachedFiles.length > 0) && (
-            <TouchableOpacity
+          >
+            <TextInput
+              ref={textInputRef}
               style={[
-                styles.sendButtonFixed,
+                styles.textInput,
                 {
-                  backgroundColor: theme.semanticColors.primary,
+                  color: isCurrentlyRecording ? '#007AFF' : theme.semanticColors.textPrimary,
+                  paddingRight: 45, // Space for send button
                 },
               ]}
-              onPress={handleSend}
+              value={displayText}
+              onChangeText={liveTranscription || localLiveTranscription ? undefined : setMessage}
+              placeholder={placeholder}
+              placeholderTextColor={theme.semanticColors.textSecondary}
+              multiline
+              maxLength={500}
+              onFocus={handleFocus}
+              onBlur={handleBlur}
+              onSubmitEditing={handleSend}
+              blurOnSubmit={false}
+              editable={!disabled && !liveTranscription && !isVoiceRecording && !isTranscribing}
+            />
+            
+            {/* Send Button */}
+            {(displayText.trim().length > 0 || attachedFiles.length > 0) && (
+              <TouchableOpacity
+                style={[
+                  styles.sendButtonFixed,
+                  {
+                    backgroundColor: theme.semanticColors.primary,
+                  },
+                ]}
+                onPress={handleSend}
+                disabled={disabled}
+              >
+                <View style={styles.sendIcon} />
+              </TouchableOpacity>
+            )}
+
+
+          </Animated.View>
+        </Pressable>
+
+        {/* Voice Recording Overlay */}
+        {(isVoiceRecording || isTranscribing) && (
+          <View style={styles.recordingOverlay}>
+            <View style={styles.recordingContainer}>
+              {isTranscribing ? (
+                <>
+                  <View style={styles.transcribingIndicator}>
+                    <Ionicons name="cloud-upload-outline" size={24} color="#007AFF" />
+                    <Text style={styles.transcribingText}>Transcribing...</Text>
+                  </View>
+                </>
+              ) : (
+                <>
+                  <View style={styles.recordingIndicator}>
+                    <View style={styles.recordingDot} />
+                    <Text style={styles.recordingText}>Recording</Text>
+                    <Text style={styles.recordingDuration}>{formatDuration(recordingDuration)}</Text>
+                  </View>
+                  <View style={styles.recordingControls}>
+                    <TouchableOpacity 
+                      style={styles.cancelButton} 
+                      onPress={cancelVoiceRecording}
+                    >
+                      <Ionicons name="close" size={20} color="#FF3B30" />
+                    </TouchableOpacity>
+                    <TouchableOpacity 
+                      style={styles.stopButton} 
+                      onPress={stopVoiceRecording}
+                    >
+                      <Ionicons name="checkmark" size={20} color="#34C759" />
+                    </TouchableOpacity>
+                  </View>
+                </>
+              )}
+            </View>
+          </View>
+        )}
+
+        {/* Action Buttons Area */}
+        {!isVoiceRecording && !isTranscribing && (
+          <View style={styles.actionsContainer}>
+            {/* File Attach Button */}
+            <TouchableOpacity
+              style={[
+                styles.actionButton,
+                {
+                  backgroundColor: theme.semanticColors.surface,
+                  borderColor: theme.semanticColors.border,
+                },
+              ]}
+              onPress={() => setShowAttachmentMenu(true)}
               disabled={disabled}
             >
-              <View style={styles.sendIcon} />
+              <Ionicons 
+                name="attach-outline" 
+                size={20} 
+                color={theme.semanticColors.textPrimary} 
+              />
             </TouchableOpacity>
-          )}
 
-
-        </Animated.View>
-      </Pressable>
-
-      {/* Voice Recording Overlay */}
-      {(isVoiceRecording || isTranscribing) && (
-        <View style={styles.recordingOverlay}>
-          <View style={styles.recordingContainer}>
-            {isTranscribing ? (
-              <>
-                <View style={styles.transcribingIndicator}>
-                  <Ionicons name="cloud-upload-outline" size={24} color="#007AFF" />
-                  <Text style={styles.transcribingText}>Transcribing...</Text>
-                </View>
-              </>
-            ) : (
-              <>
-                <View style={styles.recordingIndicator}>
-                  <View style={styles.recordingDot} />
-                  <Text style={styles.recordingText}>Recording</Text>
-                  <Text style={styles.recordingDuration}>{formatDuration(recordingDuration)}</Text>
-                </View>
-                <View style={styles.recordingControls}>
-                  <TouchableOpacity 
-                    style={styles.cancelButton} 
-                    onPress={cancelVoiceRecording}
-                  >
-                    <Ionicons name="close" size={20} color="#FF3B30" />
-                  </TouchableOpacity>
-                  <TouchableOpacity 
-                    style={styles.stopButton} 
-                    onPress={stopVoiceRecording}
-                  >
-                    <Ionicons name="checkmark" size={20} color="#34C759" />
-                  </TouchableOpacity>
-                </View>
-              </>
-            )}
+            {/* Voice Recording Button */}
+            <TouchableOpacity
+              style={[
+                styles.actionButton,
+                {
+                  backgroundColor: theme.semanticColors.surface,
+                  borderColor: theme.semanticColors.border,
+                },
+              ]}
+              onPress={handleVoiceRecording}
+              disabled={disabled}
+            >
+              <Ionicons 
+                name="mic-outline" 
+                size={20} 
+                color={theme.semanticColors.textPrimary} 
+              />
+            </TouchableOpacity>
           </View>
-        </View>
-      )}
+        )}
 
-      {/* Action Buttons Area */}
-      {!isVoiceRecording && !isTranscribing && (
-        <View style={styles.actionsContainer}>
-          {/* File Attach Button */}
-          <TouchableOpacity
-            style={[
-              styles.actionButton,
-              {
-                backgroundColor: theme.semanticColors.surface,
-                borderColor: theme.semanticColors.border,
-              },
-            ]}
-            onPress={() => setShowAttachmentMenu(true)}
-            disabled={disabled}
-          >
-            <Ionicons 
-              name="attach-outline" 
-              size={20} 
-              color={theme.semanticColors.textPrimary} 
-            />
-          </TouchableOpacity>
+        {/* Attachment Menu */}
+        <AttachmentMenu
+          visible={showAttachmentMenu}
+          onClose={() => setShowAttachmentMenu(false)}
+          onChoosePhoto={handleChoosePhoto}
+          onChooseFile={handleChooseFile}
+        />
 
-          {/* Voice Recording Button */}
-          <TouchableOpacity
-            style={[
-              styles.actionButton,
-              {
-                backgroundColor: theme.semanticColors.surface,
-                borderColor: theme.semanticColors.border,
-              },
-            ]}
-            onPress={handleVoiceRecording}
-            disabled={disabled}
-          >
-            <Ionicons 
-              name="mic-outline" 
-              size={20} 
-              color={theme.semanticColors.textPrimary} 
-            />
-          </TouchableOpacity>
-        </View>
-      )}
-
-      {/* Attachment Menu */}
-      <AttachmentMenu
-        visible={showAttachmentMenu}
-        onClose={() => setShowAttachmentMenu(false)}
-        onChoosePhoto={handleChoosePhoto}
-        onChooseFile={handleChooseFile}
-      />
-
-      {/* PDF Processing Error Dialog */}
-      <PDFProcessingErrorDialog
-        visible={showPDFErrorDialog}
-        fileName={failedFileName}
-        onClose={() => setShowPDFErrorDialog(false)}
-        onTryPasting={handleTryPasting}
-      />
-    </View>
+        {/* PDF Processing Error Dialog */}
+        <PDFProcessingErrorDialog
+          visible={showPDFErrorDialog}
+          fileName={failedFileName}
+          onClose={() => setShowPDFErrorDialog(false)}
+          onTryPasting={handleTryPasting}
+        />
+      </View>
+    </KeyboardAvoidingView>
   );
 };
 
 const styles = StyleSheet.create({
+  keyboardContainer: {
+    // No explicit height, let it adapt to content
+  },
   container: {
     paddingHorizontal: 16,
     paddingVertical: 12,

@@ -10,6 +10,7 @@ import {
   Text,
   PermissionsAndroid,
   Keyboard,
+  KeyboardAvoidingView,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as DocumentPicker from 'expo-document-picker';
@@ -124,106 +125,115 @@ export default function ChatComposer({
   const displayText = liveTranscription || currentInput;
 
   return (
-    <View style={[styles.container, { backgroundColor: theme.getComposerBackgroundColor() }]}>
-      {/* Main Input Container - FULLY TAPPABLE with FIXED SEND BUTTON */}
-      <Pressable 
-        style={[styles.inputPressable, { borderColor: accentColor, backgroundColor: theme.getComposerBackgroundColor() }]}
-        onPress={handleInputAreaPress}
-        disabled={disabled}
-      >
-        <View style={styles.inputContainer}>
-          <TextInput
-            ref={textInputRef}
-            style={[styles.input, { color: liveTranscription ? '#007AFF' : '#000' }]}
-            placeholder="What's on your mind?"
-            placeholderTextColor="#999"
-            value={displayText}
-            onChangeText={liveTranscription ? undefined : setCurrentInput}
-            onSubmitEditing={handleSend}
-            editable={!disabled && !liveTranscription}
-            multiline
-            maxLength={500}
-            textAlignVertical="top"
-          />
+    <KeyboardAvoidingView
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 0}
+      style={styles.keyboardContainer}
+    >
+      <View style={[styles.container, { backgroundColor: theme.getComposerBackgroundColor() }]}>
+        {/* Main Input Container - FULLY TAPPABLE with FIXED SEND BUTTON */}
+        <Pressable 
+          style={[styles.inputPressable, { borderColor: accentColor, backgroundColor: theme.getComposerBackgroundColor() }]}
+          onPress={handleInputAreaPress}
+          disabled={disabled}
+        >
+          <View style={styles.inputContainer}>
+            <TextInput
+              ref={textInputRef}
+              style={[styles.input, { color: liveTranscription ? '#007AFF' : '#000' }]}
+              placeholder="What's on your mind?"
+              placeholderTextColor="#999"
+              value={displayText}
+              onChangeText={liveTranscription ? undefined : setCurrentInput}
+              onSubmitEditing={handleSend}
+              editable={!disabled && !liveTranscription}
+              multiline
+              maxLength={500}
+              textAlignVertical="top"
+            />
 
-          {/* FIXED SEND BUTTON - RIGIDLY PINNED TO RIGHT EDGE */}
-          <TouchableOpacity
-            onPress={handleSend}
-            style={[styles.sendButtonFixed, { backgroundColor: disabled ? '#ccc' : accentColor }]}
-            disabled={disabled || (!currentInput.trim() && !liveTranscription.trim())}
+            {/* FIXED SEND BUTTON - RIGIDLY PINNED TO RIGHT EDGE */}
+            <TouchableOpacity
+              onPress={handleSend}
+              style={[styles.sendButtonFixed, { backgroundColor: disabled ? '#ccc' : accentColor }]}
+              disabled={disabled || (!currentInput.trim() && !liveTranscription.trim())}
+            >
+              <Ionicons
+                name="send"
+                size={18}
+                color="#fff"
+              />
+            </TouchableOpacity>
+
+            {/* Live Transcription Indicator */}
+            {liveTranscription && (
+              <View style={styles.transcriptionIndicator}>
+                <Text style={styles.transcriptionLabel}>🎙️ Live</Text>
+              </View>
+            )}
+          </View>
+        </Pressable>
+
+        {/* Action Icons Container - PROPERLY POSITIONED */}
+        <View style={styles.actionsContainer}>
+          {/* Attach/Paperclip Icon - NO GUARDS */}
+          <TouchableOpacity 
+            style={[
+              styles.actionButton, 
+              { 
+                borderColor: accentColor, 
+                opacity: isUploading ? 0.6 : 1 
+              }
+            ]} 
+            onPress={handleFileAttach}
+            disabled={disabled || isUploading}
           >
-            <Ionicons
-              name="send"
-              size={18}
-              color="#fff"
+            <Ionicons 
+              name={isUploading ? "cloud-upload" : "attach"} 
+              size={20} 
+              color={disabled ? '#999' : accentColor} 
             />
           </TouchableOpacity>
 
-          {/* Live Transcription Indicator */}
-          {liveTranscription && (
-            <View style={styles.transcriptionIndicator}>
-              <Text style={styles.transcriptionLabel}>🎙️ Live</Text>
-            </View>
-          )}
-        </View>
-      </Pressable>
-
-      {/* Action Icons Container - PROPERLY POSITIONED */}
-      <View style={styles.actionsContainer}>
-        {/* Attach/Paperclip Icon - NO GUARDS */}
-        <TouchableOpacity 
-          style={[
-            styles.actionButton, 
-            { 
-              borderColor: accentColor, 
-              opacity: isUploading ? 0.6 : 1 
-            }
-          ]} 
-          onPress={handleFileAttach}
-          disabled={disabled || isUploading}
-        >
-          <Ionicons 
-            name={isUploading ? "cloud-upload" : "attach"} 
-            size={20} 
-            color={disabled ? '#999' : accentColor} 
-          />
-        </TouchableOpacity>
-
-        {/* Voice Recording Icon - REAL TRANSCRIPTION */}
-        <TouchableOpacity 
-          style={[
-            styles.actionButton, 
-            { 
-              borderColor: isRecording ? '#FF3B30' : accentColor,
-              backgroundColor: isRecording ? '#FF3B30' : '#fff'
-            }
-          ]} 
-          onPress={handleVoiceRecording}
-          disabled={disabled}
-        >
-          <Ionicons 
-            name={isRecording ? "stop" : "mic"} 
-            size={20} 
-            color={isRecording ? '#fff' : (disabled ? '#999' : accentColor)} 
-          />
-        </TouchableOpacity>
-
-        {/* Voice Note Icon (if voice enabled and different from recording) */}
-        {voiceEnabled && (
+          {/* Voice Recording Icon - REAL TRANSCRIPTION */}
           <TouchableOpacity 
-            style={[styles.actionButton, { borderColor: accentColor }]} 
-            onPress={onMicPress} 
+            style={[
+              styles.actionButton, 
+              { 
+                borderColor: isRecording ? '#FF3B30' : accentColor,
+                backgroundColor: isRecording ? '#FF3B30' : '#fff'
+              }
+            ]} 
+            onPress={handleVoiceRecording}
             disabled={disabled}
           >
-            <Ionicons name="musical-note" size={20} color={disabled ? '#999' : accentColor} />
+            <Ionicons 
+              name={isRecording ? "stop" : "mic"} 
+              size={20} 
+              color={isRecording ? '#fff' : (disabled ? '#999' : accentColor)} 
+            />
           </TouchableOpacity>
-        )}
+
+          {/* Voice Note Icon (if voice enabled and different from recording) */}
+          {voiceEnabled && (
+            <TouchableOpacity 
+              style={[styles.actionButton, { borderColor: accentColor }]} 
+              onPress={onMicPress} 
+              disabled={disabled}
+            >
+              <Ionicons name="musical-note" size={20} color={disabled ? '#999' : accentColor} />
+            </TouchableOpacity>
+          )}
+        </View>
       </View>
-    </View>
+    </KeyboardAvoidingView>
   );
 }
 
 const styles = StyleSheet.create({
+  keyboardContainer: {
+    // No explicit height, let it adapt to content
+  },
   container: {
     paddingHorizontal: 16,
     paddingTop: 12,

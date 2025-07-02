@@ -442,12 +442,7 @@ export const HomeScreen: React.FC = () => {
     <SafeAreaView style={[styles.container, { backgroundColor: theme.semanticColors.background }]} edges={['top']}>
       <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} backgroundColor={theme.semanticColors.background} />
       
-      <KeyboardAvoidingView 
-        behavior={Platform.select({ ios: 'padding', android: 'height' })}
-        keyboardVerticalOffset={Platform.select({ ios: 0, android: 24 })}
-        style={{ flex: 1 }}
-      >
-        {/* Header */}
+      {/* Header */}
       <View style={[styles.header, { paddingTop: 0 }]}>
         {/* Hamburger Menu */}
         <TouchableOpacity style={styles.menuButton} onPress={handleMenuPress}>
@@ -628,7 +623,6 @@ export const HomeScreen: React.FC = () => {
           />
         </View>
       </View>
-      </KeyboardAvoidingView>
 
       {/* Drawer */}
       <Drawer

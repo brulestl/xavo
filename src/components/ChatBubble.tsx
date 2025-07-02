@@ -72,10 +72,13 @@ export const ChatBubble: React.FC<ChatBubbleProps> = ({
   const [menuPosition, setMenuPosition] = useState({ x: 0, y: 0 });
   const [imageLoadError, setImageLoadError] = useState(false);
   const [processingOverlay, setProcessingOverlay] = useState<'spinner' | 'checkmark' | 'hidden'>('hidden');
+  const [isCopied, setIsCopied] = useState(false);
   const inputRef = useRef<TextInput>(null);
   const bubbleRef = useRef<View>(null);
   const overlayOpacity = useRef(new Animated.Value(0)).current;
-
+  const copyButtonScale = useRef(new Animated.Value(1)).current;
+  const copyButtonBg = useRef(new Animated.Value(0)).current;
+  
   // Handle in-place processing indicator animations
   useEffect(() => {
     if (status === 'uploading' || status === 'processing') {
@@ -149,6 +152,53 @@ export const ChatBubble: React.FC<ChatBubbleProps> = ({
     } catch (error) {
       console.error('Failed to copy to clipboard:', error);
       throw error; // Let MessageActionMenu handle the error
+    }
+  };
+
+  const handleInlineCopy = async () => {
+    try {
+      await Clipboard.setStringAsync(message);
+      
+      // Start copy confirmation animation
+      setIsCopied(true);
+      
+      // Use JS driver for all animations to avoid conflicts
+      Animated.parallel([
+        // Scale animation
+        Animated.sequence([
+          Animated.timing(copyButtonScale, {
+            toValue: 0.9,
+            duration: 100,
+            useNativeDriver: false, // Changed to false
+          }),
+          Animated.timing(copyButtonScale, {
+            toValue: 1,
+            duration: 100,
+            useNativeDriver: false, // Changed to false
+          })
+        ]),
+        // Background color animation
+        Animated.timing(copyButtonBg, {
+          toValue: 1,
+          duration: 200,
+          useNativeDriver: false,
+        })
+      ]).start();
+
+      // Reset after 2 seconds
+      setTimeout(() => {
+        Animated.timing(copyButtonBg, {
+          toValue: 0,
+          duration: 300,
+          useNativeDriver: false,
+        }).start(() => {
+          setIsCopied(false);
+        });
+      }, 2000);
+      
+    } catch (error) {
+      console.error('Failed to copy to clipboard:', error);
+      Alert.alert('Error', 'Failed to copy message');
     }
   };
 
@@ -367,6 +417,45 @@ export const ChatBubble: React.FC<ChatBubbleProps> = ({
               </View>
             )}
           </TouchableOpacity>
+        )}
+
+        {/* Copy Button for Assistant Messages */}
+        {!isUser && !isStreaming && (
+          <View style={styles.inlineActionsContainer}>
+            <Animated.View
+              style={[
+                styles.inlineActionButton,
+                {
+                  borderColor: isCopied ? '#4CAF50' : theme.semanticColors.border,
+                  backgroundColor: copyButtonBg.interpolate({
+                    inputRange: [0, 1],
+                    outputRange: ['transparent', '#4CAF50']
+                  }),
+                  transform: [{ scale: copyButtonScale }]
+                }
+              ]}
+            >
+              <TouchableOpacity
+                onPress={handleInlineCopy}
+                activeOpacity={0.7}
+                style={styles.copyButtonTouchable}
+                disabled={isCopied}
+              >
+                {isCopied ? (
+                  <Ionicons 
+                    name="checkmark" 
+                    size={14} 
+                    color="#FFFFFF" 
+                  />
+                ) : (
+                  <Text style={[
+                    styles.copyIcon,
+                    { color: theme.semanticColors.textSecondary }
+                  ]}>📋</Text>
+                )}
+              </TouchableOpacity>
+            </Animated.View>
+          </View>
         )}
       </View>
     );
@@ -693,5 +782,30 @@ const styles = StyleSheet.create({
     fontSize: 10,
     fontStyle: 'italic',
     textAlign: 'center',
+  },
+  // New inline actions styles
+  inlineActionsContainer: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    marginTop: 8,
+    gap: 8,
+  },
+  inlineActionButton: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    overflow: 'hidden',
+  },
+  copyButtonTouchable: {
+    width: '100%',
+    height: '100%',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  copyIcon: {
+    fontSize: 12,
   },
 });

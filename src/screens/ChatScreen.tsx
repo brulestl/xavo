@@ -831,98 +831,92 @@ export const ChatScreen: React.FC = () => {
 
         {/* Content - Wrap in proper container for bottom edge handling */}
         <View style={styles.contentContainer}>
-          <KeyboardAvoidingView 
-            behavior={Platform.select({ ios: 'padding', android: 'height' })}
-            keyboardVerticalOffset={Platform.select({ ios: 0, android: 24 })}
-            style={{ flex: 1 }}
+          {/* Messages List */}
+          <View style={{ flex: 1, position: 'relative' }}>
+            <FlatList
+              ref={flatListRef}
+              data={messages}
+              renderItem={renderMessage}
+              keyExtractor={(item) => item.id}
+              style={styles.messagesList}
+              contentContainerStyle={styles.messagesContent}
+              showsVerticalScrollIndicator={false}
+              onContentSizeChange={() => {
+                // Enhanced auto-scroll: ensure we always see the latest message
+                if (messages.length > 0) {
+                  flatListRef.current?.scrollToEnd({ animated: false });
+                }
+              }}
+              onLayout={() => {
+                // Enhanced auto-scroll: handle layout changes during conversation switching
+                if (messages.length > 0) {
+                  flatListRef.current?.scrollToEnd({ animated: false });
+                }
+              }}
+              ListFooterComponent={
+                (isThinking || isProcessingFile) ? (
+                  <ThinkingIndicator visible={true} />
+                ) : isStreaming ? (
+                  <TypingDots visible={true} />
+                ) : null
+              }
+              ListEmptyComponent={
+                <View style={{ padding: 20, alignItems: 'center' }}>
+                  <Text style={{ color: '#666', fontSize: 16 }}>
+                    {isLoading ? 'Loading messages...' : 'Start your conversation'}
+                  </Text>
+                </View>
+              }
+            />
+            
+
+          </View>
+
+          {/* Error Display */}
+          {error && (
+            <View style={[styles.errorContainer, { backgroundColor: '#FF6B6B' }]}>
+              <Text style={[styles.errorText, { color: '#FFFFFF' }]}>
+                {error || 'Something went wrong'}
+              </Text>
+            </View>
+          )}
+
+          {/* Composer with stable padding - KeyboardAvoidingView is now inside Composer */}
+          <View 
+            style={[
+              styles.composerContainer, 
+              { 
+                backgroundColor: theme.semanticColors.background,
+                zIndex: isDrawerVisible || isSettingsDrawerVisible ? -1 : 1,
+                opacity: isDrawerVisible || isSettingsDrawerVisible ? 0 : 1,
+                paddingBottom: Math.max(insets.bottom, 16), // Ensure minimum padding, prevent displacement
+              }
+            ]}
           >
-            {/* Messages List */}
-            <View style={{ flex: 1, position: 'relative' }}>
-              <FlatList
-                ref={flatListRef}
-                data={messages}
-                renderItem={renderMessage}
-                keyExtractor={(item) => item.id}
-                style={styles.messagesList}
-                contentContainerStyle={styles.messagesContent}
-                showsVerticalScrollIndicator={false}
-                onContentSizeChange={() => {
-                  // Enhanced auto-scroll: ensure we always see the latest message
-                  if (messages.length > 0) {
-                    flatListRef.current?.scrollToEnd({ animated: false });
-                  }
-                }}
-                onLayout={() => {
-                  // Enhanced auto-scroll: handle layout changes during conversation switching
-                  if (messages.length > 0) {
-                    flatListRef.current?.scrollToEnd({ animated: false });
-                  }
-                }}
-                ListFooterComponent={
-                  (isThinking || isProcessingFile) ? (
-                    <ThinkingIndicator visible={true} />
-                  ) : isStreaming ? (
-                    <TypingDots visible={true} />
-                  ) : null
-                }
-                ListEmptyComponent={
-                  <View style={{ padding: 20, alignItems: 'center' }}>
-                    <Text style={{ color: '#666', fontSize: 16 }}>
-                      {isLoading ? 'Loading messages...' : 'Start your conversation'}
-                    </Text>
-                  </View>
-                }
-              />
-              
-
-            </View>
-
-            {/* Error Display */}
-            {error && (
-              <View style={[styles.errorContainer, { backgroundColor: '#FF6B6B' }]}>
-                <Text style={[styles.errorText, { color: '#FFFFFF' }]}>
-                  {error || 'Something went wrong'}
-                </Text>
-              </View>
-            )}
-
-            {/* Composer with stable padding */}
-            <View 
-              style={[
-                styles.composerContainer, 
-                { 
-                  backgroundColor: theme.semanticColors.background,
-                  zIndex: isDrawerVisible || isSettingsDrawerVisible ? -1 : 1,
-                  opacity: isDrawerVisible || isSettingsDrawerVisible ? 0 : 1,
-                  paddingBottom: Math.max(insets.bottom, 16), // Ensure minimum padding, prevent displacement
-                }
-              ]}
-            >
-              <Composer
-                onSend={handleSendMessage}
-                onSendFile={user?.id ? (file) => sendFileMessage(file, user.id, currentSession?.id) : undefined}
-                onSendCombinedFileAndText={user?.id ? handleSendCombinedFileAndText : undefined}
-                onAddOptimisticMessage={handleAddOptimisticMessage}
-                onCreateSession={handleCreateSession}
-                placeholder={
-                  isSending
-                    ? "Sending message..."
-                    : isEditingMessage 
-                      ? "Saving edit..." 
-                      : isProcessingFile
-                        ? "Processing file..."
-                        : isThinking
-                          ? "Xavo is thinking..."
-                          : "What's on your mind?"
-                }
-                disabled={!canMakeQuery || isEditingMessage || isSending || isThinking || isProcessingFile}
-                sessionId={currentSession?.id}
-                isProcessingFile={isProcessingFile}
-                setFileProcessingState={setFileProcessingState}
-                onAutoAnalysisComplete={handleAutoAnalysisComplete}
-              />
-            </View>
-          </KeyboardAvoidingView>
+            <Composer
+              onSend={handleSendMessage}
+              onSendFile={user?.id ? (file) => sendFileMessage(file, user.id, currentSession?.id) : undefined}
+              onSendCombinedFileAndText={user?.id ? handleSendCombinedFileAndText : undefined}
+              onAddOptimisticMessage={handleAddOptimisticMessage}
+              onCreateSession={handleCreateSession}
+              placeholder={
+                isSending
+                  ? "Sending message..."
+                  : isEditingMessage 
+                    ? "Saving edit..." 
+                    : isProcessingFile
+                      ? "Processing file..."
+                      : isThinking
+                        ? "Xavo is thinking..."
+                        : "What's on your mind?"
+              }
+              disabled={!canMakeQuery || isEditingMessage || isSending || isThinking || isProcessingFile}
+              sessionId={currentSession?.id}
+              isProcessingFile={isProcessingFile}
+              setFileProcessingState={setFileProcessingState}
+              onAutoAnalysisComplete={handleAutoAnalysisComplete}
+            />
+          </View>
         </View>
       </SafeAreaView>
 
