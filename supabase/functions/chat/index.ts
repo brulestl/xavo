@@ -31,7 +31,7 @@ interface ChatResponse {
   }
 }
 
-// Add these helper functions at the top after imports
+// Helper functions
 const getSystemPromptForTier = (tier: string): string => {
   if (tier === 'shark') {
     return `The assistant is **Xavo – Shark Tier**, a ruthless influence tactician.
@@ -71,7 +71,7 @@ Provide thoughtful, strategic advice that helps users navigate complex workplace
 const getModelForTier = (tier: string): string => {
   switch (tier) {
     case 'shark':
-      return 'gpt-4o'; // Use gpt-4o as o1-preview has different API requirements
+      return 'gpt-4o';
     case 'strategist':
       return 'gpt-4o';
     case 'trial':
@@ -98,6 +98,13 @@ serve(async (req) => {
       }
     )
 
+    // Service-role client for RLS bypass
+    const serviceClient = createClient(
+      Deno.env.get('SUPABASE_URL')!,
+      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
+      { auth: { persistSession: false } }
+    );
+
     // Get user from JWT token
     const authHeader = req.headers.get('Authorization')
     if (!authHeader) {
@@ -120,28 +127,25 @@ serve(async (req) => {
     console.log(`Authenticated user: ${user.id}`)
 
     // Fetch user profile to check tier and trial status
-    const { data: profile, error: profileError } = await supabaseClient
+    const { data: profile, error: profileError } = await serviceClient
       .from('user_profiles')
       .select('tier, trial_end')
       .eq('user_id', user.id)
-      .single()
+      .maybeSingle()
 
     if (profileError) {
-      console.error('Profile fetch error:', profileError)
-      throw new Error(`Failed to fetch user profile: ${profileError.message}`)
+      console.warn('Could not fetch user_profile:', profileError.message);
     }
 
     // Check for trial expiration
-    if (profile.trial_end && new Date() > new Date(profile.trial_end)) {
+    if (profile?.trial_end && new Date() > new Date(profile.trial_end)) {
       console.log(`Trial expired for user ${user.id}, downgrading from ${profile.tier} to strategist`)
       
-      // Persist downgrade to strategist
-      await supabaseClient
+      await serviceClient
         .from('user_profiles')
         .update({ tier: 'strategist' })
         .eq('user_id', user.id)
 
-      // Reject the request
       return new Response(
         JSON.stringify({ 
           error: 'trial_expired', 
@@ -165,29 +169,24 @@ serve(async (req) => {
       sessionId,
       isPromptGeneration,
       clientId,
-      hasClientId: !!clientId,
       skipUserMessage
     })
 
-    // Check if this is a prompt generation request (no session needed)
+    // Handle prompt generation requests
     if (isPromptGeneration || message.includes('generate exactly') || message.includes('personalized coaching questions')) {
       console.log('🤖 Handling prompt generation request (no session required)')
       
-      // Fetch user personalization data for enhanced prompts
-      const { data: personalization, error: profileError } = await supabaseClient
+      const { data: personalization, error: personalizationError } = await serviceClient
         .from('user_personalization')
         .select('current_position, primary_function, company_size, top_challenges, personality_scores, preferred_coaching_style, metadata')
         .eq('user_id', user.id)
         .single()
 
-      console.log('📊 User personalization for AI prompts:', personalization)
-      
-      // Build enhanced system prompt with user context
       let systemPrompt = `You are Xavo, an elite corporate influence coach. Generate 5 sophisticated, personalized coaching questions based on this executive's profile.
 
 USER PROFILE:`
 
-      if (personalization && !profileError) {
+      if (personalization && !personalizationError) {
         if (personalization.current_position) {
           systemPrompt += `\n• Position: ${personalization.current_position}`
         }
@@ -227,7 +226,6 @@ REQUIREMENTS:
 
 Generate coaching questions that would help this executive maximize their influence and overcome their specific challenges.`
       
-      // Call OpenAI directly for prompt generation
       const openaiResponse = await fetch('https://api.openai.com/v1/chat/completions', {
         method: 'POST',
         headers: {
@@ -237,14 +235,8 @@ Generate coaching questions that would help this executive maximize their influe
         body: JSON.stringify({
           model: 'gpt-4o-mini',
           messages: [
-            {
-              role: 'system',
-              content: systemPrompt
-            },
-            {
-              role: 'user',
-              content: `Generate 5 personalized coaching questions for this executive profile.`
-            }
+            { role: 'system', content: systemPrompt },
+            { role: 'user', content: `Generate 5 personalized coaching questions for this executive profile.` }
           ],
           max_tokens: 600,
           temperature: 0.8,
@@ -274,7 +266,7 @@ Generate coaching questions that would help this executive maximize their influe
       })
     }
 
-    // Create session if not provided (for regular chat)
+    // Create session if not provided
     let currentSessionId = sessionId
     if (!currentSessionId) {
       console.log(`Creating new session for user: ${user.id}`)
@@ -300,11 +292,11 @@ Generate coaching questions that would help this executive maximize their influe
       console.log(`Created new session: ${currentSessionId}`)
     }
 
-    // Store user message with deduplication (unless this is a regeneration request)
+    // Store user message with deduplication (unless regeneration)
     let userMessage = null
     if (!skipUserMessage) {
       const finalClientId = clientId || crypto.randomUUID()
-      console.log(`📝 Using client_id: ${finalClientId} (provided: ${clientId})`)
+      console.log(`📝 Using client_id: ${finalClientId}`)
       
       const messageData = {
         session_id: currentSessionId,
@@ -316,18 +308,16 @@ Generate coaching questions that would help this executive maximize their influe
         client_id: finalClientId
       }
 
-      // Try to insert the message, handle duplicates gracefully
       const { data: newUserMessage, error: userMsgError } = await supabaseClient
         .from('conversation_messages')
         .insert(messageData)
         .select()
         .single()
 
-      // Handle duplicate key error (unique constraint violation)
+      // Handle duplicate key error
       if (userMsgError && userMsgError.code === '23505') {
-        console.log('🚫 Duplicate message blocked by unique constraint:', messageData.client_id)
+        console.log('🚫 Duplicate message blocked:', messageData.client_id)
         
-        // Fetch the existing message
         const { data: existingMessage, error: fetchError } = await supabaseClient
           .from('conversation_messages')
           .select('*')
@@ -338,7 +328,6 @@ Generate coaching questions that would help this executive maximize their influe
           console.log('📋 Using existing user message:', existingMessage.id)
           userMessage = existingMessage
           
-          // Check if there's already an AI response to this message
           const { data: existingAIResponse } = await supabaseClient
             .from('conversation_messages')
             .select('*')
@@ -364,12 +353,10 @@ Generate coaching questions that would help this executive maximize their influe
             })
           }
           
-          // If no AI response exists, continue to generate one
           console.log('🤖 No AI response found for duplicate message, generating new response')
         }
       }
 
-      // Handle other errors
       if (userMsgError) {
         console.error('User message insert error:', userMsgError)
         throw userMsgError
@@ -384,40 +371,72 @@ Generate coaching questions that would help this executive maximize their influe
       console.log('🔄 Skipping user message creation for regeneration request')
     }
 
-    // Get conversation context (last 10 messages)
+    // Get ALL file_response descriptions first (chronological order) - UNIVERSAL FILE CONTEXT
+    const { data: fileResponseMessages } = await supabaseClient
+      .from('conversation_messages')
+      .select('role, content, created_at')
+      .eq('session_id', currentSessionId)
+      .eq('user_id', user.id)
+      .eq('action_type', 'file_response')
+      .order('created_at', { ascending: true })
+
+    // Get recent chat context (last 10 regular messages, excluding file_response)
     const { data: recentMessages } = await supabaseClient
       .from('conversation_messages')
       .select('role, content, created_at')
       .eq('session_id', currentSessionId)
       .eq('user_id', user.id)
+      .neq('action_type', 'file_response')
       .order('created_at', { ascending: false })
       .limit(10)
 
-    // Build context for OpenAI
-    const contextMessages = (recentMessages || [])
-      .reverse()
-      .map(msg => ({
+    // Build context for OpenAI: ALL file descriptions first, then recent chat
+    const contextMessages = [
+      // ALL file descriptions in chronological order (UNIVERSAL ACCESS)
+      ...(fileResponseMessages || []).map(msg => ({
         role: msg.role as 'user' | 'assistant',
         content: msg.content
-      }))
+      })),
+      // Recent chat messages in chronological order
+      ...(recentMessages || [])
+        .reverse()
+        .map(msg => ({
+          role: msg.role as 'user' | 'assistant',
+          content: msg.content
+        }))
+    ]
 
     // Add current message
     contextMessages.push({ role: 'user', content: message })
 
-    // Get user tier from user_profiles table
-    const { data: userProfile, error: profileError } = await supabaseClient
-      .from('user_profiles')
-      .select('tier')
-      .eq('user_id', user.id)
-      .single();
-      
-    const userTier = userProfile?.tier || 'strategist';
+    console.log(`📊 Context loaded: ${fileResponseMessages?.length || 0} file analyses + ${recentMessages?.length || 0} chat messages = ${contextMessages.length} total messages`)
+
+    // Get user tier
+    const userTier: string = profile?.tier || 'strategist';
     
     // Get the appropriate system prompt and model for the user's tier
-    const systemPrompt = getSystemPromptForTier(userTier);
+    let systemPrompt = getSystemPromptForTier(userTier);
     const model = getModelForTier(userTier);
 
-    // Update the OpenAI call to use the tier-specific model and prompt
+    // Add universal file context awareness to system prompt if files exist
+    if (fileResponseMessages && fileResponseMessages.length > 0) {
+      const fileCount = fileResponseMessages.length;
+      systemPrompt += `\n\nFILE CONTEXT AWARENESS:
+You have access to ${fileCount} file analysis(es) from this conversation session in chronological order. These include images, documents, PDFs, and other uploaded files that you have previously analyzed.
+
+IMPORTANT: You can reference ANY of these files at ANY time without the user needing to specifically mention them. Users may ask about:
+- "the first image" or "first file" (chronologically first analysis)
+- "the second image" or "last document" (positional references)  
+- "a while back I uploaded an image with..." (descriptive references)
+- "what images do I have here?" (overview requests)
+- "compare all my uploaded images" (comparative analysis)
+
+Always provide specific details from the relevant file analyses when referenced. The file context is already loaded into this conversation.`;
+      
+      console.log('📎 Universal file context awareness added to system prompt');
+    }
+
+    // Call OpenAI with universal context
     const completion = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
       headers: {
@@ -442,7 +461,7 @@ Generate coaching questions that would help this executive maximize their influe
     const aiResult = await completion.json()
     const aiMessage = aiResult.choices[0].message.content
 
-    // Store AI response with unique client_id
+    // Store AI response
     const assistantClientId = crypto.randomUUID()
     const { data: assistantMessage, error: aiMsgError } = await supabaseClient
       .from('conversation_messages')
@@ -487,8 +506,9 @@ Generate coaching questions that would help this executive maximize their influe
 
   } catch (error) {
     console.error('Chat function error:', error)
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred'
     return new Response(
-      JSON.stringify({ error: error.message }),
+      JSON.stringify({ error: errorMessage }),
       { 
         status: 400,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }

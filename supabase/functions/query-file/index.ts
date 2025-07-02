@@ -106,15 +106,15 @@ serve(async (req) => {
       throw new Error('Invalid request body - must be valid JSON');
     }
 
-    const { question, fileId, sessionId } = requestBody;
+        let { question, fileId, sessionId } = requestBody;
 
-    if (!question?.trim() || !fileId || !sessionId) {
-      logEvent('validation_error', 'error', 'Missing required fields', { 
+    if (!question?.trim() || !sessionId) {
+      logEvent('validation_error', 'error', 'Missing required fields', {
         hasQuestion: !!question?.trim(),
         hasFileId: !!fileId,
         hasSessionId: !!sessionId
       });
-      throw new Error('Missing required fields: question, fileId, sessionId');
+      throw new Error('Missing required fields: question, sessionId');
     }
 
     // Initialize Supabase client
@@ -152,6 +152,38 @@ serve(async (req) => {
 
     logEvent('auth_success', 'info', 'User authenticated', { userId: user.id });
 
+    // Step 4: Fallback to last_file_id if fileId is not provided
+    if (!fileId) {
+      logEvent('fallback_lookup_start', 'info', 'No fileId provided, looking up last_file_id for session');
+      
+      const { data: sessionData, error: sessionError } = await serviceClient
+        .from('conversation_sessions')
+        .select('last_file_id')
+        .eq('id', sessionId)
+        .maybeSingle();
+
+      if (sessionError) {
+        logEvent('fallback_lookup_error', 'error', 'Failed to lookup session last_file_id', {
+          error: sessionError.message,
+          sessionId
+        });
+        throw new Error(`Failed to lookup session: ${sessionError.message}`);
+      }
+
+      if (!sessionData?.last_file_id) {
+        logEvent('fallback_lookup_empty', 'error', 'No last_file_id found for session', {
+          sessionId
+        });
+        throw new Error('No file uploaded in this session yet. Please upload a file first.');
+      }
+
+      fileId = sessionData.last_file_id;
+      logEvent('fallback_lookup_complete', 'info', 'Using last_file_id from session', {
+        sessionId,
+        fallbackFileId: fileId
+      });
+    }
+
     // Get file metadata (service role, bypass RLS)
     logEvent('file_lookup_start', 'info', 'Looking up file metadata', { fileId });
     const { data: fileData, error: fileError } = await serviceClient
@@ -175,6 +207,159 @@ serve(async (req) => {
       fileType: fileData.file_type,
       fileSize: fileData.file_size
     });
+
+    // ─────────────────────────────────────────────────────────────────────────────
+    // 🖼️ IMAGE‐ONLY PATH: if this is an image, bypass vector search entirely
+    // and inject the original vision analysis (the assistant's `file_response`)
+    // directly as the system prompt.
+    // ─────────────────────────────────────────────────────────────────────────────
+
+    if (fileData.file_type?.startsWith('image/')) {
+      logEvent('image_only_path', 'info', 'Processing image query with vision context injection');
+      
+      // grab the most recent assistant "file_response" for this image
+      const { data: fileAnalysisMessage } = await supabaseClient
+        .from('conversation_messages')
+        .select('content')
+        .eq('session_id', sessionId)
+        .eq('role', 'assistant')
+        .eq('action_type', 'file_response')
+        .like('metadata->fileId', `%${fileId}%`)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      const visionDescription = fileAnalysisMessage?.content
+        ?? `I see you uploaded an image named "${fileData.file_name}", but I couldn't retrieve the analysis.`;
+
+      logEvent('vision_context_retrieved', 'info', 'Retrieved vision analysis for image', {
+        hasAnalysis: !!fileAnalysisMessage?.content,
+        analysisLength: visionDescription.length
+      });
+
+      // build the minimal prompt directly
+      const messages = [
+        { role: 'system',  content: visionDescription },
+        { role: 'user',    content: question         }
+      ];
+
+      // call OpenAI with that injected vision context
+      logEvent('openai_vision_call_start', 'info', 'Calling OpenAI with vision context');
+      const visionResponse = await fetch('https://api.openai.com/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${Deno.env.get('OPENAI_API_KEY')}`,
+          'Content-Type':  'application/json'
+        },
+        body: JSON.stringify({
+          model: 'gpt-4o-mini',
+          messages,
+          max_tokens:  800,
+          temperature: 0.2
+        })
+      });
+      
+      if (!visionResponse.ok) {
+        logEvent('openai_vision_error', 'error', 'OpenAI Vision call failed', { status: visionResponse.status });
+        throw new Error(`OpenAI Vision call failed: ${visionResponse.statusText}`);
+      }
+      
+      const visionResult = await visionResponse.json();
+      const answer = visionResult.choices[0].message.content;
+
+      logEvent('openai_vision_complete', 'info', 'OpenAI vision response generated', {
+        tokensUsed: visionResult.usage?.total_tokens || 0,
+        responseLength: answer.length
+      });
+
+      // Check for existing user message first
+      const { data: existingUserMessage } = await supabaseClient
+        .from('conversation_messages')
+        .select('*')
+        .eq('session_id', sessionId)
+        .eq('user_id', user.id)
+        .eq('role', 'user')
+        .eq('content', question)
+        .or('action_type.eq.file_upload,action_type.eq.file_query')
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      let userMessage = existingUserMessage;
+      if (!existingUserMessage) {
+        // Create user message only if it doesn't exist
+        const userClientId = crypto.randomUUID();
+        const { data: newUserMessage } = await supabaseClient
+          .from('conversation_messages')
+          .insert({
+            session_id: sessionId,
+            user_id: user.id,
+            role: 'user',
+            content: question,
+            action_type: 'file_query',
+            metadata: { 
+              query_type: 'file',
+              file_id: fileId,
+              file_name: fileData.file_name,
+              fileUrl: fileData.file_url,
+              image_vision_query: true
+            },
+            created_at: new Date().toISOString(),
+            message_timestamp: new Date().toISOString(),
+            client_id: userClientId
+          })
+          .select()
+          .single();
+        userMessage = newUserMessage;
+      }
+
+      // persist the assistant's reply
+      const assistantClientId = crypto.randomUUID();
+      const { data: assistantMessage } = await supabaseClient
+        .from('conversation_messages')
+        .insert({
+          session_id:       sessionId,
+          user_id:          user.id,
+          role:             'assistant',
+          content:          answer,
+          action_type:      'file_response',
+          metadata: {
+            fileId,
+            fileName:       fileData.file_name,
+            fileType:       fileData.file_type,
+            fileUrl:        fileData.file_url,       // ensure process-file saved this
+            queryType:      'image_injection'
+          },
+          raw_response:     visionResult,
+          client_id:        assistantClientId,
+          created_at:       new Date().toISOString(),
+          message_timestamp:new Date().toISOString()
+        })
+        .select()
+        .single();
+
+      logEvent('image_query_complete', 'info', 'Image query completed successfully', {
+        userMessageId: userMessage?.id,
+        assistantMessageId: assistantMessage?.id,
+        tokensUsed: visionResult.usage?.total_tokens || 0
+      });
+
+      return new Response(JSON.stringify({
+        success: true,
+        answer: answer,
+        userMessageId: userMessage?.id || '',
+        assistantMessageId: assistantMessage?.id || '',
+        sources: [],
+        tokensUsed: visionResult.usage?.total_tokens || 0,
+        processingTime: Date.now() - startTime
+      }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      });
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────────
+    // ▼ continue with existing text/PDF "light" or "deep" analysis logic here
+    // ─────────────────────────────────────────────────────────────────────────────
 
     // Generate embedding for the question
     logEvent('embedding_start', 'info', 'Generating question embedding');
@@ -252,6 +437,7 @@ Please try uploading a higher quality image and I'll be happy to analyze it for 
                 query_type: 'file',
                 file_id: fileId,
                 file_name: fileData.file_name,
+                fileUrl: fileData.file_url, // ADDED: Include public URL
                 ocr_failure: true
               },
               created_at: new Date().toISOString(),
@@ -277,6 +463,7 @@ Please try uploading a higher quality image and I'll be happy to analyze it for 
               query_type: 'file',
               file_id: fileId,
               file_name: fileData.file_name,
+              fileUrl: fileData.file_url, // ADDED: Include public URL
               fallback_reason: 'low_quality_image',
               ocr_failure: true
             },
@@ -420,6 +607,7 @@ I'd be happy to help once I can better access the file content!`;
             query_type: 'file',
             file_id: fileId,
             file_name: fileData.file_name,
+            fileUrl: fileData.file_url, // ADDED: Include public URL
             sources_found: actualSources.length
           },
           created_at: new Date().toISOString(),
@@ -452,6 +640,7 @@ I'd be happy to help once I can better access the file content!`;
           query_type: 'file',
           file_id: fileId,
           file_name: fileData.file_name,
+          fileUrl: fileData.file_url, // ADDED: Include public URL
           sources_used: actualSources.map(source => ({
             file_id: fileId,
             similarity: source.similarity

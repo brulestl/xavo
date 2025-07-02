@@ -43,6 +43,7 @@ export const generateThumbnailUrl = (
  * Get appropriate icon for file type when thumbnail generation isn't possible
  */
 export const getFileTypeIcon = (fileType: string): string => {
+  if (!fileType) return 'attach-outline';
   if (fileType.startsWith('image/')) return 'image-outline';
   if (fileType === 'application/pdf') return 'document-text-outline';
   if (fileType.includes('word') || fileType.includes('document')) return 'document-outline';
@@ -56,13 +57,14 @@ export const getFileTypeIcon = (fileType: string): string => {
  * Check if file type supports thumbnail generation
  */
 export const supportsThumbnail = (fileType: string): boolean => {
-  return fileType.startsWith('image/');
+  return Boolean(fileType && fileType.startsWith('image/'));
 };
 
 /**
  * Get file type color for UI consistency
  */
 export const getFileTypeColor = (fileType: string): string => {
+  if (!fileType) return '#757575';
   if (fileType.startsWith('image/')) return '#4CAF50';
   if (fileType === 'application/pdf') return '#F44336';
   if (fileType.includes('word') || fileType.includes('document')) return '#2196F3';

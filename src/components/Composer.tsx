@@ -538,6 +538,7 @@ export const Composer: React.FC<ComposerProps> = ({
                 metadata: {
                   fileId: result.fileId,
                   filename: file.name,
+                  fileUrl: file.uri, // ADDED: Include public URL in metadata
                   fileSize: file.size,
                   fileType: file.type,
                   hasAttachment: true
@@ -962,7 +963,8 @@ export const Composer: React.FC<ComposerProps> = ({
       const type = file.mimeType || file.type || '';
       const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
       
-      if (type.startsWith('image/')) {
+      // Safe startsWith check with null guard
+      if (type && type.startsWith('image/')) {
         const ext = type.split('/')[1] || 'jpg';
         return `Image_${timestamp}.${ext}`;
       }

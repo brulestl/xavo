@@ -30,7 +30,7 @@ interface FileMessageBubbleProps {
   };
   sessionId: string;
   onRetrySuccess?: (fileId: string, description: string) => void;
-  onQueryFile?: (fileId: string, filename: string, question: string) => void;
+  onQueryFile?: (fileId: string, filename: string, question: string, sessionId: string) => void;
 }
 
 export const FileMessageBubble: React.FC<FileMessageBubbleProps> = ({
@@ -131,7 +131,7 @@ export const FileMessageBubble: React.FC<FileMessageBubbleProps> = ({
             text: 'Ask', 
             onPress: (question) => {
               if (question && question.trim() && message.metadata?.fileId) {
-                onQueryFile?.(message.metadata.fileId, message.filename || 'file', question.trim());
+                onQueryFile?.(message.metadata.fileId, message.filename || 'file', question.trim(), sessionId);
               }
             }
           }

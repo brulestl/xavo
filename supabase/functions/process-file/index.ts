@@ -490,6 +490,27 @@ serve(async (req) => {
 
     logEvent('db_write_complete', 'info', 'File metadata saved successfully', { fileId: processFileId });
 
+    // Step 2: Update last_file_id on conversation_sessions
+    logEvent('session_update_start', 'info', 'Updating session last_file_id');
+    const { error: sessionUpdateError } = await supabaseClient
+      .from('conversation_sessions')
+      .update({ last_file_id: processFileId })
+      .eq('id', sessionId);
+
+    if (sessionUpdateError) {
+      logEvent('session_update_error', 'warning', 'Failed to update session last_file_id', {
+        error: sessionUpdateError.message,
+        sessionId,
+        fileId: processFileId
+      });
+      // Don't throw - this is not critical to file processing
+    } else {
+      logEvent('session_update_complete', 'info', 'Session last_file_id updated successfully', {
+        sessionId,
+        fileId: processFileId
+      });
+    }
+
     // Chunk the content into ~1000-token slices
     logEvent('chunking_start', 'info', 'Chunking content into slices');
     const chunks = chunkText(sanitizedContent);
@@ -542,7 +563,7 @@ serve(async (req) => {
 
     // Log file_upload in conversation_messages
     logEvent('conversation_start', 'info', 'Logging file_upload message');
-    const clientId = crypto.randomUUID();
+    const userClientId = crypto.randomUUID();
     await supabaseClient.from("conversation_messages").insert({
       session_id: sessionId,
       user_id: user.id,
@@ -553,14 +574,51 @@ serve(async (req) => {
         fileId: processFileId,
         fileName,
         fileType,
+        fileUrl: fileUrl, // ADDED: Persist public URL
         description: contentSnippet,
         chunksCreated: chunks.length
       },
-      client_id: clientId,
+      client_id: userClientId,
       message_timestamp: new Date().toISOString()
     });
 
-    logEvent('conversation_complete', 'info', 'Conversation message created successfully');
+    logEvent('conversation_user_complete', 'info', 'User upload message created successfully');
+
+    // Step 3: Surface analysis as an assistant message
+    logEvent('assistant_message_start', 'info', 'Creating assistant analysis message');
+    const assistantClientId = crypto.randomUUID();
+    
+    // Create a more user-friendly analysis response based on file type
+    let analysisResponse = '';
+    if (fileType.startsWith('image/')) {
+      analysisResponse = `I've analyzed your image "${fileName}" and here's what I can see:\n\n${sanitizedContent}`;
+    } else if (fileType === 'application/pdf') {
+      analysisResponse = `I've processed your PDF "${fileName}" and extracted the following content:\n\n${contentSnippet}`;
+    } else if (fileType.startsWith('text/')) {
+      analysisResponse = `I've read your text file "${fileName}". Here's the content:\n\n${contentSnippet}`;
+    } else {
+      analysisResponse = `I've processed your file "${fileName}" and extracted the following content:\n\n${contentSnippet}`;
+    }
+
+    await supabaseClient.from("conversation_messages").insert({
+      session_id: sessionId,
+      user_id: user.id,
+      role: "assistant",
+      content: analysisResponse,
+      action_type: "file_response",
+      metadata: {
+        fileId: processFileId,
+        fileName,
+        fileType,
+        fileUrl: fileUrl, // ADDED: Persist public URL for consistency
+        analysis_type: 'initial_upload',
+        chunksCreated: chunks.length
+      },
+      client_id: assistantClientId,
+      message_timestamp: new Date().toISOString()
+    });
+
+    logEvent('conversation_complete', 'info', 'Both user and assistant messages created successfully');
 
     const processingTime = Date.now() - startTime;
     logEvent('function_complete', 'info', 'File processing completed successfully', { 

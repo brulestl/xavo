@@ -28,9 +28,11 @@ export const FilePreview: React.FC<FilePreviewProps> = ({
   const [showFullAnalysis, setShowFullAnalysis] = useState(false);
   const [imageError, setImageError] = useState(false);
 
-  const isImage = file.type.startsWith('image/');
-  const isPDF = file.type === 'application/pdf';
-  const isText = file.type.startsWith('text/');
+  // Safe file type checking with null guards
+  const fileType = file.type || '';
+  const isImage = fileType.startsWith('image/');
+  const isPDF = fileType === 'application/pdf';
+  const isText = fileType.startsWith('text/');
 
   const getFileIcon = () => {
     if (isImage) return 'image-outline';
@@ -55,7 +57,9 @@ export const FilePreview: React.FC<FilePreviewProps> = ({
   };
 
   const getFileSizeDisplay = (file: AnalyzedFile) => {
-    const isImage = file.type.startsWith('image/');
+    // Use safe file type checking
+    const safeFileType = file.type || '';
+    const isImage = safeFileType.startsWith('image/');
     
     // For images with no size info, show a more appropriate message
     if (isImage && (file.size === 0 || file.size === undefined)) {

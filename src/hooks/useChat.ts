@@ -58,6 +58,9 @@ interface UseChatReturn {
   isProcessingFile: boolean;
   error: string | null;
   
+  // Step 5: File ID state
+  currentFileId: string | null;
+  
   // Actions
   sendMessage: (content: string, sessionId?: string, useStreaming?: boolean, fileData?: any) => Promise<ChatResponse | null>;
   sendFileMessage: (file: any, userId: string, sessionId?: string) => Promise<void>;
@@ -77,6 +80,7 @@ interface UseChatReturn {
   removeMessage: (messageId: string) => void;
   // File processing helpers
   setFileProcessingState: (isProcessing: boolean) => void;
+  setCurrentFileId: (fileId: string | null) => void;
 }
 
 export const useChat = (): UseChatReturn => {
@@ -90,6 +94,9 @@ export const useChat = (): UseChatReturn => {
   const [isProcessingFile, setIsProcessingFile] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isCombinedFlow, setIsCombinedFlow] = useState(false);
+  
+  // Step 5: Frontend preservation & propagation of fileId
+  const [currentFileId, setCurrentFileId] = useState<string | null>(null);
   
   const lastUserMessageRef = useRef<string>('');
   const abortControllerRef = useRef<AbortController | null>(null);
@@ -1484,6 +1491,13 @@ export const useChat = (): UseChatReturn => {
     question: string,
     sessionId: string
   ) => {
+    // Step 5: Use currentFileId if fileId is not provided
+    const effectiveFileId = fileId || currentFileId;
+    
+    if (!effectiveFileId) {
+      Alert.alert('No File', 'Please upload a file first before asking questions about it.');
+      return;
+    }
     const userMessageId = `temp-user-${Date.now()}`;
     const assistantMessageId = `temp-assistant-${Date.now()}`;
     
@@ -1527,7 +1541,7 @@ export const useChat = (): UseChatReturn => {
         return [...prev, assistantMessage];
       });
 
-      const result = await supabaseFileService.queryFile(question, fileId, sessionId);
+      const result = await supabaseFileService.queryFile(question, effectiveFileId, sessionId);
       
       if (!result.success) {
         throw new Error(result.error || 'Query failed');
@@ -1562,6 +1576,11 @@ export const useChat = (): UseChatReturn => {
     setIsCombinedFlow(isProcessing);
   };
 
+  // Step 5: Function to update current file ID
+  const updateCurrentFileId = (fileId: string | null) => {
+    setCurrentFileId(fileId);
+  };
+
   useEffect(() => {
     return () => {
       if (abortControllerRef.current) {
@@ -1580,6 +1599,7 @@ export const useChat = (): UseChatReturn => {
     isSending,
     isProcessingFile,
     error,
+    currentFileId,
     
     sendMessage,
     sendFileMessage,
@@ -1596,6 +1616,7 @@ export const useChat = (): UseChatReturn => {
     appendMessage,
     updateMessage,
     removeMessage,
-    setFileProcessingState
+    setFileProcessingState,
+    setCurrentFileId: updateCurrentFileId
   };
 };

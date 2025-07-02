@@ -42,6 +42,8 @@ interface ChatBubbleProps {
   fileType?: string;
   status?: 'uploading' | 'processing' | 'processed' | 'querying' | 'sent' | 'failed';
   metadata?: any;
+  // File query support
+  onQueryFile?: (fileId: string, filename: string, question: string, sessionId: string) => void;
 }
 
 export const ChatBubble: React.FC<ChatBubbleProps> = ({ 
@@ -59,7 +61,8 @@ export const ChatBubble: React.FC<ChatBubbleProps> = ({
   fileSize,
   fileType,
   status = 'sent',
-  metadata
+  metadata,
+  onQueryFile
 }) => {
   const { theme, isDark } = useTheme();
   const [isEditing, setIsEditing] = useState(false);
@@ -197,7 +200,56 @@ export const ChatBubble: React.FC<ChatBubbleProps> = ({
   };
 
   const handleFilePress = async () => {
-    if (fileUrl && status === 'sent') {
+    // If this is a processed file with metadata.fileId, offer query option
+    if (metadata?.fileId && status === 'processed' && onQueryFile) {
+      Alert.alert(
+        'File Options',
+        `What would you like to do with ${filename || 'this file'}?`,
+        [
+          { text: 'Cancel', style: 'cancel' },
+          { 
+            text: 'Ask Question', 
+            onPress: () => {
+              Alert.prompt(
+                'Ask about this file',
+                `What would you like to know about ${filename || 'this file'}?`,
+                [
+                  { text: 'Cancel', style: 'cancel' },
+                  { 
+                    text: 'Ask', 
+                    onPress: (question) => {
+                      if (question && question.trim() && metadata?.fileId) {
+                        onQueryFile(metadata.fileId, filename || 'file', question.trim(), conversationId);
+                      }
+                    }
+                  }
+                ],
+                'plain-text',
+                '',
+                'default'
+              );
+            }
+          },
+          ...(fileUrl ? [{ 
+            text: 'Open File', 
+            onPress: async () => {
+              try {
+                const supported = await Linking.canOpenURL(fileUrl);
+                if (supported) {
+                  await Linking.openURL(fileUrl);
+                } else {
+                  Alert.alert('Cannot open file', 'No app available to open this file type');
+                }
+              } catch (error) {
+                Alert.alert('Error', 'Failed to open file');
+                console.error('File open error:', error);
+              }
+            }
+          }] : [])
+        ]
+      );
+    } else if (fileUrl && status === 'sent') {
+      // Fallback to just opening the file
       try {
         const supported = await Linking.canOpenURL(fileUrl);
         if (supported) {
@@ -273,7 +325,11 @@ export const ChatBubble: React.FC<ChatBubbleProps> = ({
         
         {/* Compact 64×64 thumbnail attachment */}
         {hasFileAttachment && attachmentFileUrl && attachmentFileType && (
-          <View style={styles.inlineThumbnailContainer}>
+          <TouchableOpacity 
+            style={styles.inlineThumbnailContainer}
+            onPress={handleFilePress}
+            disabled={!metadata?.fileId && !fileUrl}
+          >
             {renderThumbnailWithOverlay(attachmentFileUrl, attachmentFileType)}
             
             {/* Only show file details for non-image attachments */}
@@ -298,7 +354,19 @@ export const ChatBubble: React.FC<ChatBubbleProps> = ({
                 </Text>
               </View>
             )}
-          </View>
+            
+            {/* Show interactive hint for processed files */}
+            {metadata?.fileId && status === 'processed' && (
+              <View style={styles.queryHintContainer}>
+                <Text style={[
+                  styles.queryHintText,
+                  { color: isUser ? 'rgba(255,255,255,0.8)' : theme.semanticColors.textSecondary }
+                ]}>
+                  💡 Tap to ask questions
+                </Text>
+              </View>
+            )}
+          </TouchableOpacity>
         )}
       </View>
     );
@@ -614,5 +682,16 @@ const styles = StyleSheet.create({
   thumbnailFileSize: {
     fontSize: 11,
     opacity: 0.8,
+  },
+  queryHintContainer: {
+    marginTop: 4,
+    paddingTop: 4,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(255,255,255,0.1)',
+  },
+  queryHintText: {
+    fontSize: 10,
+    fontStyle: 'italic',
+    textAlign: 'center',
   },
 });

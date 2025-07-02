@@ -93,6 +93,7 @@ export const ChatScreen: React.FC = () => {
     renameSession,
     clearMessages,
     setCurrentSession,
+    queryFile, // ADDED: Include queryFile function
     appendMessage,
     updateMessage,
     removeMessage,
@@ -780,6 +781,7 @@ export const ChatScreen: React.FC = () => {
         fileType={item.fileType}
         status={item.status}
         metadata={item.metadata}
+        onQueryFile={queryFile} // ADDED: Wire the queryFile function
       />
     );
   };
